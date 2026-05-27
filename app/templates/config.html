@@ -23,7 +23,7 @@
             <div class="space-y-4">
                 <div>
                     <label class="block text-xs font-bold text-gray-500 mb-1.5">Emby 地址</label>
-                    <input name="emby_host" class="w-full px-4 py-3 rounded-xl bg-gray-100 dark:bg-apple-hoverDark border border-gray-200 dark:border-white/5 text-gray-700 dark:text-gray-300 font-medium focus:ring-2 focus:ring-brand-500 outline-none text-sm" placeholder="http://192.168.31.213:8096" value="{{ config.emby_host or '' }}">
+                    <input name="emby_host" class="w-full px-4 py-3 rounded-xl bg-gray-100 dark:bg-apple-hoverDark border border-gray-200 dark:border-white/5 text-gray-700 dark:text-gray-300 font-medium focus:ring-2 focus:ring-brand-500 outline-none text-sm" placeholder="http://your-emby-host:8096" value="{{ config.emby_host or '' }}">
                 </div>
                 <div>
                     <label class="block text-xs font-bold text-gray-500 mb-1.5">API Key</label>
@@ -44,7 +44,7 @@
             <div class="space-y-4">
                 <div>
                     <label class="block text-xs font-bold text-gray-500 mb-1.5">MoviePilot 地址</label>
-                    <input name="moviepilot_url" class="w-full px-4 py-3 rounded-xl bg-gray-100 dark:bg-apple-hoverDark border border-gray-200 dark:border-white/5 text-gray-700 dark:text-gray-300 font-medium focus:ring-2 focus:ring-brand-500 outline-none text-sm" placeholder="http://192.168.31.213:3000" value="{{ config.moviepilot_url or '' }}">
+                    <input name="moviepilot_url" class="w-full px-4 py-3 rounded-xl bg-gray-100 dark:bg-apple-hoverDark border border-gray-200 dark:border-white/5 text-gray-700 dark:text-gray-300 font-medium focus:ring-2 focus:ring-brand-500 outline-none text-sm" placeholder="http://your-moviepilot:3000" value="{{ config.moviepilot_url or '' }}">
                 </div>
                 <div>
                     <label class="block text-xs font-bold text-gray-500 mb-1.5">API Token</label>
@@ -103,8 +103,8 @@
             </h3>
             <div class="space-y-4">
                 <div>
-                    <label class="block text-xs font-bold text-gray-500 mb-1.5">代理地址 <span class="text-gray-400 font-normal">（NAS 无法直连时使用，例如 http://192.168.31.213:7890）</span></label>
-                    <input name="proxy" class="w-full px-4 py-3 rounded-xl bg-gray-100 dark:bg-apple-hoverDark border border-gray-200 dark:border-white/5 text-gray-700 dark:text-gray-300 font-medium focus:ring-2 focus:ring-brand-500 outline-none text-sm" placeholder="http://192.168.31.213:7890" value="{{ config.proxy or '' }}">
+                    <label class="block text-xs font-bold text-gray-500 mb-1.5">代理地址 <span class="text-gray-400 font-normal">（NAS 无法直连时使用，例如 http://your-proxy:7890）</span></label>
+                    <input name="proxy" class="w-full px-4 py-3 rounded-xl bg-gray-100 dark:bg-apple-hoverDark border border-gray-200 dark:border-white/5 text-gray-700 dark:text-gray-300 font-medium focus:ring-2 focus:ring-brand-500 outline-none text-sm" placeholder="http://your-proxy:7890" value="{{ config.proxy or '' }}">
                     <p class="text-[11px] text-gray-400 mt-1.5">同时用于影巢 API（绕过 Cloudflare 拦截）和 Telegram API（NAS 无法直连时）</p>
                 </div>
             </div>

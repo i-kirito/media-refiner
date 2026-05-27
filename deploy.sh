@@ -9,8 +9,8 @@
 #   ./deploy.sh env-verify    仅验证 .env 完整性
 set -euo pipefail
 
-NAS_HOST="nas"
-REMOTE_BASE="/volume2/docker/media-refiner"
+NAS_HOST="your-nas-host"
+REMOTE_BASE="/path/to/your/media-refiner"
 LOCAL_ENV="config/.env"
 REMOTE_ENV="${REMOTE_BASE}/config/.env"
 BACKUP_DIR="config/env_backups"
@@ -228,7 +228,7 @@ full_deploy() {
 
     echo ""
     ok "🎉 部署完成！"
-    echo "   服务地址: http://192.168.31.213:10309"
+    echo "   服务地址: http://your-nas-ip:10309"
     echo ""
 }
 

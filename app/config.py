@@ -8,7 +8,7 @@ class Settings(BaseSettings):
     """应用配置，优先从环境变量读取"""
 
     # Emby 连接
-    emby_host: str = "http://192.168.31.213:8096"
+    emby_host: str = ""
     emby_api_key: str = ""
 
     # MoviePilot 连接（用于搜索和下载）
