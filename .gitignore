@@ -40,3 +40,4 @@ Thumbs.db
 
 # Agent
 CLAUDE.md
+deploy.sh backup_env.sh
