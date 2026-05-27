@@ -1,0 +1,15 @@
+version: '3.8'
+
+services:
+  media-refiner:
+    image: media-refiner:latest
+    container_name: media-refiner
+    ports:
+      - "10309:10308"
+    volumes:
+      - ./data:/workspace/data
+      - ./config:/workspace/config
+    environment:
+      - TZ=Asia/Shanghai
+      - REFINER_DB_PATH=/workspace/data/refiner.db
+    restart: unless-stopped

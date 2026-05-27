@@ -1,0 +1,355 @@
+/* ==========================================
+ * Media Refiner Dashboard Styles
+ * Apple-style design, matching EmbyPulse
+ * ========================================== */
+
+/* --- 滚动条隐藏 --- */
+.hide-scrollbar::-webkit-scrollbar { display: none; }
+.hide-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
+
+/* --- Apple 级极简卡片质感 --- */
+.apple-card {
+    background-color: rgba(255, 255, 255, 0.95);
+    backdrop-filter: blur(20px);
+    -webkit-backdrop-filter: blur(20px);
+    border-radius: 24px;
+    padding: 24px;
+    box-shadow: 0 4px 24px -8px rgba(0,0,0,0.04);
+    border: 1px solid rgba(0,0,0,0.02);
+    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+}
+html.dark .apple-card {
+    background-color: rgba(28, 28, 30, 0.85);
+    box-shadow: 0 4px 24px -8px rgba(0, 0, 0, 0.4);
+    border: 1px solid rgba(255,255,255,0.04);
+}
+
+/* --- Bento 卡片悬停效果 --- */
+.bento-card { transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1); cursor: pointer; }
+.bento-card:hover { transform: translateY(-4px); box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.1); }
+.bento-card:active { transform: scale(0.97); }
+.bento-active { border-color: #6366f1 !important; box-shadow: 0 0 0 2px rgba(99, 102, 241, 0.2) !important; background-color: rgba(99, 102, 241, 0.05) !important; }
+html.dark .bento-active { border-color: #818cf8 !important; background-color: rgba(99, 102, 241, 0.1) !important; }
+
+/* --- 能量条动画 --- */
+.energy-bar { height: 4px; border-radius: 2px; transition: width 1s ease-out; }
+
+/* --- Modal 动画 --- */
+.modal-enter { animation: modalEnter 0.3s cubic-bezier(0.16, 1, 0.3, 1) forwards; }
+@keyframes modalEnter {
+    0% { opacity: 0; transform: scale(0.95) translateY(10px); }
+    100% { opacity: 1; transform: scale(1) translateY(0); }
+}
+
+@keyframes fadeIn {
+    from { opacity: 0; transform: translateY(8px); }
+    to { opacity: 1; transform: translateY(0); }
+}
+.animate-fade-in { animation: fadeIn 0.4s ease-out forwards; }
+
+/* --- 骨架屏加载动画 --- */
+.skeleton {
+    background: linear-gradient(90deg, #f0f0f0 25%, #e0e0e0 50%, #f0f0f0 75%);
+    background-size: 200% 100%;
+    animation: skeleton-shimmer 1.5s infinite;
+    border-radius: 8px;
+}
+html.dark .skeleton {
+    background: linear-gradient(90deg, #2a2a2a 25%, #3a3a3a 50%, #2a2a2a 75%);
+    background-size: 200% 100%;
+}
+
+@keyframes skeleton-shimmer {
+    0% { background-position: 200% 0; }
+    100% { background-position: -200% 0; }
+}
+
+.skeleton-card {
+    background: rgba(255,255,255,0.95);
+    border-radius: 24px;
+    padding: 24px;
+    border: 1px solid rgba(0,0,0,0.02);
+}
+html.dark .skeleton-card {
+    background: rgba(28, 28, 30, 0.85);
+    border-color: rgba(255,255,255,0.04);
+}
+
+.skeleton-text { height: 14px; border-radius: 6px; }
+.skeleton-text-sm { height: 10px; }
+.skeleton-text-md { height: 16px; }
+.skeleton-text-lg { height: 24px; }
+.skeleton-bar { height: 6px; border-radius: 3px; }
+
+/* --- 自定义滚动条 (备选方案) --- */
+.custom-scrollbar::-webkit-scrollbar { width: 4px; }
+.custom-scrollbar::-webkit-scrollbar-track { background: transparent; }
+.custom-scrollbar::-webkit-scrollbar-thumb { background: rgba(156, 163, 175, 0.3); border-radius: 4px; }
+.custom-scrollbar::-webkit-scrollbar-thumb:hover { background: rgba(156, 163, 175, 0.5); }
+html.dark .custom-scrollbar::-webkit-scrollbar-thumb { background: rgba(255, 255, 255, 0.15); }
+
+/* --- 进度条动画 --- */
+.progress-bar { transition: width 0.6s cubic-bezier(0.4, 0, 0.2, 1); }
+
+/* --- 扫描进度活跃渐变条 --- */
+.scan-bar-active {
+    background: linear-gradient(90deg, #007AFF, #5856D6, #007AFF);
+    background-size: 200% 100%;
+    animation: scan-bar-shift 2s linear infinite;
+}
+@keyframes scan-bar-shift {
+    0% { background-position: 200% 0; }
+    100% { background-position: -200% 0; }
+}
+
+/* --- 扫描完成条 --- */
+.scan-bar-done {
+    background: linear-gradient(90deg, #34C759, #30D158);
+}
+
+/* --- 扫描中闪光效果 --- */
+.scan-bar-shimmer {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 60px;
+    height: 100%;
+    background: linear-gradient(90deg, transparent, rgba(255,255,255,0.25), transparent);
+    animation: shimmer-slide 2s ease-in-out infinite;
+}
+@keyframes shimmer-slide {
+    0% { left: -60px; }
+    100% { left: 110%; }
+}
+
+/* --- 扫描脉冲动画 --- */
+@keyframes scan-pulse {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.5; }
+}
+.scanning-pulse { animation: scan-pulse 1.5s ease-in-out infinite; }
+
+/* --- 完成卡片动画 --- */
+.scan-complete-card {
+    animation: completeFadeIn 0.5s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+@keyframes completeFadeIn {
+    0% { opacity: 0; transform: translateY(-8px) scale(0.97); }
+    100% { opacity: 1; transform: translateY(0) scale(1); }
+}
+
+.scan-check-container {
+    animation: checkBounce 0.6s cubic-bezier(0.34, 1.56, 0.64, 1) 0.2s both;
+}
+.scan-check-icon {
+    animation: checkAppear 0.4s ease 0.3s both;
+}
+@keyframes checkBounce {
+    0% { transform: scale(0); }
+    100% { transform: scale(1); }
+}
+@keyframes checkAppear {
+    0% { opacity: 0; transform: scale(0.5); }
+    100% { opacity: 1; transform: scale(1); }
+}
+
+/* --- 扫描条目名滚动 --- */
+.scan-item-name {
+    display: inline-block;
+    max-width: 100%;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    animation: itemFade 1.5s ease-in-out infinite;
+}
+@keyframes itemFade {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.6; }
+}
+
+/* --- 表格行悬停 --- */
+.table-row-hover { transition: background-color 0.15s; }
+.table-row-hover:hover { background-color: rgba(0, 0, 0, 0.02); }
+html.dark .table-row-hover:hover { background-color: rgba(255, 255, 255, 0.03); }
+
+/* --- 右箭头 hover 动画 --- */
+.arrow-hover { opacity: 0; transform: translateX(-4px); transition: all 0.2s ease-out; }
+tr:hover .arrow-hover, .group:hover .arrow-hover { opacity: 1; transform: translateX(0); }
+
+/* --- 移动端适配 --- */
+@media (max-width: 767px) {
+    .bento-card:hover { transform: none; }
+    .apple-card { padding: 16px; }
+}
+
+/* --- 简洁徽章样式复用 --- */
+.badge {
+    display: inline-flex;
+    align-items: center;
+    padding: 2px 10px;
+    border-radius: 9999px;
+    font-size: 11px;
+    font-weight: 700;
+    line-height: 1.4;
+}
+
+/* --- 三点菜单按钮 --- */
+.widget-menu-btn {
+    position: absolute;
+    z-index: 20 !important;
+    pointer-events: auto !important;
+}
+
+/* --- 三点菜单弹窗 --- */
+#widget-menu-popup {
+    z-index: 120 !important;
+}
+
+/* --- 拖拽手柄（页面卡片左上角） --- */
+.widget-drag-handle {
+    position: absolute;
+    top: 12px;
+    left: 12px;
+    z-index: 25 !important;
+    width: 32px;
+    height: 32px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 10px;
+    color: #D1D5DB;
+    cursor: grab;
+    opacity: 0;
+    transition: all 0.2s ease;
+    pointer-events: auto !important;
+    background: transparent;
+}
+.widget-drag-handle:hover {
+    color: #007AFF;
+    background: rgba(0,0,0,0.03);
+}
+html.dark .widget-drag-handle:hover {
+    background: rgba(255,255,255,0.05);
+    color: #60A5FA;
+}
+.widget-drag-handle:active { cursor: grabbing; }
+.module-item:hover .widget-drag-handle { opacity: 1; }
+@media (max-width: 767px) {
+    .widget-drag-handle { opacity: 1; top: 10px; left: 10px; width: 28px; height: 28px; }
+}
+
+/* --- 缩放手柄（页面卡片底部居中） --- */
+.widget-resize-handle {
+    position: absolute !important;
+    bottom: 0 !important;
+    left: 50% !important;
+    transform: translateX(-50%) !important;
+    width: 48px !important;
+    height: 16px !important;
+    cursor: ns-resize !important;
+    z-index: 30 !important;
+    pointer-events: auto !important;
+    opacity: 0;
+    transition: opacity 0.2s;
+    background: transparent !important;
+    border-radius: 8px 8px 0 0;
+}
+.module-item:hover .widget-resize-handle { opacity: 1; }
+.widget-resize-handle::before {
+    content: '';
+    position: absolute;
+    left: 50%;
+    top: 50%;
+    transform: translate(-50%, -50%);
+    width: 28px;
+    height: 4px;
+    background: rgba(0,122,255,0.4);
+    border-radius: 2px;
+    transition: background 0.2s;
+}
+.widget-resize-handle:hover::before {
+    background: rgba(0,122,255,0.8);
+}
+html.dark .widget-resize-handle::before {
+    background: rgba(96,165,250,0.4);
+}
+html.dark .widget-resize-handle:hover::before {
+    background: rgba(96,165,250,0.8);
+}
+@media (max-width: 767px) {
+    .widget-resize-handle { opacity: 1; }
+}
+
+/* --- 拖拽缩放时卡片轮廓 --- */
+.module-item.resizing {
+    outline: 2px solid #007AFF;
+    outline-offset: -2px;
+    border-radius: 24px;
+}
+html.dark .module-item.resizing {
+    outline-color: #60A5FA;
+}
+
+/* --- SortableJS 拖拽状态 --- */
+.sortable-ghost {
+    opacity: 0.2;
+    transform: scale(0.97);
+    box-shadow: none;
+    border-radius: 24px;
+    background: #f0f0f0;
+}
+html.dark .sortable-ghost {
+    background: #2a2a2a;
+}
+.sortable-drag {
+    cursor: grabbing !important;
+    box-shadow: 0 24px 48px rgba(0,0,0,0.15) !important;
+    border-radius: 24px;
+    opacity: 0.9;
+}
+html.dark .sortable-drag {
+    box-shadow: 0 24px 48px rgba(0,0,0,0.5) !important;
+}
+
+/* --- 拖拽手柄右侧的不可拖拽区域（防止拖拽时点击内容） --- */
+.module-item .sortable-item-content {
+    position: relative;
+    z-index: 1;
+}
+
+/* --- 管理器 Modal 过渡 --- */
+#dash-manager-modal {
+    transition: opacity 0.2s ease;
+}
+#dm-container {
+    transition: transform 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+/* --- 模块项入场动画 --- */
+.module-item {
+    animation: moduleEnter 0.4s ease-out forwards;
+    opacity: 0;
+}
+@keyframes moduleEnter {
+    from { opacity: 0; transform: translateY(12px); }
+    to { opacity: 1; transform: translateY(0); }
+}
+
+/* --- 移动端适配 --- */
+@media (max-width: 767px) {
+    #dash-manager-modal {
+        align-items: flex-end !important;
+        justify-content: center;
+    }
+    #dash-manager-modal #dm-container {
+        width: 100% !important;
+        max-width: 100% !important;
+        border-radius: 24px 24px 0 0 !important;
+        max-height: 90vh !important;
+        margin-bottom: 0 !important;
+        transform: scale(1) !important;
+    }
+    #dash-manager-modal #dm-container.scale-95 {
+        transform: translateY(20px) !important;
+    }
+}

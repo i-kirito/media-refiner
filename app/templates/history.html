@@ -1,0 +1,294 @@
+{% extends "base.html" %}
+{% block title %}历史记录{% endblock %}
+{% block content %}
+<div class="max-w-4xl mx-auto w-full px-4 md:px-8 py-6 pb-24 relative">
+
+    <!-- 页头 -->
+    <div class="flex items-center gap-3 mb-6">
+        <div class="w-12 h-12 bg-gray-50 dark:bg-gray-800 rounded-xl flex items-center justify-center border border-gray-200 dark:border-gray-700">
+            <i class="fa-solid fa-clock-rotate-left text-gray-500 text-xl"></i>
+        </div>
+        <div>
+            <h1 class="text-xl font-black text-gray-900 dark:text-white">洗版历史</h1>
+            <p class="text-xs text-gray-500 mt-0.5">可恢复条目重新搜索</p>
+        </div>
+    </div>
+
+    <!-- 分类 Tab -->
+    <div class="flex gap-1 mb-5 p-1 bg-gray-100 dark:bg-gray-800/80 rounded-2xl w-fit">
+        <button id="tabAll" onclick="switchTab('all')" class="tab-btn px-4 py-2 text-[13px] font-bold rounded-xl transition-all">全部 <span id="cntAll" class="ml-1 text-[11px] opacity-60">0</span></button>
+        <button id="tabSuccess" onclick="switchTab('success')" class="tab-btn px-4 py-2 text-[13px] font-bold rounded-xl transition-all">✅ 成功 <span id="cntSuccess" class="ml-1 text-[11px] opacity-60">0</span></button>
+        <button id="tabFail" onclick="switchTab('fail')" class="tab-btn px-4 py-2 text-[13px] font-bold rounded-xl transition-all">❌ 失败 <span id="cntFail" class="ml-1 text-[11px] opacity-60">0</span></button>
+        <button id="tabReject" onclick="switchTab('reject')" class="tab-btn px-4 py-2 text-[13px] font-bold rounded-xl transition-all">⏭ 拒绝 <span id="cntReject" class="ml-1 text-[11px] opacity-60">0</span></button>
+    </div>
+
+    <!-- 加载中 -->
+    <div id="loading" class="text-center py-24 text-gray-400">
+        <i class="fa-solid fa-circle-notch fa-spin text-3xl mb-4 text-brand-500"></i>
+        <p class="text-sm font-bold">正在加载历史记录...</p>
+    </div>
+
+    <!-- 历史列表 -->
+    <div id="historyContainer" class="space-y-3">
+    </div>
+</div>
+
+<!-- 确认对话框 -->
+<div id="confirmModal" class="hidden fixed inset-0 z-50 flex items-center justify-center">
+    <div class="absolute inset-0 bg-black/40 backdrop-blur-sm" onclick="closeConfirmModal()"></div>
+    <div class="relative bg-white dark:bg-gray-800 rounded-2xl shadow-2xl border border-gray-200 dark:border-gray-700 p-6 max-w-sm w-full mx-4 animate-in zoom-in-95">
+        <div class="text-center">
+            <div class="w-14 h-14 mx-auto mb-4 rounded-2xl bg-amber-50 dark:bg-amber-900/20 flex items-center justify-center text-2xl text-amber-500 border border-amber-200 dark:border-amber-800">
+                <i class="fa-solid fa-rotate-left"></i>
+            </div>
+            <h3 class="text-lg font-bold text-gray-900 dark:text-white mb-2">确认恢复搜索</h3>
+            <p class="text-sm text-gray-500 mb-1">将删除以下条目的所有历史记录：</p>
+            <p id="confirmItemName" class="text-sm font-bold text-gray-700 dark:text-gray-300 mb-4 py-2 px-3 bg-gray-50 dark:bg-gray-700/50 rounded-xl"></p>
+            <p class="text-xs text-gray-400 mb-6">删除后，下次规则运行将重新搜索此条目</p>
+            <div class="flex gap-3">
+                <button onclick="closeConfirmModal()" class="flex-1 px-4 py-2.5 text-sm font-bold text-gray-600 dark:text-gray-300 bg-gray-100 dark:bg-gray-700 hover:bg-gray-200 dark:hover:bg-gray-600 rounded-xl transition-all">取消</button>
+                <button id="confirmDeleteBtn" onclick="confirmDelete()" class="flex-1 px-4 py-2.5 text-sm font-bold text-white bg-red-500 hover:bg-red-600 rounded-xl transition-all active:scale-95">确认删除</button>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+    let _pendingDeleteId = null;
+    let _pendingDeleteName = '';
+    let _allItems = [];
+    let _currentTab = 'all';
+
+    document.addEventListener('DOMContentLoaded', loadHistory);
+
+    function escapeHtml(text) {
+        if (!text) return '';
+        const d = document.createElement('div');
+        d.textContent = text;
+        return d.innerHTML;
+    }
+
+    function formatDate(ts) {
+        if (!ts) return '';
+        const d = new Date(ts);
+        if (isNaN(d.getTime())) return ts;
+        const pad = n => String(n).padStart(2, '0');
+        return `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
+    }
+
+    function safeJson(str) {
+        try { return JSON.parse(str); } catch { return {}; }
+    }
+
+    function getItemCategory(item) {
+        const s = item.status;
+        if (s === 'approved' || s === 'auto_approved' || s === 'download' || s === 'transfer') return 'success';
+        if (s === 'failed') return 'fail';
+        if (s === 'rejected' || s === 'ignored') return 'reject';
+        return 'other';
+    }
+
+    function switchTab(tab) {
+        _currentTab = tab;
+        // 更新 tab 高亮
+        document.querySelectorAll('.tab-btn').forEach(b => {
+            b.classList.remove('bg-white', 'dark:bg-gray-700', 'shadow-sm', 'text-gray-900', 'dark:text-white');
+            b.classList.add('text-gray-500', 'dark:text-gray-400', 'hover:text-gray-700', 'dark:hover:text-gray-300');
+        });
+        const btn = document.getElementById('tab' + tab.charAt(0).toUpperCase() + tab.slice(1));
+        if (btn) {
+            btn.classList.remove('text-gray-500', 'dark:text-gray-400', 'hover:text-gray-700', 'dark:hover:text-gray-300');
+            btn.classList.add('bg-white', 'dark:bg-gray-700', 'shadow-sm', 'text-gray-900', 'dark:text-white');
+        }
+        renderItems();
+    }
+
+    function renderItems() {
+        const container = document.getElementById('historyContainer');
+        const filtered = _currentTab === 'all'
+            ? _allItems
+            : _allItems.filter(i => getItemCategory(i) === _currentTab);
+
+        if (filtered.length === 0) {
+            container.innerHTML = `
+                <div class="apple-card p-12 text-center">
+                    <i class="fa-solid fa-inbox text-5xl mb-4 opacity-20 text-gray-400"></i>
+                    <p class="text-gray-400 font-medium">暂无记录</p>
+                </div>
+            `;
+            return;
+        }
+
+        container.innerHTML = filtered.map(item => {
+            const isSuccess = item.status === 'approved' || item.status === 'auto_approved' || item.status === 'download' || item.status === 'transfer';
+            const iconColor = isSuccess ? 'text-green-500 bg-green-50 dark:bg-green-900/20' : item.status === 'failed' ? 'text-red-500 bg-red-50 dark:bg-red-900/20' : 'text-gray-400 bg-gray-100 dark:bg-gray-800';
+            const badgeColor = isSuccess ? 'bg-green-100 text-green-700 dark:bg-green-900/40 dark:text-green-300' : item.status === 'failed' ? 'bg-red-100 text-red-700 dark:bg-red-900/40 dark:text-red-300' : 'bg-gray-200 text-gray-600 dark:bg-gray-700 dark:text-gray-400';
+            const icon = isSuccess ? 'fa-check-circle' : item.status === 'failed' ? 'fa-circle-xmark' : 'fa-ban';
+            const canRestore = !!item.itemId;
+            return `
+                <div class="apple-card p-4 sm:p-5">
+                    <div class="flex items-center gap-4">
+                        <div class="w-12 h-12 rounded-2xl ${iconColor} flex items-center justify-center text-xl shrink-0">
+                            <i class="fa-solid ${icon}"></i>
+                        </div>
+                        <div class="flex-1 min-w-0">
+                            <div class="flex items-center gap-2 flex-wrap">
+                                <span class="font-bold text-gray-900 dark:text-white">${escapeHtml(item.name)}</span>
+                                <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-[11px] font-bold ${badgeColor}">${escapeHtml(item.statusLabel)}</span>
+                                ${item.itemId ? `<span class="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold ${item.actionType === 'MP 下载' ? 'bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-300' : item.actionType === 'plan' ? 'bg-gray-100 text-gray-600 dark:bg-gray-700 dark:text-gray-400' : 'bg-purple-100 text-purple-700 dark:bg-purple-900/40 dark:text-purple-300'}">${escapeHtml(item.actionType)}</span>` : ''}
+                            </div>
+                            ${item.ruleName ? `<div class="text-[11px] text-gray-400 mt-0.5">${escapeHtml(item.ruleName)}</div>` : ''}
+                            <div class="flex items-center gap-2 mt-1 text-xs text-gray-500">
+                                ${item.detail ? `<span>${escapeHtml(item.detail)}</span>` : ''}
+                            </div>
+                            <div class="text-[11px] text-gray-400 mt-1 font-mono">${item.time}</div>
+                        </div>
+                        ${canRestore ? `
+                        <button onclick="showConfirm('${escapeHtml(item.itemId)}', '${escapeHtml(item.name)}')" class="px-3 py-2 text-[11px] font-bold text-red-500 hover:text-white bg-red-50 dark:bg-red-900/20 hover:bg-red-500 dark:hover:bg-red-600 rounded-xl transition-all flex items-center gap-1.5 shrink-0 active:scale-95">
+                            <i class="fa-solid fa-rotate-left"></i> 恢复搜索
+                        </button>
+                        ` : ''}
+                    </div>
+                </div>
+            `;
+        }).join('');
+    }
+
+    function countByCategory(items, cat) {
+        return items.filter(i => getItemCategory(i) === cat).length;
+    }
+
+    async function loadHistory() {
+        const container = document.getElementById('historyContainer');
+        const loading = document.getElementById('loading');
+
+        try {
+            const [plansResp, historyResp] = await Promise.all([
+                fetch('/api/download/plans'),
+                fetch('/api/subscribe/history'),
+            ]);
+
+            const plansJson = await plansResp.json();
+            const historyJson = await historyResp.json();
+
+            _allItems = [];
+
+            // 旧的 upgrade_plans
+            if (plansJson.status === 'success') {
+                const plans = (plansJson.data || []).filter(p => p.status === 'done' || p.status === 'failed');
+                plans.forEach(p => {
+                    const cq = safeJson(p.current_quality_json || '{}');
+                    _allItems.push({
+                        name: cq.name || p.emby_item_id || '未知',
+                        status: p.status === 'done' ? 'approved' : 'failed',
+                        statusLabel: p.status === 'done' ? '已完成' : '失败',
+                        actionType: 'plan',
+                        detail: p.target_quality ? `目标: ${p.target_quality}` : '',
+                        time: formatDate(p.created_at) || '',
+                        itemId: null,
+                    });
+                });
+            }
+
+            // subscribe_reviews
+            const reviews = historyJson?.data?.reviews || [];
+            reviews.forEach(r => {
+                const mapStatus = {
+                    'approved': { label: '已批准' },
+                    'rejected': { label: '已拒绝' },
+                    'ignored':  { label: '已忽略' },
+                    'failed':   { label: '失败' },
+                };
+                const info = mapStatus[r.status] || { label: r.status };
+                _allItems.push({
+                    name: r.item_name || '未知',
+                    status: r.status,
+                    statusLabel: info.label,
+                    actionType: r.source === 'moviepilot' ? 'MP 下载' : '影巢转存',
+                    detail: r.message || '',
+                    time: formatDate(r.updated_at) || formatDate(r.created_at) || '',
+                    itemId: r.item_id,
+                    ruleName: r.rule_name || '',
+                });
+            });
+
+            // subscribe_logs（去重）
+            const logs = historyJson?.data?.logs || [];
+            logs.forEach(log => {
+                const actionLabel = {
+                    'auto_approved': '自动通过',
+                    'download': '下载完成',
+                    'transfer': '转存完成',
+                };
+                const label = actionLabel[log.action] || log.action;
+                const brief = (log.message || '').split('\n')[0].substring(0, 120);
+                _allItems.push({
+                    name: log.item_name || '未知',
+                    status: log.action,
+                    statusLabel: label,
+                    actionType: log.action === 'download' || log.action === 'auto_approved' ? 'MP 下载' : '影巢转存',
+                    detail: brief,
+                    time: formatDate(log.created_at) || '',
+                    itemId: log.item_id,
+                    ruleName: log.rule_name || '',
+                });
+            });
+
+            // 按时间降序
+            _allItems.sort((a, b) => (b.time || '').localeCompare(a.time || ''));
+
+            // 更新计数
+            document.getElementById('cntAll').textContent = _allItems.length;
+            document.getElementById('cntSuccess').textContent = countByCategory(_allItems, 'success');
+            document.getElementById('cntFail').textContent = countByCategory(_allItems, 'fail');
+            document.getElementById('cntReject').textContent = countByCategory(_allItems, 'reject');
+
+            loading.classList.add('hidden');
+            switchTab('all');
+        } catch(e) {
+            loading.classList.add('hidden');
+            container.innerHTML = `<div class="apple-card p-12 text-center text-red-400">加载失败: ${e.message}</div>`;
+        }
+    }
+
+    // ── 确认对话框 ──
+    function showConfirm(itemId, itemName) {
+        _pendingDeleteId = itemId;
+        _pendingDeleteName = itemName;
+        document.getElementById('confirmItemName').textContent = itemName;
+        document.getElementById('confirmModal').classList.remove('hidden');
+    }
+
+    function closeConfirmModal() {
+        _pendingDeleteId = null;
+        _pendingDeleteName = '';
+        document.getElementById('confirmModal').classList.add('hidden');
+    }
+
+    async function confirmDelete() {
+        if (!_pendingDeleteId) return;
+        const btn = document.getElementById('confirmDeleteBtn');
+        btn.disabled = true;
+        btn.innerHTML = '<i class="fa-solid fa-circle-notch fa-spin"></i> 删除中...';
+
+        try {
+            const resp = await fetch(`/api/subscribe/history/${_pendingDeleteId}`, { method: 'DELETE' });
+            const json = await resp.json();
+            if (resp.ok && json.status === 'success') {
+                closeConfirmModal();
+                // 重新加载列表
+                await loadHistory();
+            } else {
+                alert('删除失败: ' + (json.message || resp.statusText));
+            }
+        } catch(e) {
+            alert('请求失败: ' + e.message);
+        } finally {
+            btn.disabled = false;
+            btn.innerHTML = '确认删除';
+        }
+    }
+</script>
+{% endblock %}

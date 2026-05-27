@@ -1,0 +1,189 @@
+{% extends "base.html" %}
+{% block title %}仪表盘{% endblock %}
+{% block content %}
+<div class="max-w-6xl mx-auto space-y-6">
+    <!-- 标题 + 操作 -->
+    <div class="flex items-center justify-between">
+        <div>
+            <h2 class="text-2xl font-bold">📊 仪表盘</h2>
+            <p class="text-sm text-gray-500 dark:text-gray-400 mt-1">媒体质量总览与快速操作</p>
+        </div>
+        <button id="btnStartScan"
+                class="btn-primary"
+                onclick="ScanManager.start()">
+            <i class="fa-solid fa-magnifying-glass mr-1"></i> 开始质量扫描
+        </button>
+    </div>
+
+    <!-- 扫描进度 -->
+    <div id="scan-progress" class="hidden"></div>
+
+    <!-- 统计卡片 -->
+    <div id="statsGrid" class="grid grid-cols-1 md:grid-cols-4 gap-4">
+        <div class="card p-4 flex items-center gap-3">
+            <div class="w-10 h-10 rounded-lg bg-purple-100 dark:bg-purple-900/50 flex items-center justify-center text-lg">🎬</div>
+            <div>
+                <div class="text-2xl font-bold scan-count">-</div>
+                <div class="text-xs text-gray-500">总媒体数</div>
+            </div>
+        </div>
+        <div class="card p-4 flex items-center gap-3">
+            <div class="w-10 h-10 rounded-lg bg-red-100 dark:bg-red-900/50 flex items-center justify-center text-lg">⚠️</div>
+            <div>
+                <div class="text-2xl font-bold text-red-500 poor-count">-</div>
+                <div class="text-xs text-gray-500">低质量 (≤60分)</div>
+            </div>
+        </div>
+        <div class="card p-4 flex items-center gap-3">
+            <div class="w-10 h-10 rounded-lg bg-green-100 dark:bg-green-900/50 flex items-center justify-center text-lg">✨</div>
+            <div>
+                <div class="text-2xl font-bold text-green-500 good-count">-</div>
+                <div class="text-xs text-gray-500">高质量 (≥80分)</div>
+            </div>
+        </div>
+        <div class="card p-4 flex items-center gap-3">
+            <div class="w-10 h-10 rounded-lg bg-blue-100 dark:bg-blue-900/50 flex items-center justify-center text-lg">🔄</div>
+            <div>
+                <div class="text-2xl font-bold plan-count">-</div>
+                <div class="text-xs text-gray-500">洗版计划</div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 质量分布 -->
+    <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+        <div class="card p-4">
+            <h3 class="font-semibold mb-3">📐 分辨率分布</h3>
+            <div id="resChart" class="space-y-2"></div>
+        </div>
+        <div class="card p-4">
+            <h3 class="font-semibold mb-3">🎞️ 编码格式分布</h3>
+            <div id="codecChart" class="space-y-2"></div>
+        </div>
+        <div class="card p-4">
+            <h3 class="font-semibold mb-3">🌈 HDR 类型分布</h3>
+            <div id="hdrChart" class="space-y-2"></div>
+        </div>
+    </div>
+
+    <!-- 低质量列表预览 -->
+    <div class="card">
+        <div class="p-4 border-b border-gray-200 dark:border-gray-700 flex justify-between items-center">
+            <h3 class="font-semibold">低质量条目 (≤60分)</h3>
+            <a href="/items" class="text-sm text-primary-500 hover:text-primary-600">查看全部 →</a>
+        </div>
+        <div id="poorItemsPreview" class="divide-y divide-gray-100 dark:divide-gray-700">
+            <div class="p-8 text-center text-gray-400 text-sm">暂无数据</div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+    // ========== 仪表盘逻辑 ==========
+
+    function updateDashboard(data) {
+        if (!data || !data.summary) return;
+        const s = data.summary;
+        const items = data.items || [];
+
+        document.querySelector('.scan-count').textContent = s.total_count || '-';
+        document.querySelector('.poor-count').textContent = items.filter(i => (i.quality_score || 0) <= 60).length;
+        document.querySelector('.good-count').textContent = items.filter(i => (i.quality_score || 0) >= 80).length;
+
+        // 分布图
+        renderBarChart('resChart', s.resolution_dist, ['4k', '1080p', '720p', 'sd'],
+            ['rgba(147,51,234,0.7)', 'rgba(59,130,246,0.7)', 'rgba(234,179,8,0.7)', 'rgba(107,114,128,0.7)']);
+        renderBarChart('codecChart', s.codec_dist, ['hevc', 'h264', 'av1', 'other_codec'],
+            ['rgba(34,197,94,0.7)', 'rgba(249,115,22,0.7)', 'rgba(168,85,247,0.7)', 'rgba(156,163,175,0.7)']);
+        renderBarChart('hdrChart', s.hdr_dist, ['dolby_vision', 'hdr10', 'sdr'],
+            ['rgba(99,102,241,0.7)', 'rgba(20,184,166,0.7)', 'rgba(107,114,128,0.7)']);
+
+        // 低质量预览
+        const poorItems = items.filter(i => (i.quality_score || 0) <= 60).slice(0, 10);
+        const container = document.getElementById('poorItemsPreview');
+        if (poorItems.length === 0) {
+            container.innerHTML = '<div class="p-8 text-center text-gray-400 text-sm">🎉 没有低质量条目</div>';
+        } else {
+            container.innerHTML = poorItems.map(item => `
+                <div class="flex items-center justify-between px-4 py-3 hover:bg-gray-50 dark:hover:bg-gray-700/50">
+                    <div class="flex-1 min-w-0">
+                        <div class="font-medium text-sm truncate">${item.name || '未知'}</div>
+                        <div class="text-xs text-gray-500 mt-0.5">${item.resolution || '?'} · ${item.video_codec || '?'} · ${item.video_range || '?'}</div>
+                    </div>
+                    <div class="flex items-center gap-3">
+                        <span class="text-sm font-mono font-bold ${(item.quality_score || 0) <= 30 ? 'text-red-500' : 'text-yellow-500'}">${item.quality_score || 0}分</span>
+                        <button class="btn-sm btn-primary"
+                                onclick="location.href='/items?search=${encodeURIComponent(item.name || '')}'">洗版</button>
+                    </div>
+                </div>
+            `).join('');
+        }
+    }
+
+    function renderBarChart(containerId, data, keys, colors) {
+        const container = document.getElementById(containerId);
+        if (!data || !keys) return;
+        const maxVal = Math.max(...keys.map(k => data[k] || 0), 1);
+        container.innerHTML = keys.map((k, i) => `
+            <div>
+                <div class="flex justify-between text-xs mb-1">
+                    <span class="font-medium">${k}</span>
+                    <span class="text-gray-500">${data[k] || 0}</span>
+                </div>
+                <div class="w-full bg-gray-200 dark:bg-gray-700 rounded-full h-2.5">
+                    <div class="h-2.5 rounded-full progress-bar"
+                         style="width: ${(data[k] || 0) / maxVal * 100}%; background: ${colors[i]}">
+                    </div>
+                </div>
+            </div>
+        `).join('');
+    }
+
+    // 加载统计数据
+    async function loadDashboard() {
+        try {
+            const [itemsResp, planResp] = await Promise.all([
+                fetch('/api/scan/items?page_size=5'),
+                fetch('/api/subscribe/rules').catch(() => null)
+            ]);
+            const itemsJson = await itemsResp.json();
+            if (itemsJson.status === 'success') {
+                updateDashboard(itemsJson.data);
+            }
+                if (planResp) {
+                    const planJson = await planResp.json();
+                    if (planJson.status === 'success') {
+                        document.querySelector('.plan-count').textContent = (planJson.data || []).length;
+                        // 计算总计已升级数
+                        let totalUpgraded = 0;
+                        (planJson.data || []).forEach(r => {
+                            totalUpgraded += (r.total_upgraded || 0);
+                        });
+                        const upgradedEl = document.querySelector('.plan-upgraded');
+                        if (upgradedEl) upgradedEl.textContent = totalUpgraded;
+                    }
+            }
+        } catch(e) {
+            console.warn('Dashboard load error:', e);
+        }
+    }
+
+    // 页面初始化
+    document.addEventListener('DOMContentLoaded', () => {
+        loadDashboard();
+        ScanManager.init('btnStartScan');
+    });
+
+    // 扫描完成后刷新仪表盘
+    window.addEventListener('scan-complete', () => {
+        setTimeout(loadDashboard, 1000);
+    });
+
+    // 关闭完成卡片后重新获取数据
+    window.addEventListener('scan-dismiss', () => {
+        loadDashboard();
+    });
+</script>
+{% endblock %}

@@ -1,0 +1,1387 @@
+{% extends "base.html" %}
+{% block title %}订阅洗版{% endblock %}
+{% block content %}
+<div class="max-w-7xl mx-auto w-full px-4 md:px-8 py-6 pb-24 relative">
+
+    <!-- 标题 + 操作栏 -->
+    <div class="flex flex-col md:flex-row justify-between items-center mb-6 gap-4 bg-white dark:bg-gray-800 p-4 rounded-2xl shadow-sm border border-gray-100 dark:border-gray-700">
+        <div class="flex items-center gap-3">
+            <div class="w-12 h-12 bg-emerald-50 dark:bg-emerald-900/30 rounded-xl flex items-center justify-center border border-emerald-100 dark:border-emerald-800">
+                <i class="fa-solid fa-bell text-emerald-500 text-xl"></i>
+            </div>
+            <div>
+                <h1 class="text-xl font-black text-gray-900 dark:text-white">订阅洗版</h1>
+                <p class="text-xs text-gray-500 mt-0.5">设置规则，自动对低画质媒体搜索高质量版本并推送下载</p>
+            </div>
+        </div>
+        <div class="flex items-center gap-1.5 sm:gap-3">
+            <button onclick="toggleLogPanel()" class="px-3 sm:px-4 py-2 text-xs font-bold text-gray-600 dark:text-gray-300 bg-gray-100 dark:bg-apple-hoverDark hover:bg-gray-200 dark:hover:bg-[#3A3A3C] rounded-xl transition-colors shadow-sm border border-gray-200 dark:border-white/5 flex items-center gap-1 sm:gap-2">
+                <i class="fa-solid fa-clock-rotate-left"></i> <span class="hidden sm:inline">活动日志</span>
+            </button>
+            <button onclick="runRules()" id="runBtn" class="px-3 sm:px-4 py-2 text-xs font-bold text-white bg-brand-500 hover:bg-brand-600 rounded-xl transition-all active:scale-95 shadow-sm flex items-center gap-1 sm:gap-2">
+                <i class="fa-solid fa-play"></i> <span class="hidden sm:inline">运行规则</span>
+            </button>
+            <button onclick="openRuleEditor()" class="px-3 sm:px-4 py-2 text-xs font-bold text-white bg-emerald-500 hover:bg-emerald-600 rounded-xl transition-all active:scale-95 shadow-sm flex items-center gap-1 sm:gap-2">
+                <i class="fa-solid fa-plus"></i> <span class="hidden sm:inline">新建规则</span>
+            </button>
+        </div>
+    </div>
+
+    <!-- 运行状态 -->
+    <div id="runStatus" class="hidden mb-4 apple-card p-4">
+        <div class="flex items-center gap-3">
+            <i class="fa-solid fa-circle-notch fa-spin text-brand-500 text-lg"></i>
+            <div class="flex-1">
+                <div class="text-sm font-bold text-gray-700 dark:text-gray-200" id="runStatusText">运行中...</div>
+                <div class="mt-1 bg-gray-100 dark:bg-apple-hoverDark rounded-full h-2 overflow-hidden">
+                    <div id="runProgressBar" class="bg-brand-500 h-full rounded-full transition-all duration-300" style="width:0%"></div>
+                </div>
+            </div>
+            <span class="text-xs text-gray-500 font-mono" id="runProgressText">0/0</span>
+        </div>
+    </div>
+
+    <!-- 缓存状态 -->
+    <div id="cacheStatus" class="hidden mb-4 apple-card p-3">
+        <div class="flex items-center gap-2 text-xs">
+            <i id="cacheIcon" class="fa-solid fa-database text-gray-400"></i>
+            <span id="cacheText" class="text-gray-500 font-medium">加载缓存状态...</span>
+            <button onclick="checkCacheStatus()" class="ml-auto text-gray-400 hover:text-brand-500 transition-colors" title="刷新">
+                <i class="fa-solid fa-rotate"></i>
+            </button>
+        </div>
+    </div>
+
+    <!-- 加载中 -->
+    <div id="rules-loading" class="text-center py-24 text-gray-400">
+        <i class="fa-solid fa-circle-notch fa-spin text-3xl mb-4 text-brand-500"></i>
+        <p class="text-sm font-bold">正在加载订阅规则...</p>
+    </div>
+
+    <!-- 规则列表 -->
+    <div id="rulesContainer" class="space-y-3">
+    </div>
+
+    <!-- 审核列表 -->
+    <div id="reviewSection" class="hidden mt-6">
+        <div class="flex items-center justify-between mb-3 cursor-pointer select-none" onclick="toggleReviewCollapse()">
+            <h2 class="font-bold text-[15px] flex items-center gap-2">
+                <i id="reviewChevron" class="fa-solid fa-chevron-down text-gray-400 text-[10px] transition-transform duration-200"></i>
+                <i class="fa-solid fa-clipboard-list text-amber-500"></i> 待审核 <span id="reviewBadge" class="text-[11px] bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300 px-2 py-0.5 rounded-full font-bold">0</span>
+                <span id="reviewCollapsedHint" class="text-[11px] text-gray-400 hidden">（已折叠）</span>
+            </h2>
+            <div class="flex items-center gap-2">
+                <button onclick="clearReviews(); event.stopPropagation()" id="clearReviewsBtn" class="px-3 py-2 text-xs font-bold text-red-500 hover:text-white bg-red-50 dark:bg-red-900/20 hover:bg-red-500 dark:hover:bg-red-600 rounded-xl transition-all hidden items-center gap-1.5">
+                    <i class="fa-solid fa-trash-can"></i> 清空记录
+                </button>
+                <button onclick="batchApprove(); event.stopPropagation()" id="batchApproveBtn" class="px-4 py-2 text-xs font-bold text-white bg-brand-500 hover:bg-brand-600 rounded-xl transition-all active:scale-95 shadow-sm hidden items-center gap-1.5">
+                    <i class="fa-solid fa-check-double"></i> 全部批准
+                </button>
+            </div>
+        </div>
+        <div id="reviewContainer" class="space-y-2 transition-all duration-200">
+            <div class="text-center py-8 text-gray-400 text-sm">暂无待审核项</div>
+        </div>
+    </div>
+
+    <!-- 活动日志面板 -->
+    <div id="logPanel" class="hidden mt-6 apple-card overflow-hidden">
+        <div class="px-5 py-4 border-b border-gray-100 dark:border-white/5 flex justify-between items-center">
+            <h3 class="font-bold text-[15px] flex items-center gap-2"><i class="fa-solid fa-clock-rotate-left text-brand-500"></i> 活动日志</h3>
+            <button onclick="toggleLogPanel()" class="text-gray-400 hover:text-gray-600 dark:hover:text-gray-200"><i class="fa-solid fa-xmark"></i></button>
+        </div>
+        <div class="p-4 max-h-[500px] overflow-y-auto mac-scrollbar min-h-[60px]" id="logContainer">
+            <div class="text-center py-8 text-gray-400"><i class="fa-solid fa-circle-notch fa-spin"></i></div>
+        </div>
+    </div>
+
+    <!-- 空状态 -->
+    <div id="emptyState" class="hidden apple-card p-12 text-center">
+        <i class="fa-solid fa-bell text-5xl mb-4 opacity-20 text-gray-400"></i>
+        <p class="text-gray-400 font-medium">暂无订阅规则</p>
+        <p class="text-xs text-gray-500 mt-2">点击"新建规则"创建第一条自动洗版规则</p>
+    </div>
+</div>
+
+<!-- 规则编辑器 Modal -->
+<div id="rule-modal" class="fixed inset-0 z-[110] hidden opacity-0 transition-opacity duration-200">
+    <div class="absolute inset-0 bg-black/50 backdrop-blur-sm" onclick="closeRuleEditor()"></div>
+    <div class="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[95%] max-w-xl bg-white dark:bg-apple-cardDark rounded-[24px] shadow-2xl border border-gray-200 dark:border-white/5 overflow-hidden flex flex-col max-h-[90vh]">
+        <div class="px-4 py-3 border-b border-gray-100 dark:border-white/5 flex justify-between items-center bg-gradient-to-r from-brand-50/80 to-transparent dark:from-brand-900/10 shrink-0">
+            <h3 class="font-bold text-[15px] flex items-center gap-2"> <span id="rule-modal-title">新建规则</span></h3>
+            <button onclick="closeRuleEditor()" class="text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 transition-colors w-7 h-7 rounded-full flex items-center justify-center bg-gray-100 dark:bg-white/5 hover:bg-gray-200 dark:hover:bg-white/10 text-sm"><i class="fa-solid fa-xmark"></i></button>
+        </div>
+        <div class="p-4 overflow-y-auto mac-scrollbar flex-1 space-y-2 text-sm">
+            <input type="hidden" id="editRuleId" value="">
+
+            <!-- 基本信息 -->
+            <div class="rounded-xl bg-gradient-to-r from-brand-50/30 to-transparent dark:from-brand-900/5 p-3">
+                <div class="flex items-center gap-1.5 mb-2">
+                    <span class="w-0.5 h-3 rounded-full bg-brand-400"></span>
+                    <span class="text-[11px] font-bold text-gray-500 dark:text-gray-400 tracking-wide">基本信息</span>
+                </div>
+                <input id="ruleName" class="w-full px-3 py-2 rounded-xl bg-white dark:bg-apple-hoverDark border border-gray-200 dark:border-white/10 text-gray-700 dark:text-gray-300 font-medium focus:ring-2 focus:ring-brand-500 outline-none text-sm placeholder:text-gray-400" placeholder="例如: 升级到1080p HEVC" value="默认规则">
+            </div>
+
+            <!-- 触发条件 -->
+            <div class="rounded-xl bg-gradient-to-r from-orange-50/30 to-transparent dark:from-orange-900/5 p-3">
+                <div class="flex items-center gap-1.5 mb-2">
+                    <span class="w-0.5 h-3 rounded-full bg-orange-400"></span>
+                    <span class="text-[11px] font-bold text-gray-500 dark:text-gray-400 tracking-wide">🔄 触发条件</span>
+                    <span class="text-[10px] text-gray-400 ml-auto">满足以下条件的条目执行升级</span>
+                </div>
+                <div class="grid grid-cols-2 gap-2">
+                    <div>
+                        <label class="block text-[11px] font-medium text-gray-500 dark:text-gray-400 mb-1">质量得分 ≤</label>
+                        <select id="ruleMaxScore" class="w-full px-3 py-2 rounded-xl bg-white dark:bg-apple-hoverDark border border-gray-200 dark:border-white/10 text-gray-700 dark:text-gray-300 font-medium focus:ring-2 focus:ring-brand-500 outline-none text-sm">
+                            <option value="30">30 (极低)</option>
+                            <option value="60" selected>60 (低)</option>
+                            <option value="80">80 (中低)</option>
+                            <option value="100">100 (全部)</option>
+                        </select>
+                    </div>
+                    <div>
+                        <label class="block text-[11px] font-medium text-gray-500 dark:text-gray-400 mb-1">当前分辨率 ≤</label>
+                        <select id="ruleMinRes" class="w-full px-3 py-2 rounded-xl bg-white dark:bg-apple-hoverDark border border-gray-200 dark:border-white/10 text-gray-700 dark:text-gray-300 font-medium focus:ring-2 focus:ring-brand-500 outline-none text-sm">
+                            <option value="">不限</option>
+                            <option value="720p">720p 及以下</option>
+                            <option value="1080p">1080p 及以下</option>
+                        </select>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 目标要求 -->
+            <div class="rounded-xl bg-gradient-to-r from-purple-50/30 to-transparent dark:from-purple-900/5 p-3">
+                <div class="flex items-center gap-1.5 mb-2">
+                    <span class="w-0.5 h-3 rounded-full bg-purple-400"></span>
+                    <span class="text-[11px] font-bold text-gray-500 dark:text-gray-400 tracking-wide">🎯 目标要求</span>
+                    <span class="text-[10px] text-gray-400 ml-auto">搜索什么质量的资源</span>
+                </div>
+                <div class="grid grid-cols-3 gap-2">
+                    <div>
+                        <label class="block text-[11px] font-medium text-gray-500 dark:text-gray-400 mb-1">目标分辨率</label>
+                        <select id="ruleTargetRes" class="w-full px-3 py-2 rounded-xl bg-white dark:bg-apple-hoverDark border border-gray-200 dark:border-white/10 text-gray-700 dark:text-gray-300 font-medium focus:ring-2 focus:ring-brand-500 outline-none text-sm">
+                            <option value="better" selected>更好</option>
+                            <option value="720p">720p</option>
+                            <option value="1080p">1080p</option>
+                            <option value="4k">4K</option>
+                        </select>
+                    </div>
+                    <div>
+                        <label class="block text-[11px] font-medium text-gray-500 dark:text-gray-400 mb-1">首选编码</label>
+                        <select id="ruleCodec" class="w-full px-3 py-2 rounded-xl bg-white dark:bg-apple-hoverDark border border-gray-200 dark:border-white/10 text-gray-700 dark:text-gray-300 font-medium focus:ring-2 focus:ring-brand-500 outline-none text-sm">
+                            <option value="">不限</option>
+                            <option value="hevc" selected>HEVC</option>
+                            <option value="h264">H.264</option>
+                            <option value="av1">AV1</option>
+                        </select>
+                    </div>
+                    <div>
+                        <label class="block text-[11px] font-medium text-gray-500 dark:text-gray-400 mb-1">首选 HDR</label>
+                        <select id="ruleHdr" class="w-full px-3 py-2 rounded-xl bg-white dark:bg-apple-hoverDark border border-gray-200 dark:border-white/10 text-gray-700 dark:text-gray-300 font-medium focus:ring-2 focus:ring-brand-500 outline-none text-sm">
+                            <option value="">不限</option>
+                            <option value="hdr">HDR</option>
+                            <option value="dolby_vision">Dolby Vision</option>
+                            <option value="sdr">SDR</option>
+                        </select>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 来源 + 调度 -->
+            <div class="rounded-xl bg-gradient-to-r from-blue-50/30 to-transparent dark:from-blue-900/5 p-3">
+                <div class="flex items-center gap-1.5 mb-2">
+                    <span class="w-0.5 h-3 rounded-full bg-blue-400"></span>
+                    <span class="text-[11px] font-bold text-gray-500 dark:text-gray-400 tracking-wide">⚙️ 来源与调度</span>
+                </div>
+                <div class="grid grid-cols-3 gap-2">
+                    <div>
+                        <label class="block text-[11px] font-medium text-gray-500 dark:text-gray-400 mb-1">搜索来源</label>
+                        <select id="ruleSource" class="w-full px-3 py-2 rounded-xl bg-white dark:bg-apple-hoverDark border border-gray-200 dark:border-white/10 text-gray-700 dark:text-gray-300 font-medium focus:ring-2 focus:ring-brand-500 outline-none text-sm">
+                            <option value="moviepilot">MoviePilot</option>
+                            <option value="hdhive">影巢</option>
+                            <option value="both">两者</option>
+                        </select>
+                    </div>
+                    <div id="priorityGroup">
+                        <label class="block text-[11px] font-medium text-gray-500 dark:text-gray-400 mb-1">优先来源 <span class="text-[9px] text-gray-400 font-normal">（两者时）</span></label>
+                        <select id="rulePriority" class="w-full px-3 py-2 rounded-xl bg-white dark:bg-apple-hoverDark border border-gray-200 dark:border-white/10 text-gray-700 dark:text-gray-300 font-medium focus:ring-2 focus:ring-brand-500 outline-none text-sm">
+                            <option value="hdhive">影巢</option>
+                            <option value="moviepilot">MoviePilot</option>
+                        </select>
+                    </div>
+                    <div>
+                        <label class="block text-[11px] font-medium text-gray-500 dark:text-gray-400 mb-1">每次处理</label>
+                        <select id="ruleBatchSize" class="w-full px-3 py-2 rounded-xl bg-white dark:bg-apple-hoverDark border border-gray-200 dark:border-white/10 text-gray-700 dark:text-gray-300 font-medium focus:ring-2 focus:ring-brand-500 outline-none text-sm">
+                            <option value="10">10 条</option>
+                            <option value="20" selected>20 条</option>
+                            <option value="50">50 条</option>
+                            <option value="100">100 条</option>
+                        </select>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 排序偏好 — 拖拽排序 -->
+            <div class="rounded-xl bg-gradient-to-r from-amber-50/30 to-transparent dark:from-amber-900/5 p-3">
+                <div class="flex items-center gap-1.5 mb-2">
+                    <span class="w-0.5 h-3 rounded-full bg-amber-400"></span>
+                    <span class="text-[11px] font-bold text-gray-500 dark:text-gray-400 tracking-wide">🏷️ 排序偏好</span>
+                    <span class="text-[10px] text-gray-400 ml-auto">拖拽调整优先级</span>
+                </div>
+                <div id="preferSortable" class="flex flex-col gap-1">
+                    <div class="prefer-item flex items-center gap-2 px-3 py-2 rounded-xl bg-white dark:bg-apple-hoverDark border border-gray-200 dark:border-white/10 cursor-grab active:cursor-grabbing select-none transition-all hover:border-brand-300 text-sm" data-key="remux">
+                        <span class="drag-handle text-gray-400 cursor-grab active:cursor-grabbing select-none text-sm leading-none">⠿</span>
+                        <span class="text-sm text-gray-700 dark:text-gray-300">Remux 优先</span>
+                        <button type="button" class="prefer-remove ml-auto w-4 h-4 flex items-center justify-center rounded-full text-gray-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-500/10 transition-colors text-[10px]" title="移除此条件">✕</button>
+                    </div>
+                    <div class="prefer-item flex items-center gap-2 px-3 py-2 rounded-xl bg-white dark:bg-apple-hoverDark border border-gray-200 dark:border-white/10 cursor-grab active:cursor-grabbing select-none transition-all hover:border-brand-300 text-sm" data-key="4k">
+                        <span class="drag-handle text-gray-400 cursor-grab active:cursor-grabbing select-none text-sm leading-none">⠿</span>
+                        <span class="text-sm text-gray-700 dark:text-gray-300">4K 优先</span>
+                        <button type="button" class="prefer-remove ml-auto w-4 h-4 flex items-center justify-center rounded-full text-gray-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-500/10 transition-colors text-[10px]" title="移除此条件">✕</button>
+                    </div>
+                    <div class="prefer-item flex items-center gap-2 px-3 py-2 rounded-xl bg-white dark:bg-apple-hoverDark border border-gray-200 dark:border-white/10 cursor-grab active:cursor-grabbing select-none transition-all hover:border-brand-300 text-sm" data-key="subtitle">
+                        <span class="drag-handle text-gray-400 cursor-grab active:cursor-grabbing select-none text-sm leading-none">⠿</span>
+                        <span class="text-sm text-gray-700 dark:text-gray-300">特效字幕优先</span>
+                        <button type="button" class="prefer-remove ml-auto w-4 h-4 flex items-center justify-center rounded-full text-gray-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-500/10 transition-colors text-[10px]" title="移除此条件">✕</button>
+                    </div>
+                </div>
+                <div id="preferAddArea" class="flex flex-wrap gap-1 mt-1.5 min-h-[22px]"></div>
+                <p class="text-[10px] text-gray-400 mt-1">拖拽调序，✕ 移除，灰色 <span class="text-brand-500 font-medium">+</span> 加回</p>
+            </div>
+
+            <!-- 自动审核 -->
+            <div class="rounded-xl bg-gradient-to-r from-emerald-50/30 to-transparent dark:from-emerald-900/5 p-3">
+                <div class="flex items-center gap-1.5 mb-2">
+                    <span class="w-0.5 h-3 rounded-full bg-emerald-400"></span>
+                    <span class="text-[11px] font-bold text-gray-500 dark:text-gray-400 tracking-wide">🤖 自动审核</span>
+                </div>
+                <label class="flex items-center gap-2.5 px-3 py-2 rounded-xl bg-white dark:bg-apple-hoverDark border border-emerald-200 dark:border-emerald-800/20 cursor-pointer select-none has-[:checked]:ring-2 has-[:checked]:ring-emerald-500 has-[:checked]:border-emerald-400 transition-all">
+                    <input type="checkbox" id="ruleAutoApprove" class="accent-emerald-500 w-4 h-4">
+                    <div class="flex items-center gap-2 flex-wrap">
+                        <span class="text-sm font-bold text-emerald-700 dark:text-emerald-300">启用自动审核</span>
+                        <span class="text-[10px] text-emerald-600/50 dark:text-emerald-400/40">勾选的条件全部满足时自动执行</span>
+                    </div>
+                </label>
+                <div id="autoApproveConditions" class="mt-2 flex flex-wrap gap-1.5 transition-all">
+                    <label class="flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-white dark:bg-apple-hoverDark border border-gray-200 dark:border-white/10 cursor-pointer select-none has-[:checked]:ring-2 has-[:checked]:ring-emerald-400 has-[:checked]:border-emerald-300 has-[:checked]:bg-emerald-50/50 dark:has-[:checked]:bg-emerald-900/10 transition-all text-xs shadow-sm">
+                        <input type="checkbox" id="autoCondRemux" class="accent-emerald-500 w-3 h-3">
+                        <span class="font-medium text-gray-600 dark:text-gray-400 text-[11px]">🎬 Remux</span>
+                    </label>
+                    <label class="flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-white dark:bg-apple-hoverDark border border-gray-200 dark:border-white/10 cursor-pointer select-none has-[:checked]:ring-2 has-[:checked]:ring-emerald-400 has-[:checked]:border-emerald-300 has-[:checked]:bg-emerald-50/50 dark:has-[:checked]:bg-emerald-900/10 transition-all text-xs shadow-sm">
+                        <input type="checkbox" id="autoCond4k" class="accent-emerald-500 w-3 h-3">
+                        <span class="font-medium text-gray-600 dark:text-gray-400 text-[11px]">📺 4K</span>
+                    </label>
+                    <label class="flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-white dark:bg-apple-hoverDark border border-gray-200 dark:border-white/10 cursor-pointer select-none has-[:checked]:ring-2 has-[:checked]:ring-emerald-400 has-[:checked]:border-emerald-300 has-[:checked]:bg-emerald-50/50 dark:has-[:checked]:bg-emerald-900/10 transition-all text-xs shadow-sm">
+                        <input type="checkbox" id="autoCondSubtitle" class="accent-emerald-500 w-3 h-3">
+                        <span class="font-medium text-gray-600 dark:text-gray-400 text-[11px]">📝 特效字幕</span>
+                    </label>
+                </div>
+                <p id="autoApproveHint" class="text-[10px] text-gray-400 mt-1">未勾选任何条件时，自动审核不生效</p>
+            </div>
+
+            <!-- 定时调度 -->
+            <div class="rounded-xl bg-gradient-to-r from-rose-50/30 to-transparent dark:from-rose-900/5 p-3">
+                <div class="flex items-center gap-1.5 mb-2">
+                    <span class="w-0.5 h-3 rounded-full bg-rose-400"></span>
+                    <span class="text-[11px] font-bold text-gray-500 dark:text-gray-400 tracking-wide">⏰ 定时调度</span>
+                    <span class="text-[10px] text-gray-400 ml-auto">留空则不自动执行</span>
+                </div>
+                <input id="ruleCron" class="w-full px-3 py-2 rounded-xl bg-white dark:bg-apple-hoverDark border border-gray-200 dark:border-white/10 text-gray-700 dark:text-gray-300 font-mono text-sm focus:ring-2 focus:ring-brand-500 outline-none placeholder:text-gray-400" placeholder="0 3 * * *  (每日凌晨3点)">
+                <p class="text-[10px] text-gray-400 mt-1">
+                    格式：<code class="bg-gray-100 dark:bg-white/5 px-1 rounded text-brand-500 font-mono">分 时 日 月 周</code>
+                    <span class="text-gray-500 ml-1.5">每6小时 <code class="bg-gray-100 dark:bg-white/5 px-1 rounded font-mono">0 */6 * * *</code></span>
+                    <span class="text-gray-500 ml-1.5">每晚22点 <code class="bg-gray-100 dark:bg-white/5 px-1 rounded font-mono">0 22 * * *</code></span>
+                </p>
+            </div>
+        </div>
+        <div class="px-4 py-3 border-t border-gray-100 dark:border-white/5 flex justify-end gap-2.5 shrink-0 bg-gradient-to-r from-transparent to-gray-50/80 dark:to-white/[0.02]">
+            <button onclick="closeRuleEditor()" class="px-4 py-2 text-sm font-bold text-gray-600 dark:text-gray-300 bg-gray-100 dark:bg-apple-hoverDark hover:bg-gray-200 dark:hover:bg-[#3A3A3C] rounded-xl transition-colors active:scale-95">取消</button>
+            <button onclick="saveRule()" class="px-5 py-2 text-sm font-bold text-white bg-gradient-to-r from-brand-500 to-purple-600 hover:from-brand-600 hover:to-purple-700 rounded-xl transition-all active:scale-95 shadow-md shadow-brand-500/20">保存规则</button>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+    let editingRuleId = '';
+    let _reviewCollapsed = false;
+
+    let embyBaseUrl = '';
+    let embyServerId = '';
+
+    document.addEventListener('DOMContentLoaded', async () => {
+        try {
+            const cfgResp = await fetch('/api/config');
+            const cfgJson = await cfgResp.json();
+            if (cfgJson.status === 'success') {
+                embyBaseUrl = cfgJson.data.emby_host || '';
+                embyServerId = cfgJson.data.emby_server_id || '';
+            }
+        } catch(e) {}
+        loadRules();
+        loadReviews();
+        checkCacheStatus();
+        setInterval(pollStatus, 3000);
+        setInterval(loadReviews, 5000);
+
+        // 来源变更时联动优先来源的显隐
+        document.getElementById('ruleSource').addEventListener('change', function() {
+            const pg = document.getElementById('priorityGroup');
+            if (this.value === 'both') {
+                pg.classList.remove('opacity-40', 'pointer-events-none');
+            } else {
+                pg.classList.add('opacity-40', 'pointer-events-none');
+            }
+        });
+
+        // 初始化拖拽排序
+        initPreferDragDrop();
+
+        // 自动审核开关 → 联动条件区域显隐
+        const autoToggle = document.getElementById('ruleAutoApprove');
+        const condArea = document.getElementById('autoApproveConditions');
+        const condHint = document.getElementById('autoApproveHint');
+        function toggleAutoConds() {
+            const show = autoToggle.checked;
+            condArea.style.opacity = show ? '1' : '0.3';
+            condArea.style.pointerEvents = show ? 'auto' : 'none';
+            if (condHint) condHint.style.opacity = show ? '1' : '0.4';
+        }
+        autoToggle.addEventListener('change', toggleAutoConds);
+        toggleAutoConds();
+    });
+
+    // ─── 加载规则 ───
+
+    async function loadRules() {
+        const container = document.getElementById('rulesContainer');
+        const loading = document.getElementById('rules-loading');
+        const empty = document.getElementById('emptyState');
+        loading.classList.remove('hidden');
+        empty.classList.add('hidden');
+        container.innerHTML = '';
+
+        try {
+            const resp = await fetch('/api/subscribe/rules');
+            const json = await resp.json();
+            if (json.status !== 'success') throw new Error(json.message);
+            const rules = json.data || [];
+            loading.classList.add('hidden');
+
+            if (rules.length === 0) {
+                empty.classList.remove('hidden');
+                return;
+            }
+
+            empty.classList.add('hidden');
+            container.innerHTML = rules.map(r => renderRuleCard(r)).join('');
+        } catch(e) {
+            loading.classList.add('hidden');
+            container.innerHTML = `<div class="apple-card p-12 text-center text-red-400">加载失败: ${e.message}</div>`;
+        }
+    }
+
+    const PREFER_LABELS = { remux: 'Remux', '4k': '4K', subtitle: '字幕' };
+    function renderPreferOrderTags(order) {
+        if (!order || order.length === 0) return '';
+        const nums = ['①','②','③','④','⑤'];
+        return order.map((k, i) => {
+            const label = PREFER_LABELS[k] || k;
+            return `<span class="inline-flex items-center px-2 py-0.5 rounded-full bg-amber-50 dark:bg-amber-900/20 text-amber-600 dark:text-amber-400 font-bold text-[10px]">${nums[i]||''}${label}</span>`;
+        }).join('');
+    }
+
+    function renderRuleCard(r) {
+        const isEnabled = r.enabled !== false;
+        const lastRun = r.last_run || '从未运行';
+        const totalUpgraded = r.total_upgraded || 0;
+        const maxScore = r.max_score || 60;
+        const targetRes = r.target_resolution || '1080p';
+        const targetResLabel = {'better': '更好', '720p': '720p', '1080p': '1080p', '4k': '4K'}[targetRes] || targetRes;
+        const source = r.source || 'moviepilot';
+        const batchSize = r.batch_size || 20;
+        const sourceLabel = { 'moviepilot': 'MoviePilot', 'hdhive': '影巢', 'both': 'MP+影巢' }[source] || source;
+        const priority = r.source_priority || 'hdhive';
+        const priorityLabel = { 'hdhive': '影巢', 'moviepilot': 'MoviePilot' }[priority] || priority;
+
+        // 自动审核条件标签
+        const autoConds = r.auto_approve_conditions || [];
+        const autoCondLabels = { remux: 'Remux', '4k': '4K', subtitle: '字幕' };
+        const autoCondStr = autoConds.length > 0 ? autoConds.map(k => autoCondLabels[k] || k).join('+') : '';
+
+        // 排序偏好标签
+        const prefOrder = r.prefer_order || (r.prefer_remux || r.prefer_4k || r.prefer_subtitle
+            ? [r.prefer_remux && 'remux', r.prefer_4k && '4k', r.prefer_subtitle && 'subtitle'].filter(Boolean)
+            : null);
+
+        return `
+            <div class="apple-card overflow-hidden ${isEnabled ? '' : 'opacity-60'}">
+                <!-- 顶部：名称 + 开关 -->
+                <div class="px-4 pt-3 pb-2 flex items-center justify-between gap-2">
+                    <div class="flex items-center gap-2.5 min-w-0 flex-1">
+                        <div class="min-w-0">
+                            <div class="font-bold text-sm text-gray-900 dark:text-white truncate">${escapeHtml(r.name || '未命名')}</div>
+                            <div class="text-[10px] text-gray-400 flex items-center gap-1.5">
+                                <span>${lastRun}</span>
+                                <span class="text-gray-300 dark:text-gray-600">·</span>
+                                <span>已升级 <strong class="text-emerald-500 font-bold">${totalUpgraded}</strong> 条</span>
+                            </div>
+                        </div>
+                    </div>
+                    <label class="relative inline-flex items-center cursor-pointer shrink-0">
+                        <input type="checkbox" class="sr-only peer" ${isEnabled ? 'checked' : ''} onchange="toggleRule('${r.id}', this.checked)">
+                        <div class="w-8 h-[18px] bg-gray-200 rounded-full peer peer-checked:bg-emerald-500 peer-checked:after:translate-x-full after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-3.5 after:w-3.5 after:transition-all"></div>
+                    </label>
+                </div>
+
+                <!-- 中间：条件标签 -->
+                <div class="px-4 pb-2 flex flex-wrap items-center gap-1">
+                    <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-brand-50 dark:bg-brand-900/20 text-brand-600 dark:text-brand-400 text-[10px] font-bold"><i class="fa-solid fa-gauge-high text-[9px]"></i> ≤${maxScore}分</span>
+                    <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-purple-50 dark:bg-purple-900/20 text-purple-600 dark:text-purple-400 text-[10px] font-bold"><i class="fa-solid fa-bullseye text-[9px]"></i> ${targetResLabel}</span>
+                    <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-blue-50 dark:bg-blue-900/20 text-blue-600 dark:text-blue-400 text-[10px]"><i class="fa-solid fa-cloud text-[9px]"></i> ${sourceLabel}</span>
+                    ${source === 'both' ? `<span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-amber-50 dark:bg-amber-900/20 text-amber-600 dark:text-amber-400 text-[10px] font-bold"><i class="fa-solid fa-arrow-up-wide-short text-[9px]"></i> ${priorityLabel}</span>` : ''}
+                    <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-gray-100 dark:bg-gray-700 text-gray-500 dark:text-gray-400 text-[10px]"><i class="fa-solid fa-layer-group text-[9px]"></i> ${batchSize}条</span>
+                    ${r.auto_approve ? `<span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-emerald-50 dark:bg-emerald-900/20 text-emerald-600 dark:text-emerald-400 text-[10px] font-bold"><i class="fa-solid fa-robot text-[9px]"></i> 自动${autoCondStr ? ': ' + autoCondStr : ''}</span>` : ''}
+                    ${r.cron_expression ? `<span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-rose-50 dark:bg-rose-900/20 text-rose-600 dark:text-rose-400 text-[10px] font-mono"><i class="fa-solid fa-clock text-[9px]"></i> ${r.cron_expression}</span>` : ''}
+                </div>
+
+                <!-- 底部：排序偏好 + 操作按钮 -->
+                <div class="px-4 py-2 bg-gray-50/50 dark:bg-white/[0.02] border-t border-gray-100 dark:border-white/5 flex items-center justify-between gap-2">
+                    <div class="flex items-center gap-1 flex-wrap min-w-0">
+                        ${renderPreferOrderTags(prefOrder)}
+                        ${!prefOrder || prefOrder.length === 0 ? '<span class="text-[10px] text-gray-400 italic">无排序偏好</span>' : ''}
+                    </div>
+                    <div class="flex items-center gap-0.5 shrink-0">
+                        <button onclick="runRule('${r.id}')" class="w-7 h-7 flex items-center justify-center text-gray-400 hover:text-emerald-500 hover:bg-emerald-50 dark:hover:bg-emerald-900/20 rounded-lg transition-all" title="单独运行此规则"><i class="fa-solid fa-play text-[9px]"></i></button>
+                        <button onclick="editRule('${r.id}')" class="w-7 h-7 flex items-center justify-center text-gray-400 hover:text-brand-500 hover:bg-brand-50 dark:hover:bg-brand-900/20 rounded-lg transition-all" title="编辑"><i class="fa-solid fa-pen text-[10px]"></i></button>
+                        <button onclick="deleteRule('${r.id}')" class="w-7 h-7 flex items-center justify-center text-gray-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-500/10 rounded-lg transition-all" title="删除"><i class="fa-solid fa-trash-can text-[10px]"></i></button>
+                    </div>
+                </div>
+            </div>
+        `;
+    }
+
+    // ─── 拖拽排序（偏好优先级） ───
+
+    const PREFER_META = {
+        remux:   { label: 'Remux 优先', icon: '🎬' },
+        '4k':    { label: '4K 优先',    icon: '📺' },
+        subtitle:{ label: '特效字幕优先', icon: '📝' },
+    };
+
+    function createPreferItem(key) {
+        const meta = PREFER_META[key] || { label: key, icon: '🏷️' };
+        const div = document.createElement('div');
+        div.className = 'prefer-item flex items-center gap-2 px-3 py-2 rounded-xl bg-white dark:bg-apple-hoverDark border border-gray-200 dark:border-white/10 cursor-grab active:cursor-grabbing select-none transition-all hover:border-brand-300 text-sm';
+        div.dataset.key = key;
+        div.draggable = true;
+        div.innerHTML = `
+            <span class="drag-handle text-gray-400 cursor-grab active:cursor-grabbing select-none text-sm leading-none">⠿</span>
+            <span class="text-sm text-gray-700 dark:text-gray-300">${meta.icon} ${meta.label}</span>
+            <button type="button" class="prefer-remove ml-auto w-4 h-4 flex items-center justify-center rounded-full text-gray-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-500/10 transition-colors text-[10px]" title="移除此条件">✕</button>
+        `;
+        return div;
+    }
+
+    function createPreferAddBadge(key) {
+        const meta = PREFER_META[key] || { label: key, icon: '🏷️' };
+        const btn = document.createElement('button');
+        btn.type = 'button';
+        btn.className = 'prefer-add-btn inline-flex items-center gap-1 px-3 py-1.5 rounded-lg bg-gray-50 dark:bg-white/5 border border-dashed border-gray-300 dark:border-white/10 text-gray-500 dark:text-gray-400 hover:border-brand-400 hover:text-brand-500 transition-all text-xs font-medium';
+        btn.dataset.key = key;
+        btn.innerHTML = `+ ${meta.icon} ${meta.label}`;
+        return btn;
+    }
+
+    function initPreferDragDrop() {
+        const container = document.getElementById('preferSortable');
+        const addArea = document.getElementById('preferAddArea');
+        if (!container) return;
+        let dragEl = null;
+
+        container.addEventListener('dragstart', (e) => {
+            const item = e.target.closest('.prefer-item');
+            if (!item) return;
+            dragEl = item;
+            item.classList.add('opacity-40');
+            e.dataTransfer.effectAllowed = 'move';
+            e.dataTransfer.setData('text/plain', item.dataset.key);
+        });
+
+        container.addEventListener('dragend', (e) => {
+            const item = e.target.closest('.prefer-item');
+            if (item) item.classList.remove('opacity-40');
+            dragEl = null;
+            document.querySelectorAll('.prefer-item').forEach(el => {
+                el.classList.remove('border-brand-500', 'ring-2', 'ring-brand-300');
+            });
+        });
+
+        container.addEventListener('dragover', (e) => {
+            e.preventDefault();
+            e.dataTransfer.dropEffect = 'move';
+            const target = e.target.closest('.prefer-item');
+            if (!target || target === dragEl) return;
+            document.querySelectorAll('.prefer-item').forEach(el => {
+                el.classList.remove('border-brand-500', 'ring-2', 'ring-brand-300');
+            });
+            target.classList.add('border-brand-500', 'ring-2', 'ring-brand-300');
+            const rect = target.getBoundingClientRect();
+            const midY = rect.top + rect.height / 2;
+            if (e.clientY < midY) {
+                container.insertBefore(dragEl, target);
+            } else {
+                container.insertBefore(dragEl, target.nextSibling);
+            }
+        });
+
+        container.addEventListener('drop', (e) => {
+            e.preventDefault();
+            document.querySelectorAll('.prefer-item').forEach(el => {
+                el.classList.remove('border-brand-500', 'ring-2', 'ring-brand-300');
+            });
+        });
+
+        // ✕ 按钮 → 移到添加区
+        container.addEventListener('click', (e) => {
+            const btn = e.target.closest('.prefer-remove');
+            if (!btn || !addArea) return;
+            const item = btn.closest('.prefer-item');
+            if (item) {
+                const key = item.dataset.key;
+                item.remove();
+                // 如果不在添加区，放入添加区
+                if (!addArea.querySelector(`[data-key="${key}"]`)) {
+                    addArea.appendChild(createPreferAddBadge(key));
+                }
+            }
+        });
+
+        // 添加区点击 → 加回到排序列表
+        if (addArea) {
+            addArea.addEventListener('click', (e) => {
+                const btn = e.target.closest('.prefer-add-btn');
+                if (!btn) return;
+                const key = btn.dataset.key;
+                btn.remove();
+                container.appendChild(createPreferItem(key));
+                // 新加的可拖拽
+            });
+        }
+    }
+
+    function getPreferOrder() {
+        const container = document.getElementById('preferSortable');
+        if (!container) return [];
+        const keys = [];
+        container.querySelectorAll('.prefer-item').forEach(el => {
+            keys.push(el.dataset.key);
+        });
+        return keys;
+    }
+
+    const AUTO_COND_IDS = { remux: 'autoCondRemux', '4k': 'autoCond4k', subtitle: 'autoCondSubtitle' };
+    function applyAutoApproveConditions(conditions) {
+        for (const [key, id] of Object.entries(AUTO_COND_IDS)) {
+            document.getElementById(id).checked = conditions.includes(key);
+        }
+    }
+    function getAutoApproveConditions() {
+        const result = [];
+        for (const [key, id] of Object.entries(AUTO_COND_IDS)) {
+            if (document.getElementById(id).checked) result.push(key);
+        }
+        return result;
+    }
+
+    // 自动审核开关 → 联动条件区域的显隐
+
+    // ─── 规则 CRUD ───
+
+    function applyPreferOrder(order, ruleData) {
+        const container = document.getElementById('preferSortable');
+        const addArea = document.getElementById('preferAddArea');
+        if (!container) return;
+
+        // 所有可用 key
+        const allKeys = Object.keys(PREFER_META);
+
+        // 确定最终激活顺序
+        let activeKeys = order ? order.filter(k => k in PREFER_META) : [];
+        // 向后兼容旧版 bool
+        if (activeKeys.length === 0 && ruleData) {
+            if (ruleData.prefer_remux) activeKeys.push('remux');
+            if (ruleData.prefer_4k) activeKeys.push('4k');
+            if (ruleData.prefer_subtitle) activeKeys.push('subtitle');
+        }
+        // 如果仍然为空 → 全部显示
+        if (activeKeys.length === 0) {
+            activeKeys = [...allKeys];
+        }
+
+        // 重建排序列表
+        container.innerHTML = '';
+        activeKeys.forEach(key => {
+            container.appendChild(createPreferItem(key));
+        });
+
+        // 重建添加区（显示不在活跃列表中的）
+        if (addArea) {
+            addArea.innerHTML = '';
+            const inactiveKeys = allKeys.filter(k => !activeKeys.includes(k));
+            inactiveKeys.forEach(key => {
+                addArea.appendChild(createPreferAddBadge(key));
+            });
+        }
+    }
+
+    function openRuleEditor(ruleData) {
+        editingRuleId = ruleData?.id || '';
+        document.getElementById('rule-modal-title').textContent = editingRuleId ? '编辑规则' : '新建规则';
+        document.getElementById('editRuleId').value = editingRuleId;
+
+        if (ruleData) {
+            document.getElementById('ruleName').value = ruleData.name || '';
+            document.getElementById('ruleMaxScore').value = ruleData.max_score || '60';
+            document.getElementById('ruleMinRes').value = ruleData.min_current_resolution || '';
+            document.getElementById('ruleTargetRes').value = ruleData.target_resolution || '1080p';
+            document.getElementById('ruleCodec').value = ruleData.target_codec || '';
+            document.getElementById('ruleHdr').value = ruleData.target_hdr || '';
+            document.getElementById('ruleSource').value = ruleData.source || 'moviepilot';
+            document.getElementById('rulePriority').value = ruleData.source_priority || 'hdhive';
+            document.getElementById('ruleBatchSize').value = ruleData.batch_size || '20';
+            document.getElementById('ruleAutoApprove').checked = ruleData.auto_approve || false;
+            document.getElementById('ruleCron').value = ruleData.cron_expression || '';
+            // 自动审核条件
+            applyAutoApproveConditions(ruleData.auto_approve_conditions || []);
+            // 排序偏好 — prefer_order，向后兼容旧版 bool
+            applyPreferOrder(ruleData.prefer_order || [], ruleData);
+        } else {
+            document.getElementById('ruleName').value = '1080p → 4K 升级';
+            document.getElementById('ruleMaxScore').value = '60';
+            document.getElementById('ruleMinRes').value = '1080p';
+            document.getElementById('ruleTargetRes').value = '4k';
+            document.getElementById('ruleCodec').value = 'hevc';
+            document.getElementById('ruleHdr').value = 'hdr';
+            document.getElementById('ruleSource').value = 'both';
+            document.getElementById('rulePriority').value = 'hdhive';
+            document.getElementById('ruleBatchSize').value = '20';
+            document.getElementById('ruleAutoApprove').checked = true;
+            document.getElementById('ruleCron').value = '';
+            // 自动审核条件：Remux + 4K（字幕不强制）
+            applyAutoApproveConditions(['remux', '4k']);
+            // 排序偏好：Remux > 4K > HEVC（编码优先在后台支持）
+            applyPreferOrder(['remux', '4k', 'subtitle']);
+        }
+
+        // 初始化优先来源显隐
+        const srcEl = document.getElementById('ruleSource');
+        const pg = document.getElementById('priorityGroup');
+        if (srcEl.value === 'both') {
+            pg.classList.remove('opacity-40', 'pointer-events-none');
+        } else {
+            pg.classList.add('opacity-40', 'pointer-events-none');
+        }
+
+        const modal = document.getElementById('rule-modal');
+        modal.classList.remove('hidden');
+        void modal.offsetWidth;
+        modal.classList.remove('opacity-0');
+    }
+
+    function closeRuleEditor() {
+        const modal = document.getElementById('rule-modal');
+        modal.classList.add('opacity-0');
+        setTimeout(() => modal.classList.add('hidden'), 200);
+    }
+
+    async function saveRule() {
+        const ruleId = document.getElementById('editRuleId').value;
+        const data = {
+            name: document.getElementById('ruleName').value.trim() || '未命名',
+            max_score: parseInt(document.getElementById('ruleMaxScore').value) || 60,
+            min_current_resolution: document.getElementById('ruleMinRes').value,
+            target_resolution: document.getElementById('ruleTargetRes').value,
+            target_codec: document.getElementById('ruleCodec').value,
+            target_hdr: document.getElementById('ruleHdr').value,
+            source: document.getElementById('ruleSource').value,
+            source_priority: document.getElementById('rulePriority').value,
+            batch_size: parseInt(document.getElementById('ruleBatchSize').value) || 20,
+            prefer_order: getPreferOrder(),
+            auto_approve: document.getElementById('ruleAutoApprove').checked,
+            auto_approve_conditions: getAutoApproveConditions(),
+            cron_expression: document.getElementById('ruleCron').value.trim(),
+        };
+
+        try {
+            let resp;
+            if (ruleId) {
+                resp = await fetch(`/api/subscribe/rules/${ruleId}`, {
+                    method: 'PUT',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify(data),
+                });
+            } else {
+                resp = await fetch('/api/subscribe/rules', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify(data),
+                });
+            }
+            const json = await resp.json();
+            if (json.status === 'success') {
+                showToast('success', ruleId ? '规则已更新' : '规则已创建');
+                closeRuleEditor();
+                loadRules();
+            } else {
+                showToast('error', json.message || '保存失败');
+            }
+        } catch(e) {
+            showToast('error', '请求失败: ' + e.message);
+        }
+    }
+
+    async function toggleRule(ruleId, enabled) {
+        try {
+            const resp = await fetch(`/api/subscribe/rules/${ruleId}`, {
+                method: 'PUT',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({ enabled }),
+            });
+        } catch(e) {
+            showToast('error', '切换失败');
+            loadRules();
+        }
+    }
+
+    async function editRule(ruleId) {
+        try {
+            const resp = await fetch(`/api/subscribe/rules/${ruleId}`);
+            const json = await resp.json();
+            if (json.status === 'success' && json.data) {
+                openRuleEditor(json.data);
+            }
+        } catch(e) {
+            showToast('error', '获取规则失败');
+        }
+    }
+
+    async function deleteRule(ruleId) {
+        const confirmed = await showConfirm({
+            type: 'warning',
+            title: '删除规则',
+            message: '确定要删除此订阅规则吗？',
+            confirmText: '删除',
+        });
+        if (!confirmed) return;
+        try {
+            const resp = await fetch(`/api/subscribe/rules/${ruleId}`, { method: 'DELETE' });
+            const json = await resp.json();
+            if (json.status === 'success') {
+                showToast('success', '规则已删除');
+                loadRules();
+            } else {
+                showToast('error', json.message || '删除失败');
+            }
+        } catch(e) {
+            showToast('error', '请求失败');
+        }
+    }
+
+    // ─── 运行规则 ───
+
+    async function runRules() {
+        await _runWithParam('');
+    }
+
+    async function runRule(ruleId) {
+        await _runWithParam(ruleId);
+    }
+
+    async function _runWithParam(ruleId) {
+        const btn = document.getElementById('runBtn');
+        btn.disabled = true;
+        btn.innerHTML = '<i class="fa-solid fa-circle-notch fa-spin"></i> 运行中...';
+
+        try {
+            const url = ruleId ? `/api/subscribe/run?rule_id=${ruleId}` : '/api/subscribe/run';
+            const resp = await fetch(url, { method: 'POST' });
+            const json = await resp.json();
+            if (json.status === 'success') {
+                showToast('success', json.message);
+                // 自动打开活动日志面板
+                const panel = document.getElementById('logPanel');
+                if (panel.classList.contains('hidden')) {
+                    logVisible = true;
+                    panel.classList.remove('hidden');
+                }
+                await loadLogs();
+                // 启动快速轮询（每2秒刷新日志）
+                if (window._logPollTimer) clearInterval(window._logPollTimer);
+                window._logPollTimer = setInterval(async () => {
+                    if (document.getElementById('logPanel').classList.contains('hidden')) {
+                        clearInterval(window._logPollTimer);
+                        return;
+                    }
+                    await loadLogs(false);  // 轮询刷新不闪
+                }, 2000);
+            } else {
+                showToast('error', json.message || '启动失败');
+            }
+        } catch(e) {
+            showToast('error', '请求失败');
+        } finally {
+            btn.disabled = false;
+            btn.innerHTML = '<i class="fa-solid fa-play"></i> 运行规则';
+        }
+    }
+
+    async function checkCacheStatus() {
+        try {
+            const resp = await fetch('/api/scan/status');
+            const json = await resp.json();
+            if (json.status !== 'success') return;
+            const cache = json.data?.cache;
+            const el = document.getElementById('cacheStatus');
+            const icon = document.getElementById('cacheIcon');
+            const text = document.getElementById('cacheText');
+            if (!cache) {
+                el.classList.add('hidden');
+                return;
+            }
+            el.classList.remove('hidden');
+            if (cache.is_fresh) {
+                icon.className = 'fa-solid fa-database text-emerald-500';
+                text.textContent = `质量数据 ${cache.age_minutes} 分钟前已扫描（新鲜）· ${cache.created_at}`;
+                text.className = 'text-emerald-600 dark:text-emerald-400 font-medium';
+            } else {
+                icon.className = 'fa-solid fa-database text-amber-500';
+                text.textContent = `质量数据 ${cache.age_minutes} 分钟前已扫描（已超过 1h，建议重新盘点）· ${cache.created_at}`;
+                text.className = 'text-amber-600 dark:text-amber-400 font-medium';
+            }
+        } catch(e) {}
+    }
+
+    async function pollStatus() {
+        try {
+            const resp = await fetch('/api/subscribe/status');
+            const json = await resp.json();
+            if (json.status !== 'success') return;
+            const s = json.data;
+            const statusDiv = document.getElementById('runStatus');
+
+            if (s.running) {
+                statusDiv.classList.remove('hidden');
+                document.getElementById('runStatusText').textContent = s.current || '运行规则匹配...';
+                document.getElementById('runProgressBar').style.width = s.progress + '%';
+                document.getElementById('runProgressText').textContent = `${s.processed}/${s.total}`;
+            } else if (!statusDiv.classList.contains('hidden')) {
+                statusDiv.classList.add('hidden');
+                // 运行完成，刷新规则列表 + 停止日志轮询
+                loadRules();
+                if (window._logPollTimer) {
+                    clearInterval(window._logPollTimer);
+                    window._logPollTimer = null;
+                }
+                // 如果日志面板开着，刷新最后一条日志
+                if (!document.getElementById('logPanel').classList.contains('hidden')) {
+                    await loadLogs();
+                }
+            }
+        } catch(e) {
+            // ignore
+        }
+    }
+
+    // ─── 时区工具 ───
+
+    function _toShanghai(utcStr) {
+        if (!utcStr) return '';
+        try {
+            // SQLite 格式 "2026-05-25 03:10:09" → ISO 8601 "2026-05-25T03:10:09"
+            const iso = utcStr.replace(' ', 'T');
+            const d = new Date(iso);
+            if (isNaN(d.getTime())) return utcStr;
+            return d.toLocaleString('zh-CN', {
+                timeZone: 'Asia/Shanghai',
+                year: 'numeric', month: '2-digit', day: '2-digit',
+                hour: '2-digit', minute: '2-digit', second: '2-digit',
+                hour12: false,
+            });
+        } catch (e) {
+            return utcStr;
+        }
+    }
+
+    // ─── 活动日志 ───
+
+    let logVisible = false;
+
+    function _buildLogEntry(log) {
+        const time = _toShanghai(log.created_at || '');
+        const action = log.action || '';
+        const msg = log.message || '';
+        const itemName = log.item_name || '';
+        const ruleName = log.rule_name || '';
+
+        let icon = 'fa-solid fa-circle';
+        let color = 'text-gray-400';
+        if (action === 'download') { icon = 'fa-solid fa-download'; color = 'text-brand-500'; }
+        else if (action === 'transfer') { icon = 'fa-solid fa-cloud-arrow-up'; color = 'text-purple-500'; }
+        else if (action === 'no_match') { icon = 'fa-solid fa-magnifying-glass'; color = 'text-yellow-500'; }
+        else if (action === 'no_target') { icon = 'fa-solid fa-ban'; color = 'text-orange-500'; }
+        else if (action === 'error') { icon = 'fa-solid fa-circle-exclamation'; color = 'text-red-500'; }
+        else if (action === 'complete') { icon = 'fa-solid fa-check'; color = 'text-green-500'; }
+        else if (action === 'skip') { icon = 'fa-solid fa-forward-step'; color = 'text-gray-400'; }
+
+        const div = document.createElement('div');
+        div.className = 'flex items-start gap-3 py-2.5 border-b border-gray-50 dark:border-white/5 last:border-0';
+        div.dataset.logId = log.id || '';
+        div.innerHTML = `
+            <div class="w-6 h-6 rounded-full bg-gray-100 dark:bg-apple-hoverDark flex items-center justify-center shrink-0 mt-0.5">
+                <i class="${icon} ${color} text-[11px]"></i>
+            </div>
+            <div class="flex-1 min-w-0">
+                <div class="flex items-center gap-2">
+                    <span class="text-xs font-bold text-gray-700 dark:text-gray-200">${escapeHtml(ruleName)}</span>
+                    ${itemName ? `<span class="text-xs text-gray-500">·</span><span class="text-xs text-gray-500">${escapeHtml(itemName)}</span>` : ''}
+                </div>
+                <div class="text-[11px] text-gray-400 mt-0.5">${escapeHtml(msg)}</div>
+            </div>
+            <span class="text-[10px] text-gray-400 shrink-0 font-mono">${time}</span>
+        `;
+        return div;
+    }
+
+    async function toggleLogPanel() {
+        const panel = document.getElementById('logPanel');
+        logVisible = !logVisible;
+        if (logVisible) {
+            panel.classList.remove('hidden');
+            await loadLogs(true);
+        } else {
+            panel.classList.add('hidden');
+            if (window._logPollTimer) {
+                clearInterval(window._logPollTimer);
+                window._logPollTimer = null;
+            }
+        }
+    }
+
+    async function loadLogs(showLoader = true) {
+        const container = document.getElementById('logContainer');
+        const hasEntries = container.querySelector('[data-log-id]') !== null;
+        const isPlaceholder = container.children.length <= 1
+            && container.querySelector('.text-center') !== null;
+
+        if (showLoader && !hasEntries) {
+            container.innerHTML = '<div class="text-center py-4 text-gray-400"><i class="fa-solid fa-circle-notch fa-spin"></i></div>';
+        }
+
+        try {
+            const resp = await fetch('/api/subscribe/logs?limit=100');
+            const json = await resp.json();
+            const logs = json.data || [];
+
+            if (logs.length === 0) {
+                container.innerHTML = '<div class="text-center py-8 text-gray-400 text-sm">暂无活动记录</div>';
+                return;
+            }
+
+            // 增量更新：已有 DOM 不动，只追加新条目，保持 DOM 与 API 顺序一致
+            if (!showLoader && hasEntries) {
+                const existingMap = new Map();
+                Array.from(container.children).forEach(el => {
+                    if (el.dataset.logId) existingMap.set(el.dataset.logId, el);
+                });
+
+                let refNode = container.firstChild;
+                let newCount = 0;
+                for (let i = 0; i < logs.length; i++) {
+                    const log = logs[i];
+                    const logId = String(log.id || '');
+                    const existingEl = existingMap.get(logId);
+                    if (existingEl) {
+                        refNode = existingEl.nextSibling;
+                        existingMap.delete(logId);
+                        continue;
+                    }
+                    const el = _buildLogEntry(log);
+                    container.insertBefore(el, refNode);
+                    newCount++;
+                }
+
+                // 移除 API 中已消失的条目（存量 map 中剩下的）
+                for (const el of existingMap.values()) {
+                    el.remove();
+                }
+
+                // 限制最大 100 条
+                const allEntries = Array.from(container.querySelectorAll('[data-log-id]'));
+                if (allEntries.length > 100) {
+                    allEntries.slice(100).forEach(el => el.remove());
+                }
+
+                if (newCount > 0) {
+                    container.scrollTop = 0;
+                }
+                return;
+            }
+
+            // 首次加载 / 手动刷新：全量构建（用 innerHTML 保证兼容性）
+            container.innerHTML = logs.map(log => {
+                const time = _toShanghai(log.created_at || '');
+                const action = log.action || '';
+                const msg = log.message || '';
+                const itemName = log.item_name || '';
+                const ruleName = log.rule_name || '';
+
+                let icon = 'fa-solid fa-circle';
+                let color = 'text-gray-400';
+                if (action === 'download') { icon = 'fa-solid fa-download'; color = 'text-brand-500'; }
+                else if (action === 'transfer') { icon = 'fa-solid fa-cloud-arrow-up'; color = 'text-purple-500'; }
+                else if (action === 'no_match') { icon = 'fa-solid fa-magnifying-glass'; color = 'text-yellow-500'; }
+                else if (action === 'no_target') { icon = 'fa-solid fa-ban'; color = 'text-orange-500'; }
+                else if (action === 'error') { icon = 'fa-solid fa-circle-exclamation'; color = 'text-red-500'; }
+                else if (action === 'complete') { icon = 'fa-solid fa-check'; color = 'text-green-500'; }
+                else if (action === 'skip') { icon = 'fa-solid fa-forward-step'; color = 'text-gray-400'; }
+
+                return `
+                    <div class="flex items-start gap-3 py-2.5 border-b border-gray-50 dark:border-white/5 last:border-0" data-log-id="${escapeHtml(String(log.id || ''))}">
+                        <div class="w-6 h-6 rounded-full bg-gray-100 dark:bg-apple-hoverDark flex items-center justify-center shrink-0 mt-0.5">
+                            <i class="${icon} ${color} text-[11px]"></i>
+                        </div>
+                        <div class="flex-1 min-w-0">
+                            <div class="flex items-center gap-2">
+                                <span class="text-xs font-bold text-gray-700 dark:text-gray-200">${escapeHtml(ruleName)}</span>
+                                ${itemName ? `<span class="text-xs text-gray-500">·</span><span class="text-xs text-gray-500">${escapeHtml(itemName)}</span>` : ''}
+                            </div>
+                            <div class="text-[11px] text-gray-400 mt-0.5">${escapeHtml(msg)}</div>
+                        </div>
+                        <span class="text-[10px] text-gray-400 shrink-0 font-mono">${time}</span>
+                    </div>
+                `;
+            }).join('');
+        } catch(e) {
+            console.warn('[活动日志] 加载失败:', e);
+            if (container.querySelector('[data-log-id]') === null) {
+                container.innerHTML = '<div class="text-center py-8 text-red-400 text-sm">加载失败</div>';
+            }
+        }
+    }
+
+    // ─── 审核列表 ───
+
+    function toggleReviewCollapse() {
+        _reviewCollapsed = !_reviewCollapsed;
+        const container = document.getElementById('reviewContainer');
+        const chevron = document.getElementById('reviewChevron');
+        const hint = document.getElementById('reviewCollapsedHint');
+        if (_reviewCollapsed) {
+            container.classList.add('hidden');
+            chevron.style.transform = 'rotate(-90deg)';
+            hint.classList.remove('hidden');
+        } else {
+            container.classList.remove('hidden');
+            chevron.style.transform = 'rotate(0deg)';
+            hint.classList.add('hidden');
+        }
+    }
+
+    async function loadReviews() {
+        try {
+            const [listResp, cntResp] = await Promise.all([
+                fetch('/api/subscribe/reviews?status=pending'),
+                fetch('/api/subscribe/reviews/count')
+            ]);
+            const listJson = await listResp.json();
+            const cntJson = await cntResp.json();
+            const reviews = listJson.data || [];
+            const pendingCount = cntJson.data?.pending || 0;
+
+            const section = document.getElementById('reviewSection');
+            const container = document.getElementById('reviewContainer');
+            const badge = document.getElementById('reviewBadge');
+            const batchBtn = document.getElementById('batchApproveBtn');
+            const clearBtn = document.getElementById('clearReviewsBtn');
+
+            if (pendingCount === 0) {
+                section.classList.add('hidden');
+                return;
+            }
+
+            section.classList.remove('hidden');
+            badge.textContent = pendingCount;
+            batchBtn.classList[pendingCount > 1 ? 'remove' : 'add']('hidden');
+            clearBtn.classList.remove('hidden');
+
+             container.innerHTML = reviews.map(r => {
+                const cq = r.current_quality || {};
+                const sr = r.search_result || {};
+                const src = r.source || '';
+                const actionType = r.action_type || '';
+                const curRes = cq.resolution || '';
+                const curCodec = cq.video_codec || '';
+                const curScore = cq.quality_score || 0;
+                const curRange = cq.video_range || '';
+                const curSize = cq.size_bytes || 0;
+                const curPath = cq.path || '';
+                const curFileName = curPath.split('/').pop() || r.item_name || '';
+                const isMp = src === 'moviepilot';
+                const scoreColor = curScore <= 30 ? 'text-red-500' : curScore <= 50 ? 'text-yellow-500' : curScore <= 80 ? 'text-blue-500' : 'text-green-500';
+
+                // ── MP / HDHive 分别解析 ──
+                let newTitle = sr.title || r.item_name || '';
+                let newRes = '';
+                let newSizeLabel = '未知';
+                let newSubtitle = '';
+                let badgeList = [];
+
+                if (isMp) {
+                    // MP: resolution, size(number), site_name, video_encode
+                    newRes = sr.resolution || '';
+                    const mpSize = sr.size || 0;
+                    if (mpSize) {
+                        const gb = mpSize / 1073741824;
+                        newSizeLabel = gb >= 1 ? gb.toFixed(1) + ' GB' : (mpSize / 1048576).toFixed(0) + ' MB';
+                    }
+                    const mpSite = sr.site_name || '';
+                    if (mpSite) badgeList.push({cls: 'bg-gray-100 dark:bg-gray-800 text-gray-500 dark:text-gray-400', label: mpSite});
+                    const mpEncode = sr.video_encode || sr.video_codec || '';
+                    if (mpEncode) badgeList.push({rawHtml: badgeCodec(mpEncode)});
+                    const mpSeeders = sr.seeders;
+                    if (mpSeeders !== undefined && mpSeeders !== null && mpSeeders !== '') {
+                        badgeList.push({cls: 'bg-green-50 dark:bg-green-900/20 text-green-600 dark:text-green-400 font-bold', label: mpSeeders + ' 做种'});
+                    }
+                } else {
+                    // HDHive: video_resolution[], share_size(string), source[], remark, subtitle_language[], unlock_points
+                    const vr = sr.video_resolution || [];
+                    if (vr.length) newRes = vr[0].toLowerCase();
+                    newSizeLabel = sr.share_size || '未知';
+
+                    // remark → 副标题（影巢解锁简介）
+                    newSubtitle = sr.remark || '';
+
+                    // source[] → 来源标签
+                    const srcList = sr.source || [];
+                    if (srcList.length) {
+                        srcList.forEach(s => {
+                            badgeList.push({cls: 'bg-gray-100 dark:bg-gray-800 text-gray-500 dark:text-gray-400', label: s});
+                        });
+                    }
+                    // subtitle 标签
+                    const subLang = sr.subtitle_language || [];
+                    const subType = sr.subtitle_type || [];
+                    if (subLang.length) {
+                        let subLabel = subLang.join('+');
+                        if (subType.length) subLabel += ' · ' + subType.join('+');
+                        badgeList.push({cls: 'bg-blue-50 dark:bg-blue-900/20 text-blue-600 dark:text-blue-400', label: subLabel});
+                    }
+                    // unlock_points
+                    const pts = sr.unlock_points;
+                    if (pts !== undefined && pts !== null) {
+                        badgeList.push({cls: 'bg-amber-50 dark:bg-amber-900/20 text-amber-600 dark:text-amber-400 font-bold', label: pts + ' 积分'});
+                    }
+                    // 上传者
+                    const uploader = sr.user?.nickname || '';
+                    if (uploader) {
+                        badgeList.push({cls: 'bg-purple-50 dark:bg-purple-900/20 text-purple-600 dark:text-purple-400', label: uploader});
+                    }
+                }
+
+                // 公共辅助：字节→可读大小
+                function fmtSize(bytes) {
+                    if (!bytes) return '未知';
+                    const gb = bytes / 1073741824;
+                    return gb >= 1 ? gb.toFixed(1) + ' GB' : (bytes / 1048576).toFixed(0) + ' MB';
+                }
+
+                // 公共辅助：渲染徽章列表（统一 text-[11px] px-2 py-0.5 尺寸）
+                function renderBadges(list) {
+                    return list.map(b => {
+                        if (b.rawHtml) return b.rawHtml;
+                        return `<span class="inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-bold ${b.cls}">${escapeHtml(b.label)}</span>`;
+                    }).join('');
+                }
+
+                return `
+                    <div class="apple-card p-4 border-l-4 ${isMp ? 'border-l-blue-500' : 'border-l-purple-500'} review-card">
+                        <div class="flex flex-col gap-2">
+                            <!-- 标题行：电影名 + 分数 + 来源 + Emby链接 -->
+                            <div class="flex items-center justify-between">
+                                <div class="flex items-center gap-2 min-w-0">
+                                    <span class="font-bold text-sm text-gray-900 dark:text-white">${escapeHtml(r.item_name || '')}</span>
+                                    <span class="text-xs font-mono font-bold ${scoreColor}">${curScore}分</span>
+                                    <span class="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold ${isMp ? 'bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-300' : 'bg-purple-100 text-purple-700 dark:bg-purple-900/40 dark:text-purple-300'}">${isMp ? 'MP' : '影巢'}</span>
+                                    <a href="${embyBaseUrl}/web/index.html#!/item?id=${r.item_id}&serverId=${embyServerId}" target="_blank" rel="noopener" class="inline-flex items-center justify-center w-5 h-5 rounded-full text-gray-400 hover:text-brand-500 hover:bg-brand-50 dark:hover:bg-brand-900/20 transition-all" title="在 Emby 中打开">
+                                        <i class="fa-solid fa-external-link text-[10px]"></i>
+                                    </a>
+                                </div>
+                            </div>
+
+                            <!-- 左右对比区：移动端竖排，平板+横排 -->
+                            <div class="grid grid-cols-1 sm:grid-cols-2 gap-2 sm:gap-3 mt-1">
+                                <!-- 当前文件 -->
+                                <div class="bg-red-50/40 dark:bg-red-900/10 rounded-xl p-3 border border-red-100 dark:border-red-900/30">
+                                    <div class="text-[10px] font-bold text-red-500 uppercase tracking-wider mb-1.5">
+                                        <i class="fa-solid fa-folder-open mr-1"></i>当前
+                                    </div>
+                                    <div class="text-[11px] font-mono text-gray-800 dark:text-gray-200 break-all leading-relaxed">${escapeHtml(curFileName)}</div>
+                                    <div class="flex flex-wrap items-center gap-1.5 mt-1.5">
+                                        ${curRes ? badgeRes(curRes) : '<span class="text-[10px] text-gray-400">无分辨率</span>'}
+                                        ${curCodec ? badgeCodec(curCodec) : ''}
+                                        ${curRange ? `<span class="inline-flex items-center px-1.5 py-0.5 rounded text-[9px] font-bold bg-gray-100 dark:bg-gray-800 text-gray-500 dark:text-gray-400">${escapeHtml(curRange)}</span>` : ''}
+                                        <span class="text-[10px] text-gray-400">${fmtSize(curSize)}</span>
+                                    </div>
+                                </div>
+
+                                <!-- 目标文件 -->
+                                <div class="bg-emerald-50/40 dark:bg-emerald-900/10 rounded-xl p-3 border border-emerald-100 dark:border-emerald-900/30">
+                                    <div class="text-[10px] font-bold text-emerald-600 dark:text-emerald-400 uppercase tracking-wider mb-1.5">
+                                        <i class="fa-solid fa-arrow-down mr-1"></i>${isMp ? 'MP搜索' : '影巢资源'}
+                                    </div>
+                                    <div class="text-[11px] font-mono text-gray-800 dark:text-gray-200 break-all leading-relaxed">${escapeHtml(newTitle)}</div>
+                                    ${newSubtitle ? `<div class="text-[10px] text-gray-500 dark:text-gray-400 mt-0.5 leading-tight">${escapeHtml(newSubtitle)}</div>` : ''}
+                                    <div class="flex flex-wrap items-center gap-1.5 mt-1.5">
+                                        ${newRes ? badgeRes(newRes) : '<span class="text-[10px] text-gray-400">无分辨率</span>'}
+                                        ${badgeList.length ? renderBadges(badgeList) : ''}
+                                        <span class="text-[10px] text-gray-400">${newSizeLabel}</span>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <!-- 按钮区：移动端紧凑，桌面端宽松 -->
+                            <div class="flex items-center justify-end gap-1.5 sm:gap-2 mt-1">
+                                <button onclick="approveReview(${r.id})" class="px-3 sm:px-4 py-2 text-xs font-bold text-white bg-emerald-500 hover:bg-emerald-600 rounded-xl transition-all active:scale-95 shadow-sm flex items-center gap-1">
+                                    <i class="fa-solid fa-check"></i> <span class="hidden sm:inline">批准</span>
+                                </button>
+                                <button onclick="rejectReview(${r.id})" class="px-2 sm:px-3 py-2 text-xs font-bold text-gray-500 dark:text-gray-400 bg-gray-100 dark:bg-apple-hoverDark hover:bg-gray-200 dark:hover:bg-[#3A3A3C] rounded-xl transition-colors flex items-center gap-1" title="拒绝此次结果，下次跳过">
+                                    <i class="fa-solid fa-xmark"></i> <span class="hidden sm:inline">拒绝</span>
+                                </button>
+                                <button onclick="ignoreReview(${r.id})" class="px-2 sm:px-3 py-2 text-xs font-bold text-amber-600 dark:text-amber-400 bg-amber-50 dark:bg-amber-900/20 hover:bg-amber-100 dark:hover:bg-amber-900/30 rounded-xl transition-colors flex items-center gap-1" title="忽略，以后不再扫描">
+                                    <i class="fa-solid fa-ban"></i> <span class="hidden sm:inline">忽略</span>
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                `;
+            }).join('');
+        } catch(e) {
+            // 静默失败
+        }
+    }
+
+    async function approveReview(id) {
+        try {
+            const resp = await fetch(`/api/subscribe/reviews/${id}/approve`, { method: 'POST' });
+            const json = await resp.json();
+            if (json.status === 'success') {
+                showToast('success', '已批准并推送下载');
+                loadReviews();
+                loadLogs();
+            } else {
+                showToast('error', json.message || '执行失败');
+            }
+        } catch(e) {
+            showToast('error', '请求失败');
+        }
+    }
+
+    async function rejectReview(id) {
+        try {
+            const resp = await fetch(`/api/subscribe/reviews/${id}/reject`, { method: 'POST' });
+            const json = await resp.json();
+            if (json.status === 'success') {
+                showToast('info', '已拒绝，下次跳过此结果');
+                loadReviews();
+            }
+        } catch(e) {}
+    }
+
+    async function ignoreReview(id) {
+        try {
+            const resp = await fetch(`/api/subscribe/reviews/${id}/ignore`, { method: 'POST' });
+            const json = await resp.json();
+            if (json.status === 'success') {
+                showToast('info', '已忽略，后续不再扫描该媒体');
+                loadReviews();
+            } else {
+                showToast('error', json.message || '操作失败');
+            }
+        } catch(e) {
+            showToast('error', '请求失败');
+        }
+    }
+
+    async function clearReviews() {
+        const confirmed = await showConfirm({
+            title: '清空审核记录',
+            message: '确定要删除所有审核记录吗？此操作不可恢复。',
+            confirmText: '清空',
+            type: 'danger'
+        });
+        if (!confirmed) return;
+        try {
+            const resp = await fetch('/api/subscribe/reviews', { method: 'DELETE' });
+            const json = await resp.json();
+            if (json.status === 'success') {
+                showToast('success', json.message || '已清空');
+                loadReviews();
+                loadLogs();
+            } else {
+                showToast('error', json.message || '清空失败');
+            }
+        } catch(e) {
+            showToast('error', '请求失败');
+        }
+    }
+
+    async function deleteItemHistory(itemId, itemName) {
+        const confirmed = await showConfirm({
+            title: '删除历史记录',
+            message: `确定要删除「${escapeHtml(itemName || itemId)}」的所有历史记录吗？\n\n删除后下次运行规则时会重新搜索此条目。`,
+            confirmText: '删除',
+            type: 'warning'
+        });
+        if (!confirmed) return;
+        try {
+            const resp = await fetch(`/api/subscribe/history/${encodeURIComponent(itemId)}`, { method: 'DELETE' });
+            const json = await resp.json();
+            if (json.status === 'success') {
+                showToast('success', json.message || '已删除');
+                loadLogs();
+            } else {
+                showToast('error', json.message || '删除失败');
+            }
+        } catch(e) {
+            showToast('error', '请求失败');
+        }
+    }
+
+    async function batchApprove() {
+        const confirmed = await showConfirm({
+            type: 'info',
+            title: '批量批准',
+            message: '确定批准全部待审核项吗？将逐个推送下载/转存。',
+            confirmText: '全部批准'
+        });
+        if (!confirmed) return;
+        try {
+            const resp = await fetch('/api/subscribe/reviews/batch-approve', { method: 'POST' });
+            const json = await resp.json();
+            if (json.status === 'success') {
+                showToast('success', `批准完成: ${json.data.success} 成功, ${json.data.failed} 失败`);
+                loadReviews();
+                loadLogs();
+            } else {
+                showToast('error', json.message || '批量批准失败');
+            }
+        } catch(e) {
+            showToast('error', '请求失败');
+        }
+    }
+</script>
+{% endblock %}

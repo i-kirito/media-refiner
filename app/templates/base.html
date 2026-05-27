@@ -1,0 +1,603 @@
+<!DOCTYPE html>
+<html lang="zh-CN" class="antialiased">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>{% block title %}Media Refiner{% endblock %} - Media Refiner</title>
+    <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cdefs%3E%3ClinearGradient id='g' x1='0%25' y1='0%25' x2='100%25' y2='100%25'%3E%3Cstop offset='0%25' stop-color='%23007AFF'/%3E%3Cstop offset='100%25' stop-color='%234F46E5'/%3E%3C/linearGradient%3E%3C/defs%3E%3Crect x='2' y='2' width='20' height='20' rx='6' fill='url(%23g)'/%3E%3Cpath d='M7 17l.5-3.5L14 8l2 2-6.5 5.5L7 17zm6-10l2-2 2 2-2 2-2-2zM6 11l2-2 2 2-2 2-2-2z' fill='white' opacity='0.9'/%3E%3Cpath d='M16 14l-1 3 3-1 1-2-3 0z' fill='white' opacity='0.6'/%3E%3C/svg%3E">
+    <link rel="apple-touch-icon" sizes="180x180" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cdefs%3E%3ClinearGradient id='g' x1='0%25' y1='0%25' x2='100%25' y2='100%25'%3E%3Cstop offset='0%25' stop-color='%23007AFF'/%3E%3Cstop offset='100%25' stop-color='%234F46E5'/%3E%3C/linearGradient%3E%3C/defs%3E%3Crect x='2' y='2' width='20' height='20' rx='6' fill='url(%23g)'/%3E%3Cpath d='M7 17l.5-3.5L14 8l2 2-6.5 5.5L7 17zm6-10l2-2 2 2-2 2-2-2zM6 11l2-2 2 2-2 2-2-2z' fill='white' opacity='0.9'/%3E%3C/svg%3E">
+    <meta name="theme-color" content="#007AFF">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="apple-mobile-web-app-title" content="Media Refiner">
+
+    <link rel="preconnect" href="https://cdn.tailwindcss.com" crossorigin>
+    <link rel="preconnect" href="https://cdnjs.cloudflare.com" crossorigin>
+    <link rel="preconnect" href="https://cdn.jsdelivr.net" crossorigin>
+    <link rel="preconnect" href="https://fonts.googleapis.com" crossorigin>
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/sortablejs@1.15.0/Sortable.min.js"></script>
+
+    <script>
+        tailwind.config = {
+            darkMode: 'class',
+            theme: {
+                extend: {
+                    colors: {
+                        apple: { bgLight: '#F2F2F7', bgDark: '#000000', cardLight: '#FFFFFF', cardDark: '#1C1C1E', hoverDark: '#2C2C2E', borderLight: '#E5E5EA', borderDark: '#38383A' },
+                        brand: { 50: '#eff6ff', 500: '#007AFF', 600: '#0056b3' }
+                    }
+                }
+            }
+        }
+        if (localStorage.theme === 'dark' || (!('theme' in localStorage) && window.matchMedia('(prefers-color-scheme: dark)').matches)) {
+            document.documentElement.classList.add('dark')
+        } else {
+            document.documentElement.classList.remove('dark')
+        }
+    </script>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Noto+Sans+SC:wght@400;500;600;700;800;900&display=swap');
+        body { font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Helvetica Neue", "Noto Sans SC", sans-serif; }
+
+        .hide-scrollbar::-webkit-scrollbar { display: none; }
+        .hide-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
+
+        @media (min-width: 768px) {
+            .mac-scrollbar { scrollbar-width: thin; scrollbar-color: rgba(156, 163, 175, 0.4) transparent; }
+            .mac-scrollbar::-webkit-scrollbar { width: 5px; height: 5px; }
+            .mac-scrollbar::-webkit-scrollbar-track { background: transparent; }
+            .mac-scrollbar::-webkit-scrollbar-thumb { background-color: rgba(156, 163, 175, 0.4); border-radius: 10px; }
+            .mac-scrollbar::-webkit-scrollbar-thumb:hover { background-color: rgba(107, 114, 128, 0.8); }
+            html.dark .mac-scrollbar { scrollbar-color: rgba(255, 255, 255, 0.15) transparent; }
+            html.dark .mac-scrollbar::-webkit-scrollbar-thumb { background-color: rgba(255, 255, 255, 0.15); }
+            html.dark .mac-scrollbar::-webkit-scrollbar-thumb:hover { background-color: rgba(255, 255, 255, 0.3); }
+        }
+        @media (max-width: 767px) {
+            .mac-scrollbar::-webkit-scrollbar { display: none; }
+            .mac-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
+        }
+
+        #bottom-sheet { transition: transform 0.4s cubic-bezier(0.32, 0.72, 0, 1); }
+        .apple-blur { backdrop-filter: blur(24px) saturate(150%); -webkit-backdrop-filter: blur(24px) saturate(150%); }
+        .tap-highlight-none { -webkit-tap-highlight-color: transparent; }
+
+        .ep-checkbox {
+            appearance: none; background-color: transparent; margin: 0; color: currentColor;
+            width: 1.3em; height: 1.3em; border: 2px solid #9CA3AF; border-radius: 0.35em;
+            display: grid; place-content: center; transition: all 0.2s ease-in-out; cursor: pointer; flex-shrink: 0;
+        }
+        .ep-checkbox::before {
+            content: ""; width: 0.65em; height: 0.65em; transform: scale(0); transition: 120ms transform ease-in-out;
+            box-shadow: inset 1em 1em white; transform-origin: center; clip-path: polygon(14% 44%, 0 65%, 50% 100%, 100% 16%, 80% 0%, 43% 62%);
+        }
+        .ep-checkbox:checked { background-color: #007AFF; border-color: #007AFF; }
+        .ep-checkbox:checked::before { transform: scale(1); }
+        .ep-checkbox:disabled { opacity: 0.5; cursor: not-allowed; }
+    </style>
+    <link rel="stylesheet" href="/static/dashboard.css">
+    {% block head %}{% endblock %}
+</head>
+
+<body class="bg-apple-bgLight dark:bg-apple-bgDark text-gray-900 dark:text-gray-100 min-h-screen flex overflow-hidden transition-colors duration-300">
+
+    <!-- 全局 Toast & Confirm -->
+    <script>
+    function showToast(type, title, message) {
+        const toast = document.getElementById('global-toast');
+        if (!toast) { console.warn('Toast container not found'); return; }
+        const msg = title + (message ? ' - ' + message : '');
+        toast.textContent = msg;
+        toast.className = toast.className.replace(/bg-white.*?border-\w+-300 text-\w+-600/g, '');
+        toast.className = toast.className.replace(/bg-\w+-100/g, '');
+        if (type === 'success') {
+            toast.classList.add('bg-white/95', 'dark:bg-[#2C2C2E]/95', 'border-green-200', 'text-green-600', 'dark:border-white/10', 'dark:text-green-400');
+        } else if (type === 'error') {
+            toast.classList.add('bg-white/95', 'dark:bg-[#2C2C2E]/95', 'border-red-200', 'text-red-600', 'dark:border-white/10', 'dark:text-red-400');
+        } else if (type === 'warning') {
+            toast.classList.add('bg-white/95', 'dark:bg-[#2C2C2E]/95', 'border-amber-200', 'text-amber-600', 'dark:border-white/10', 'dark:text-amber-400');
+        } else {
+            toast.classList.add('bg-white/95', 'dark:bg-[#2C2C2E]/95', 'border-blue-200', 'text-blue-600', 'dark:border-white/10', 'dark:text-blue-400');
+        }
+        toast.classList.remove('-translate-y-20', 'opacity-0', 'pointer-events-none');
+        toast.classList.add('translate-y-0', 'opacity-100');
+        setTimeout(() => {
+            toast.classList.remove('translate-y-0', 'opacity-100');
+            toast.classList.add('-translate-y-20', 'opacity-0', 'pointer-events-none');
+        }, 3000);
+    }
+    let globalConfirmResolve = null;
+    function showConfirm(options) {
+        return new Promise((resolve) => {
+            globalConfirmResolve = resolve;
+            const container = document.getElementById('global-confirm-container');
+            if (!container) return resolve(false);
+            const icon = options.type === 'danger' ? 'fa-circle-exclamation' : 'fa-triangle-exclamation';
+            const btnClass = options.type === 'danger' ? 'bg-red-500 hover:bg-red-600' : 'bg-brand-500 hover:bg-brand-600';
+            container.innerHTML = `
+                <div class="fixed inset-0 bg-black/50 backdrop-blur-sm z-[300]" onclick="confirmCancel()"></div>
+                <div class="fixed top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 z-[301] bg-white dark:bg-[#1C1C1E] rounded-2xl shadow-2xl w-[90%] max-w-sm overflow-hidden">
+                    <div class="p-6 text-center">
+                        <div class="w-16 h-16 mx-auto mb-4 rounded-full ${options.type === 'danger' ? 'bg-red-100 dark:bg-red-500/20' : 'bg-amber-100 dark:bg-amber-500/20'} flex items-center justify-center">
+                            <i class="fa-solid ${icon} text-3xl ${options.type === 'danger' ? 'text-red-500' : 'text-amber-500'}"></i>
+                        </div>
+                        <h3 class="text-lg font-bold text-gray-900 dark:text-white mb-2">${options.title || '确认操作'}</h3>
+                        <p class="text-sm text-gray-500 dark:text-gray-400 whitespace-pre-line">${options.message || ''}</p>
+                    </div>
+                    <div class="flex border-t border-gray-100 dark:border-white/5">
+                        <button onclick="confirmCancel()" class="flex-1 py-3.5 text-sm font-medium text-gray-600 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-white/5 transition-colors">${options.cancelText || '取消'}</button>
+                        <button onclick="confirmOk()" class="flex-1 py-3.5 text-sm font-medium text-white ${btnClass} transition-colors">${options.confirmText || '确定'}</button>
+                    </div>
+                </div>
+            `;
+        });
+    }
+    function confirmOk() {
+        const container = document.getElementById('global-confirm-container');
+        if (container) container.innerHTML = '';
+        if (globalConfirmResolve) globalConfirmResolve(true);
+    }
+    function confirmCancel() {
+        const container = document.getElementById('global-confirm-container');
+        if (container) container.innerHTML = '';
+        if (globalConfirmResolve) globalConfirmResolve(false);
+    }
+    </script>
+
+    <!-- ===== 侧边栏 (Desktop) ===== -->
+    <aside class="w-[240px] h-screen sticky top-0 bg-apple-cardLight dark:bg-apple-cardDark border-r border-apple-borderLight dark:border-apple-borderDark hidden md:flex flex-col shrink-0 z-50 shadow-[4px_0_24px_rgba(0,0,0,0.02)] dark:shadow-none">
+
+        <div class="pt-8 pb-4 flex flex-col items-center gap-3 shrink-0">
+            <div class="w-14 h-14 rounded-2xl bg-gradient-to-br from-brand-500 to-indigo-600 flex items-center justify-center text-white shadow-lg shadow-brand-500/25 ring-2 ring-white/20 dark:ring-white/10">
+                <i class="fa-solid fa-tag text-2xl"></i>
+            </div>
+            <div class="flex flex-col items-center text-center">
+                <div class="flex items-end leading-none gap-0.5">
+                    <span class="font-black text-[20px] tracking-tight text-gray-900 dark:text-white leading-none">MEDIA</span>
+                    <span class="font-black text-[20px] tracking-tighter bg-clip-text text-transparent bg-gradient-to-r from-brand-500 to-indigo-500 italic leading-none ml-0.5">REFINER</span>
+                </div>
+                <div class="flex items-center gap-2 mt-1">
+                    <span class="inline-flex items-center gap-1 text-[9px] font-bold bg-gradient-to-r from-brand-500/10 to-indigo-500/10 dark:from-brand-500/15 dark:to-indigo-500/15 text-brand-600 dark:text-brand-400 px-2 py-0.5 rounded-full border border-brand-200/50 dark:border-brand-500/20 tracking-wide leading-none w-fit">
+                        v1.0 <span class="text-[6px] opacity-40">●</span> <span class="font-normal text-[7px] opacity-50">media-refiner</span>
+                    </span>
+                </div>
+            </div>
+        </div>
+
+        <div class="px-4 pb-4 shrink-0">
+            <button onclick="openGlobalSearch()" class="w-full flex items-center gap-3 px-3 py-2.5 bg-gray-100 hover:bg-gray-200 dark:bg-apple-hoverDark dark:hover:bg-[#3A3A3C] rounded-xl text-[14px] font-bold text-gray-500 dark:text-gray-400 transition-colors shadow-sm border border-gray-200/50 dark:border-white/5">
+                <i class="fa-solid fa-magnifying-glass"></i> <span class="flex-1 text-left">搜索影视名称...</span>
+                <kbd class="text-[10px] font-mono font-black bg-white dark:bg-black/50 px-1.5 py-0.5 rounded shadow-sm border border-gray-100 dark:border-white/5">Cmd+K</kbd>
+            </button>
+        </div>
+
+        <nav class="flex-1 overflow-y-auto mac-scrollbar px-3 pb-6 space-y-5">
+            <div>
+                <p class="px-3 text-[11px] font-black text-gray-400 dark:text-gray-500 mb-2 uppercase tracking-[0.1em] opacity-80">数据与分析</p>
+                <div class="space-y-1">
+                    <a href="/" class="nav-item flex items-center px-3 py-2 rounded-xl text-[14px] font-bold transition-colors {% if active_page == 'dashboard' %}bg-brand-50 dark:bg-apple-hoverDark text-brand-500{% else %}text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-apple-hoverDark/50{% endif %}"><i class="fa-solid fa-chart-line w-7 text-center text-[16px]"></i> 仪表盘</a>
+                    <a href="/items" class="nav-item flex items-center px-3 py-2 rounded-xl text-[14px] font-bold transition-colors {% if active_page == 'items' %}bg-brand-50 dark:bg-apple-hoverDark text-brand-500{% else %}text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-apple-hoverDark/50{% endif %}"><i class="fa-solid fa-microchip w-7 text-center text-[16px]"></i> 质量盘点</a>
+                    <a href="/plans" class="nav-item flex items-center px-3 py-2 rounded-xl text-[14px] font-bold transition-colors {% if active_page == 'plans' %}bg-brand-50 dark:bg-apple-hoverDark text-brand-500{% else %}text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-apple-hoverDark/50{% endif %}"><i class="fa-solid fa-bell w-7 text-center text-[16px]"></i> 订阅洗版</a>
+                    <a href="/history" class="nav-item flex items-center px-3 py-2 rounded-xl text-[14px] font-bold transition-colors {% if active_page == 'history' %}bg-brand-50 dark:bg-apple-hoverDark text-brand-500{% else %}text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-apple-hoverDark/50{% endif %}"><i class="fa-solid fa-clock-rotate-left w-7 text-center text-[16px]"></i> 历史记录</a>
+                </div>
+            </div>
+            <div>
+                <p class="px-3 text-[11px] font-black text-gray-400 dark:text-gray-500 mb-2 uppercase tracking-[0.1em] opacity-80">系统</p>
+                <div class="space-y-1">
+                    <a href="/config" class="nav-item flex items-center px-3 py-2 rounded-xl text-[14px] font-bold transition-colors {% if active_page == 'config' %}bg-brand-50 dark:bg-apple-hoverDark text-brand-500{% else %}text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-apple-hoverDark/50{% endif %}"><i class="fa-solid fa-gear w-7 text-center text-[16px]"></i> 系统配置</a>
+                </div>
+            </div>
+        </nav>
+
+        <div class="p-4 border-t border-gray-100 dark:border-white/5 shrink-0 bg-white/50 dark:bg-apple-cardDark/50 backdrop-blur-sm">
+            <div class="flex items-center gap-3 bg-gray-50 dark:bg-white/5 rounded-2xl p-3 border border-gray-100 dark:border-white/5">
+                <div class="w-11 h-11 rounded-full bg-brand-50 dark:bg-brand-500/20 flex items-center justify-center text-brand-500 shrink-0">
+                    <i class="fa-solid fa-server text-base"></i>
+                </div>
+                <div class="flex-1 min-w-0">
+                    <div class="text-[13px] font-bold text-gray-800 dark:text-white truncate">Media Refiner</div>
+                    <div class="text-[10px] text-gray-400">端口 10309</div>
+                </div>
+            </div>
+        </div>
+    </aside>
+
+    <!-- ===== 主内容区 ===== -->
+    <div class="flex-1 flex flex-col min-w-0 h-screen overflow-y-auto mac-scrollbar relative">
+        <header class="h-[72px] shrink-0 z-50 sticky top-0 relative">
+            <div class="absolute inset-0 bg-apple-cardLight/80 dark:bg-apple-cardDark/80 apple-blur border-b border-apple-borderLight/50 dark:border-apple-borderDark/50 z-0 pointer-events-none"></div>
+            <div class="relative z-10 flex items-center justify-between w-full h-full px-4 md:px-8">
+
+                <div class="flex items-center gap-1 md:hidden min-w-0 flex-1 overflow-hidden">
+                    <div class="w-7 h-7 rounded-lg bg-gradient-to-br from-brand-500 to-indigo-600 flex items-center justify-center text-white shrink-0">
+                        <i class="fa-solid fa-tag text-xs"></i>
+                    </div>
+                    <span class="font-black text-sm tracking-tight text-gray-900 dark:text-white shrink-0">MEDIA</span>
+                    <span class="font-black text-sm tracking-tighter bg-clip-text text-transparent bg-gradient-to-r from-brand-500 to-indigo-500 italic -ml-0.5 shrink-0">REFINER</span>
+                </div>
+
+                <div class="hidden md:block flex-1"></div>
+
+                <div class="flex items-center gap-1.5 sm:gap-2.5 relative">
+                    <button onclick="openLogViewer()" class="md:hidden w-10 h-10 rounded-full flex items-center justify-center text-gray-600 dark:text-gray-300">
+                        <i class="fa-solid fa-terminal text-lg"></i>
+                    </button>
+                    <button onclick="openLogViewer()" class="hidden md:flex w-10 h-10 rounded-full items-center justify-center text-gray-600 dark:text-gray-300 hover:bg-gray-200/50 dark:hover:bg-apple-hoverDark transition-colors" title="调试日志">
+                        <i class="fa-solid fa-terminal text-lg"></i>
+                    </button>
+
+                    <button onclick="toggleDarkMode()" id="darkModeBtn" class="w-10 h-10 rounded-full flex items-center justify-center text-gray-600 dark:text-gray-300 hover:bg-gray-200/50 dark:hover:bg-apple-hoverDark transition-colors" title="切换深浅色模式">
+                        <i class="fa-solid fa-moon text-lg" id="darkModeIcon"></i>
+                    </button>
+                </div>
+            </div>
+        </header>
+
+        <main class="flex-1 pb-24 md:pb-10 relative">
+            {% block content %}{% endblock %}
+        </main>
+    </div>
+
+    <!-- ===== 移动端底部导航 ===== -->
+    <div class="md:hidden fixed bottom-6 left-1/2 -translate-x-1/2 w-[92%] max-w-md z-50">
+        <div class="bg-white/80 dark:bg-[#2C2C2E]/80 apple-blur border border-white/40 dark:border-white/10 rounded-full shadow-[0_8px_30px_rgba(0,0,0,0.12)] px-1 py-1 flex justify-between items-center">
+            <a href="/" class="flex flex-col items-center justify-center flex-1 py-2 transition-colors active:scale-95 tap-highlight-none {% if active_page == 'dashboard' %}text-brand-500{% else %}text-gray-500 dark:text-gray-400{% endif %}"><i class="fa-solid fa-chart-line text-[18px] mb-0.5"></i><span class="text-[9px] font-medium leading-tight">数据</span></a>
+            <a href="/items" class="flex flex-col items-center justify-center flex-1 py-2 transition-colors active:scale-95 tap-highlight-none {% if active_page == 'items' %}text-brand-500{% else %}text-gray-500 dark:text-gray-400{% endif %}"><i class="fa-solid fa-microchip text-[18px] mb-0.5"></i><span class="text-[9px] font-medium leading-tight">质量</span></a>
+            <a href="/plans" class="flex flex-col items-center justify-center flex-1 py-2 transition-colors active:scale-95 tap-highlight-none {% if active_page == 'plans' %}text-brand-500{% else %}text-gray-500 dark:text-gray-400{% endif %}"><i class="fa-solid fa-bell text-[18px] mb-0.5"></i><span class="text-[9px] font-medium leading-tight">订阅</span></a>
+            <button onclick="toggleBottomSheet()" class="flex flex-col items-center justify-center flex-1 py-2 text-gray-500 dark:text-gray-400 transition-colors active:scale-95 tap-highlight-none"><i class="fa-solid fa-bars text-[18px] mb-0.5"></i><span class="text-[9px] font-medium leading-tight">菜单</span></button>
+        </div>
+    </div>
+
+    <!-- 底部导航 Sheet -->
+    <div id="bottom-sheet-overlay" onclick="toggleBottomSheet()" class="fixed inset-0 bg-black/40 z-[60] hidden backdrop-blur-sm transition-opacity opacity-0 md:hidden"></div>
+    <div id="bottom-sheet" class="fixed inset-x-0 bottom-0 z-[70] bg-apple-bgLight/80 dark:bg-apple-bgDark/80 apple-blur rounded-t-[32px] shadow-[0_-10px_40px_rgba(0,0,0,0.15)] transform translate-y-full transition-transform duration-400 ease-out border-t border-white/50 dark:border-white/10 md:hidden pb-10 flex flex-col max-h-[85vh]">
+        <div class="flex justify-center pt-4 pb-3 shrink-0"><div class="w-10 h-1.5 bg-gray-400/50 dark:bg-gray-600/50 rounded-full"></div></div>
+
+        <div class="px-5 py-2 overflow-y-auto mac-scrollbar space-y-3 flex-1" id="sheet-scroll-content">
+            <div class="bg-white/60 dark:bg-apple-cardDark/60 backdrop-blur-md rounded-2xl overflow-hidden shadow-sm border border-white/50 dark:border-white/5">
+                <a href="/" class="nav-item flex items-center justify-between p-3.5 active:bg-gray-50/50 dark:active:bg-apple-hoverDark/50 border-b border-gray-200/50 dark:border-white/5"><div class="flex items-center gap-3"><div class="w-7 h-7 rounded-[8px] bg-brand-500 text-white flex justify-center items-center"><i class="fa-solid fa-chart-line"></i></div><span class="text-[15px] font-medium">仪表盘</span></div><i class="fa-solid fa-chevron-right text-[12px] text-gray-400 dark:text-gray-500"></i></a>
+                <a href="/items" class="nav-item flex items-center justify-between p-3.5 active:bg-gray-50/50 dark:active:bg-apple-hoverDark/50 border-b border-gray-200/50 dark:border-white/5"><div class="flex items-center gap-3"><div class="w-7 h-7 rounded-[8px] bg-purple-500 text-white flex justify-center items-center"><i class="fa-solid fa-microchip"></i></div><span class="text-[15px] font-medium">质量盘点</span></div><i class="fa-solid fa-chevron-right text-[12px] text-gray-400 dark:text-gray-500"></i></a>
+                <a href="/plans" class="nav-item flex items-center justify-between p-3.5 active:bg-gray-50/50 dark:active:bg-apple-hoverDark/50 border-b border-gray-200/50 dark:border-white/5"><div class="flex items-center gap-3"><div class="w-7 h-7 rounded-[8px] bg-emerald-500 text-white flex justify-center items-center"><i class="fa-solid fa-bell"></i></div><span class="text-[15px] font-medium">订阅洗版</span></div><i class="fa-solid fa-chevron-right text-[12px] text-gray-400 dark:text-gray-500"></i></a>
+            </div>
+            <div class="bg-white/60 dark:bg-apple-cardDark/60 backdrop-blur-md rounded-2xl overflow-hidden shadow-sm border border-white/50 dark:border-white/5">
+                <a href="/history" class="nav-item flex items-center justify-between p-3.5 active:bg-gray-50/50 dark:active:bg-apple-hoverDark/50 border-b border-gray-200/50 dark:border-white/5"><div class="flex items-center gap-3"><div class="w-7 h-7 rounded-[8px] bg-gray-500 text-white flex justify-center items-center"><i class="fa-solid fa-clock-rotate-left"></i></div><span class="text-[15px] font-medium">历史记录</span></div><i class="fa-solid fa-chevron-right text-[12px] text-gray-400 dark:text-gray-500"></i></a>
+                <a href="/config" class="nav-item flex items-center justify-between p-3.5 active:bg-gray-50/50 dark:active:bg-apple-hoverDark/50"><div class="flex items-center gap-3"><div class="w-7 h-7 rounded-[8px] bg-gray-700 text-white flex justify-center items-center"><i class="fa-solid fa-gear"></i></div><span class="text-[15px] font-medium">系统配置</span></div><i class="fa-solid fa-chevron-right text-[12px] text-gray-400 dark:text-gray-500"></i></a>
+            </div>
+        </div>
+    </div>
+
+    <!-- 搜索模态框 -->
+    <div id="global-search-modal" class="fixed inset-0 z-[100] hidden opacity-0 transition-opacity duration-200">
+        <div class="absolute inset-0 bg-black/40 backdrop-blur-sm" onclick="closeGlobalSearch()"></div>
+        <div class="absolute top-[8%] left-1/2 -translate-x-1/2 w-[90%] max-w-2xl bg-white dark:bg-[#1C1C1E] rounded-[24px] shadow-2xl border border-gray-200 dark:border-white/5 overflow-hidden flex flex-col transform scale-95 transition-transform duration-200" id="gs-container">
+            <div class="relative border-b border-gray-100 dark:border-white/5 bg-gray-50/50 dark:bg-black/10">
+                <i class="fa-solid fa-magnifying-glass absolute left-6 top-1/2 -translate-y-1/2 text-gray-400 text-xl"></i>
+                <input type="text" id="gs-input" autocomplete="off" class="w-full bg-transparent border-none pl-14 pr-24 py-5 text-[17px] font-medium focus:ring-0 placeholder-gray-400 outline-none" placeholder="搜索影视名称...">
+                <div class="absolute right-4 top-1/2 -translate-y-1/2 flex items-center gap-3">
+                    <span id="gs-loading" class="hidden animate-spin w-5 h-5 border-2 border-brand-500 border-t-transparent rounded-full"></span>
+                    <button onclick="closeGlobalSearch()" class="px-2 py-1 text-[11px] font-mono font-medium bg-gray-200/50 dark:bg-white/10 text-gray-500 dark:text-gray-300 rounded border border-gray-200 dark:border-white/5 hover:bg-gray-200 transition hidden sm:inline-block">ESC</button>
+                </div>
+            </div>
+            <div id="gs-results" class="max-h-[60vh] overflow-y-auto mac-scrollbar p-3">
+                <div class="text-center py-16 text-gray-400" id="gs-empty"><i class="fa-solid fa-clapperboard text-5xl mb-4 opacity-20"></i><p class="text-[15px] font-medium">输入关键词搜索媒体</p></div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 日志查看器 -->
+    <div id="log-viewer-modal" class="fixed inset-0 z-[100] hidden opacity-0 transition-opacity duration-200">
+        <div class="absolute inset-0 bg-black/40 backdrop-blur-sm" onclick="closeLogViewer()"></div>
+        <div class="absolute top-[6%] left-1/2 -translate-x-1/2 w-[92%] max-w-4xl bg-white dark:bg-[#1C1C1E] rounded-[24px] shadow-2xl border border-gray-200 dark:border-white/5 overflow-hidden flex flex-col transform scale-95 transition-transform duration-200 max-h-[88vh]" id="lv-container">
+            <div class="px-5 py-4 border-b border-gray-100 dark:border-white/5 flex items-center justify-between bg-gray-50/50 dark:bg-black/10 shrink-0">
+                <h3 class="font-bold text-[16px] flex items-center gap-2"><i class="fa-solid fa-terminal text-emerald-500"></i> 调试日志</h3>
+                <div class="flex items-center gap-2">
+                    <select id="lv-level" class="text-[11px] px-2 py-1.5 rounded-lg bg-gray-100 dark:bg-apple-hoverDark border border-gray-200 dark:border-white/5 text-gray-600 dark:text-gray-300 font-medium focus:ring-2 focus:ring-brand-500 outline-none" onchange="refreshLogs()">
+                        <option value="ALL">全部级别</option>
+                        <option value="DEBUG">DEBUG</option>
+                        <option value="INFO">INFO</option>
+                        <option value="WARNING">WARNING</option>
+                        <option value="ERROR">ERROR</option>
+                    </select>
+                    <button onclick="clearLogs()" class="px-3 py-1.5 text-[11px] font-bold text-gray-500 dark:text-gray-400 bg-gray-100 dark:bg-apple-hoverDark hover:bg-gray-200 dark:hover:bg-[#3A3A3C] rounded-lg transition-colors border border-gray-200 dark:border-white/5"><i class="fa-solid fa-eraser mr-1"></i>清空</button>
+                    <button onclick="closeLogViewer()" class="text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 transition-colors w-8 h-8 rounded-full flex justify-center items-center bg-gray-100 dark:bg-white/5"><i class="fa-solid fa-xmark"></i></button>
+                </div>
+            </div>
+            <div id="lv-body" class="flex-1 overflow-y-auto mac-scrollbar p-4 font-mono text-[12px] leading-relaxed space-y-0.5 bg-[#0d1117] text-[#c9d1d9]" style="background:#0d1117;">
+                <div class="text-center py-16 text-gray-500"><i class="fa-solid fa-spinner fa-spin text-2xl mb-3"></i><br>加载日志...</div>
+            </div>
+            <div class="px-4 py-2 border-t border-gray-100 dark:border-white/5 bg-gray-50/50 dark:bg-black/10 shrink-0 flex items-center justify-between text-[10px] text-gray-400">
+                <span><i class="fa-regular fa-circle-check mr-1 text-green-500"></i> 实时日志 (最近500条)</span>
+                <button id="lv-autorefresh" onclick="toggleLogAutoRefresh()" class="flex items-center gap-1 px-3 py-1 rounded-lg bg-brand-500/10 text-brand-500 font-bold hover:bg-brand-500/20 transition-colors"><i class="fa-solid fa-play"></i> 自动刷新</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- 居中胶囊 Toast -->
+    <div id="global-toast" class="fixed top-10 left-1/2 -translate-x-1/2 z-[200] px-6 py-3 rounded-full shadow-xl border backdrop-blur-2xl flex items-center gap-2 font-bold transition-all duration-400 transform -translate-y-20 opacity-0 pointer-events-none text-[13px]"></div>
+    <!-- Confirm 确认框容器 -->
+    <div id="global-confirm-container"></div>
+
+    <!-- 升级计划详情/操作模态框（各页面共用） -->
+    <div id="universal-modal" class="fixed inset-0 z-[110] hidden opacity-0 transition-opacity duration-200">
+        <div class="absolute inset-0 bg-black/50 backdrop-blur-sm" onclick="closeUniversalModal()"></div>
+        <div class="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[95%] max-w-2xl bg-white dark:bg-apple-cardDark rounded-[24px] shadow-2xl border border-gray-200 dark:border-white/5 overflow-hidden flex flex-col transform scale-95 transition-transform duration-200 max-h-[90vh]" id="um-container">
+            <div id="um-header" class="px-5 py-4 border-b border-gray-100 dark:border-white/5 flex justify-between items-center bg-gray-50/50 dark:bg-black/10 shrink-0">
+                <h3 id="um-title" class="font-bold text-[16px] flex items-center gap-2"></h3>
+                <button onclick="closeUniversalModal()" class="text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 transition-colors w-8 h-8 rounded-full flex justify-center items-center bg-gray-100 dark:bg-white/5"><i class="fa-solid fa-xmark"></i></button>
+            </div>
+            <div id="um-body" class="p-5 overflow-y-auto mac-scrollbar flex-1"></div>
+            <div id="um-footer" class="px-5 py-4 border-t border-gray-100 dark:border-white/5 bg-gray-50/50 dark:bg-black/10 shrink-0 flex justify-end gap-2 hidden">
+            </div>
+        </div>
+    </div>
+
+    {% block modals %}{% endblock %}
+
+    <script src="/static/dashboard.js"></script>
+    {% block scripts %}{% endblock %}
+
+    <script>
+    // ========== 全局交互 ==========
+    function toggleBottomSheet() {
+        const sheet = document.getElementById('bottom-sheet');
+        const overlay = document.getElementById('bottom-sheet-overlay');
+        if (sheet.classList.contains('translate-y-full')) {
+            overlay.classList.remove('hidden');
+            void overlay.offsetWidth;
+            overlay.classList.remove('opacity-0');
+            sheet.classList.remove('translate-y-full');
+        } else {
+            overlay.classList.add('opacity-0');
+            sheet.classList.add('translate-y-full');
+            setTimeout(() => overlay.classList.add('hidden'), 400);
+        }
+    }
+
+    document.addEventListener('DOMContentLoaded', initDarkMode);
+
+    // ========== 深色模式切换 ==========
+    function toggleDarkMode() {
+        const html = document.documentElement;
+        const isDark = html.classList.toggle('dark');
+        localStorage.setItem('theme', isDark ? 'dark' : 'light');
+        const icon = document.getElementById('darkModeIcon');
+        if (icon) {
+            icon.className = isDark ? 'fa-solid fa-sun text-lg text-yellow-400' : 'fa-solid fa-moon text-lg';
+        }
+    }
+
+    function initDarkMode() {
+        const saved = localStorage.getItem('theme');
+        const html = document.documentElement;
+        if (saved === 'dark') {
+            html.classList.add('dark');
+        } else if (saved === 'light') {
+            html.classList.remove('dark');
+        } else {
+            // 默认跟随系统
+            if (window.matchMedia('(prefers-color-scheme: dark)').matches) {
+                html.classList.add('dark');
+            }
+        }
+        // 更新图标
+        const icon = document.getElementById('darkModeIcon');
+        if (icon) {
+            const isDark = html.classList.contains('dark');
+            icon.className = isDark ? 'fa-solid fa-sun text-lg text-yellow-400' : 'fa-solid fa-moon text-lg';
+        }
+    }
+
+    // ========== 全局搜索 ==========
+    const gsModal = document.getElementById('global-search-modal');
+    const gsContainer = document.getElementById('gs-container');
+    const gsInput = document.getElementById('gs-input');
+    const gsResults = document.getElementById('gs-results');
+    const gsLoading = document.getElementById('gs-loading');
+    let gsTimeout = null;
+
+    function openGlobalSearch() {
+        gsModal.classList.remove('hidden');
+        void gsModal.offsetWidth;
+        gsModal.classList.remove('opacity-0');
+        gsContainer.classList.remove('scale-95');
+        gsInput.value = '';
+        gsResults.innerHTML = '<div class="text-center py-16 text-gray-400"><i class="fa-solid fa-clapperboard text-5xl mb-4 opacity-20"></i><p class="text-[15px] font-medium">输入关键词搜索媒体</p></div>';
+        setTimeout(() => gsInput.focus(), 100);
+    }
+    function closeGlobalSearch() {
+        gsModal.classList.add('opacity-0');
+        gsContainer.classList.add('scale-95');
+        setTimeout(() => { gsModal.classList.add('hidden'); gsInput.blur(); }, 200);
+    }
+    document.addEventListener('keydown', (e) => {
+        if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'k') { e.preventDefault(); openGlobalSearch(); }
+        if (e.key === 'Escape' && !gsModal.classList.contains('hidden')) { closeGlobalSearch(); }
+    });
+    gsInput.addEventListener('input', (e) => {
+        clearTimeout(gsTimeout);
+        const query = e.target.value.trim();
+        if (!query) {
+            gsResults.innerHTML = '<div class="text-center py-16 text-gray-400"><i class="fa-solid fa-clapperboard text-5xl mb-4 opacity-20"></i><p class="text-[15px] font-medium">输入关键词搜索媒体</p></div>';
+            return;
+        }
+        gsLoading.classList.remove('hidden');
+        gsTimeout = setTimeout(async () => {
+            try {
+                const res = await fetch(`/api/scan/items?min_score=0&max_score=100&page_size=20&sort_order=desc`);
+                const json = await res.json();
+                const items = (json.data?.items || []).filter(i => i.name.toLowerCase().includes(query.toLowerCase()));
+                if (items.length === 0) {
+                    gsResults.innerHTML = '<div class="text-center py-12 text-gray-400"><i class="fa-solid fa-face-frown text-4xl mb-3 opacity-30"></i><p class="text-[14px] font-medium">未找到匹配的媒体</p></div>';
+                } else {
+                    gsResults.innerHTML = `<div class="text-xs text-gray-500 mb-2 font-medium">找到 ${items.length} 个结果</div>
+                        <div class="space-y-1">${items.map(item => {
+                            const score = item.quality_score || 0;
+                            const scoreColor = score <= 30 ? 'text-red-500' : score <= 50 ? 'text-yellow-500' : score <= 80 ? 'text-blue-500' : 'text-green-500';
+                            return `<div onclick="closeGlobalSearch();location.href='/items?search=${encodeURIComponent(item.name)}'" class="flex items-center justify-between p-3 hover:bg-gray-50 dark:hover:bg-white/5 rounded-xl transition-colors cursor-pointer group">
+                                <div class="flex-1 min-w-0">
+                                    <div class="text-[14px] font-medium truncate group-hover:text-brand-500">${item.name}${item.year ? ' <span class="text-gray-400 text-xs">('+item.year+')</span>' : ''}</div>
+                                    <div class="text-[11px] text-gray-500 mt-0.5">${item.resolution || '?'} · ${item.video_codec || '?'} · ${item.video_range || '?'}</div>
+                                </div>
+                                <span class="font-mono font-bold text-sm ${scoreColor} ml-3">${score}</span>
+                            </div>`;
+                        }).join('')}</div>`;
+                }
+            } catch(err) {
+                gsResults.innerHTML = '<div class="text-center py-12 text-red-500">搜索失败</div>';
+            }
+            gsLoading.classList.add('hidden');
+        }, 300);
+    });
+
+    // ========== 通用 Modal ==========
+    function openUniversalModal(title, bodyHtml, footerHtml) {
+        document.getElementById('um-title').innerHTML = title;
+        document.getElementById('um-body').innerHTML = bodyHtml;
+        const footer = document.getElementById('um-footer');
+        if (footerHtml) {
+            footer.innerHTML = footerHtml;
+            footer.classList.remove('hidden');
+        } else {
+            footer.classList.add('hidden');
+        }
+        const modal = document.getElementById('universal-modal');
+        modal.classList.remove('hidden');
+        void modal.offsetWidth;
+        modal.classList.remove('opacity-0');
+        document.getElementById('um-container').classList.remove('scale-95');
+    }
+    function closeUniversalModal() {
+        const modal = document.getElementById('universal-modal');
+        modal.classList.add('opacity-0');
+        document.getElementById('um-container').classList.add('scale-95');
+        setTimeout(() => modal.classList.add('hidden'), 200);
+    }
+    document.getElementById('universal-modal')?.addEventListener('click', function(e) {
+        if (e.target === this) closeUniversalModal();
+    });
+
+    // ========== 工具函数 ==========
+    function formatBytes(bytes) {
+        if (!bytes || bytes === 0) return '未知';
+        const units = ['B', 'KB', 'MB', 'GB', 'TB'];
+        let i = 0;
+        let size = bytes;
+        while (size >= 1024 && i < units.length - 1) { size /= 1024; i++; }
+        return size.toFixed(i > 0 ? 1 : 0) + ' ' + units[i];
+    }
+
+    function escapeHtml(text) {
+        if (!text) return '';
+        const div = document.createElement('div');
+        div.textContent = text;
+        return div.innerHTML;
+    }
+
+    function getQualityColor(score) {
+        if (score <= 30) return 'text-red-500';
+        if (score <= 50) return 'text-yellow-500';
+        if (score <= 80) return 'text-blue-500';
+        return 'text-green-500';
+    }
+
+    function badgeRes(resolution) {
+        const h = parseInt((resolution || '').split('x')[1] || '0');
+        if (h >= 2160) return '<span class="inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-bold bg-purple-100 text-purple-700 dark:bg-purple-900/40 dark:text-purple-300">4K</span>';
+        if (h >= 1080) return '<span class="inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-bold bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-300">1080p</span>';
+        if (h >= 720) return '<span class="inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-bold bg-teal-100 text-teal-700 dark:bg-teal-900/40 dark:text-teal-300">720p</span>';
+        if (!resolution || resolution === '0x0') return '';
+        return '<span class="inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-bold bg-gray-200 text-gray-600 dark:bg-gray-700 dark:text-gray-300">' + escapeHtml(resolution) + '</span>';
+    }
+
+    function badgeCodec(codec) {
+        const c = (codec || '').toLowerCase();
+        if (c.includes('hevc') || c.includes('h265') || c.includes('x265')) return '<span class="inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-bold bg-green-100 text-green-700 dark:bg-green-900/40 dark:text-green-300">HEVC</span>';
+        if (c.includes('h264') || c.includes('x264')) return '<span class="inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-bold bg-orange-100 text-orange-700 dark:bg-orange-900/40 dark:text-orange-300">H.264</span>';
+        if (!codec) return '';
+        return '<span class="inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-bold bg-gray-200 text-gray-600 dark:bg-gray-700 dark:text-gray-300">' + escapeHtml(codec) + '</span>';
+    }
+
+    function badgeHdr(range) {
+        const r = (range || '').toLowerCase();
+        if (r.includes('dolby')) return '<span class="inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-bold bg-indigo-100 text-indigo-700 dark:bg-indigo-900/40 dark:text-indigo-300">DV</span>';
+        if (r.includes('hdr')) return '<span class="inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-bold bg-teal-100 text-teal-700 dark:bg-teal-900/40 dark:text-teal-300">HDR</span>';
+        return '<span class="inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-bold bg-gray-200 text-gray-600 dark:bg-gray-700 dark:text-gray-300">SDR</span>';
+    }
+
+    // ========== 日志查看器 ==========
+    let lvAutoRefresh = false;
+    let lvTimer = null;
+
+    function openLogViewer() {
+        const modal = document.getElementById('log-viewer-modal');
+        modal.classList.remove('hidden');
+        void modal.offsetWidth;
+        modal.classList.remove('opacity-0');
+        document.getElementById('lv-container').classList.remove('scale-95');
+        refreshLogs();
+    }
+
+    function closeLogViewer() {
+        const modal = document.getElementById('log-viewer-modal');
+        modal.classList.add('opacity-0');
+        document.getElementById('lv-container').classList.add('scale-95');
+        setTimeout(() => modal.classList.add('hidden'), 200);
+        if (lvTimer) { clearInterval(lvTimer); lvTimer = null; }
+        lvAutoRefresh = false;
+    }
+
+    async function refreshLogs() {
+        const level = document.getElementById('lv-level').value;
+        const body = document.getElementById('lv-body');
+        try {
+            const resp = await fetch(`/api/logs?level=${level}&limit=300`);
+            const json = await resp.json();
+            if (json.status !== 'success') throw new Error(json.message);
+            const logs = json.data || [];
+            if (logs.length === 0) {
+                body.innerHTML = '<div class="text-center py-16 text-gray-500"><i class="fa-solid fa-inbox text-3xl mb-3 opacity-30"></i><br>暂无日志</div>';
+                return;
+            }
+            body.innerHTML = logs.map(l => {
+                const levelClass = l.level === 'ERROR' ? 'text-red-400' : l.level === 'WARNING' ? 'text-yellow-400' : l.level === 'INFO' ? 'text-blue-400' : 'text-gray-400';
+                const timeClass = 'text-gray-500';
+                const mod = l.module || '';
+                return `<div class="flex items-start gap-2 hover:bg-white/5 rounded px-2 py-0.5 transition-colors text-[11px] leading-relaxed"><span class="${timeClass} shrink-0 w-14 font-mono">${l.time}</span><span class="${levelClass} shrink-0 w-[4.5rem] font-bold font-mono">[${l.level}]</span>${mod ? `<span class="text-gray-600 shrink-0 font-mono max-w-[9rem] truncate" title="${escapeHtml(mod)}">${escapeHtml(mod)}</span>` : ''}<span class="text-gray-300 break-all">${escapeHtml(l.msg)}</span></div>`;
+            }).join('');
+            body.scrollTop = body.scrollHeight;
+        } catch(e) {
+            body.innerHTML = `<div class="text-center py-16 text-red-400">加载失败: ${escapeHtml(e.message)}</div>`;
+        }
+    }
+
+    function toggleLogAutoRefresh() {
+        const btn = document.getElementById('lv-autorefresh');
+        lvAutoRefresh = !lvAutoRefresh;
+        if (lvAutoRefresh) {
+            btn.innerHTML = '<i class="fa-solid fa-pause"></i> 暂停';
+            btn.classList.remove('bg-brand-500/10', 'text-brand-500');
+            btn.classList.add('bg-green-500/10', 'text-green-500');
+            lvTimer = setInterval(refreshLogs, 3000);
+        } else {
+            btn.innerHTML = '<i class="fa-solid fa-play"></i> 自动刷新';
+            btn.classList.remove('bg-green-500/10', 'text-green-500');
+            btn.classList.add('bg-brand-500/10', 'text-brand-500');
+            if (lvTimer) { clearInterval(lvTimer); lvTimer = null; }
+        }
+    }
+
+    async function clearLogs() {
+        try {
+            await fetch('/api/logs/clear', { method: 'POST' });
+            document.getElementById('lv-body').innerHTML = '<div class="text-center py-16 text-gray-500"><i class="fa-solid fa-inbox text-3xl mb-3 opacity-30"></i><br>日志已清空</div>';
+        } catch(e) {
+            showToast('error', '清空失败');
+        }
+    }
+    </script>
+</body>
+</html>

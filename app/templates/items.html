@@ -1,0 +1,767 @@
+{% extends "base.html" %}
+{% block title %}质量盘点{% endblock %}
+{% block head %}
+<style>
+    .quality-score { font-variant-numeric: tabular-nums; }
+    .tag-filter {
+        padding: 4px 12px;
+        border-radius: 999px;
+        font-size: 12px;
+        font-weight: 600;
+        border: 1.5px solid transparent;
+        transition: all 0.15s ease;
+        cursor: pointer;
+        background: rgba(0,0,0,0.04);
+        color: #6b7280;
+        white-space: nowrap;
+    }
+    .dark .tag-filter {
+        background: rgba(255,255,255,0.04);
+        color: #9ca3af;
+    }
+    .tag-filter:hover {
+        background: rgba(0,0,0,0.08);
+        color: #374151;
+    }
+    .dark .tag-filter:hover {
+        background: rgba(255,255,255,0.08);
+        color: #e5e7eb;
+    }
+    .tag-filter.active {
+        background: #6366f1;
+        color: white;
+        border-color: #6366f1;
+        box-shadow: 0 2px 8px rgba(99,102,241,0.25);
+    }
+    .dark .tag-filter.active {
+        background: #818cf8;
+        border-color: #818cf8;
+        color: #fff;
+    }
+</style>
+{% endblock %}
+{% block content %}
+<div class="max-w-7xl mx-auto w-full px-4 md:px-8 py-6 pb-24 relative">
+
+    <!-- 标题 + 操作 -->
+    <div class="flex flex-col md:flex-row justify-between items-center mb-6 gap-4 bg-white dark:bg-gray-800 p-4 rounded-2xl shadow-sm border border-gray-100 dark:border-gray-700">
+        <div class="flex items-center gap-3">
+            <div class="w-12 h-12 bg-purple-50 dark:bg-purple-900/30 rounded-xl flex items-center justify-center border border-purple-100 dark:border-purple-800">
+                <i class="fa-solid fa-microchip text-purple-500 text-xl"></i>
+            </div>
+            <div>
+                <h1 class="text-xl font-black text-gray-900 dark:text-white">质量盘点</h1>
+                <p class="text-xs text-gray-500 mt-0.5">浏览媒体质量，发起洗版升级</p>
+            </div>
+        </div>
+        <div class="flex items-center gap-3">
+            <button id="btnReScan" onclick="ScanManager.start()" class="px-4 py-2 text-sm font-bold text-white bg-brand-500 hover:bg-brand-600 rounded-xl shadow-md transition active:scale-95 flex items-center gap-2">
+                <i class="fa-solid fa-rotate"></i> 重新扫描
+            </button>
+        </div>
+    </div>
+
+    <!-- 扫描进度 -->
+    <div id="scan-progress" class="hidden apple-card mb-6 p-5"></div>
+
+    <!-- 筛选栏: 分辨率 / 编码 / HDR -->
+    <div class="apple-card p-4 mb-6 space-y-3">
+        <div class="flex flex-wrap items-center gap-2">
+            <span class="text-[11px] font-black text-gray-400 w-[52px] shrink-0">分辨率</span>
+            <div class="flex items-center gap-1 flex-wrap">
+                <button class="tag-filter active" data-group="resolution" data-value="" onclick="setTagFilter(this)">全部</button>
+                <button class="tag-filter" data-group="resolution" data-value="4k" onclick="setTagFilter(this)">4K</button>
+                <button class="tag-filter" data-group="resolution" data-value="1080" onclick="setTagFilter(this)">1080p</button>
+                <button class="tag-filter" data-group="resolution" data-value="720" onclick="setTagFilter(this)">720p</button>
+                <button class="tag-filter" data-group="resolution" data-value="other" onclick="setTagFilter(this)">其他</button>
+            </div>
+        </div>
+        <div class="flex flex-wrap items-center gap-2">
+            <span class="text-[11px] font-black text-gray-400 w-[52px] shrink-0">编码</span>
+            <div class="flex items-center gap-1 flex-wrap">
+                <button class="tag-filter active" data-group="codec" data-value="" onclick="setTagFilter(this)">全部</button>
+                <button class="tag-filter" data-group="codec" data-value="hevc" onclick="setTagFilter(this)">HEVC</button>
+                <button class="tag-filter" data-group="codec" data-value="avc" onclick="setTagFilter(this)">H.264</button>
+                <button class="tag-filter" data-group="codec" data-value="av1" onclick="setTagFilter(this)">AV1</button>
+            </div>
+        </div>
+        <div class="flex flex-wrap items-center gap-2">
+            <span class="text-[11px] font-black text-gray-400 w-[52px] shrink-0">HDR</span>
+            <div class="flex items-center gap-1 flex-wrap">
+                <button class="tag-filter active" data-group="hdr" data-value="" onclick="setTagFilter(this)">全部</button>
+                <button class="tag-filter" data-group="hdr" data-value="sdr" onclick="setTagFilter(this)">SDR</button>
+                <button class="tag-filter" data-group="hdr" data-value="hdr" onclick="setTagFilter(this)">HDR</button>
+                <button class="tag-filter" data-group="hdr" data-value="dolby_vision" onclick="setTagFilter(this)">Dolby Vision</button>
+                <button class="tag-filter" data-group="hdr" data-value="hdr10" onclick="setTagFilter(this)">HDR10</button>
+            </div>
+            <div class="flex items-center gap-2 ml-auto">
+                <label class="text-xs font-bold text-gray-500">排序</label>
+                <select id="sortOrder" class="text-sm px-3 py-2 rounded-xl bg-gray-100 dark:bg-apple-hoverDark border border-gray-200 dark:border-white/5 text-gray-700 dark:text-gray-300 font-medium focus:ring-2 focus:ring-brand-500 outline-none" onchange="loadItems()">
+                    <option value="asc">评分 ↑ 低→高</option>
+                    <option value="desc">评分 ↓ 高→低</option>
+                </select>
+            </div>
+        </div>
+        <div class="flex flex-wrap items-center gap-2">
+            <span class="text-[11px] font-black text-gray-400 w-[52px] shrink-0">标记</span>
+            <div class="flex items-center gap-1 flex-wrap">
+                <button class="tag-filter active" data-group="anomaly" data-value="" onclick="setTagFilter(this)">全部</button>
+                <button class="tag-filter" data-group="anomaly" data-value="yes" onclick="setTagFilter(this)">
+                    <span class="inline-flex items-center gap-1"><i class="fa-solid fa-triangle-exclamation text-[10px]"></i> 异常</span>
+                </button>
+                <button class="tag-filter" data-group="anomaly" data-value="no" onclick="setTagFilter(this)">正常</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- 统计卡片 -->
+    <div class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-5 gap-2 md:gap-3 mb-6">
+        <div class="apple-card p-3 md:p-4 text-center">
+            <div class="text-[10px] md:text-xs text-gray-500 font-bold mb-1">总计</div>
+            <div class="text-lg md:text-2xl font-black text-gray-900 dark:text-white" id="totalCount">-</div>
+        </div>
+        <div class="apple-card p-3 md:p-4 text-center">
+            <div class="text-[10px] md:text-xs text-gray-500 font-bold mb-1">4K</div>
+            <div class="text-lg md:text-2xl font-black text-purple-500" id="res4k">-</div>
+        </div>
+        <div class="apple-card p-3 md:p-4 text-center">
+            <div class="text-[10px] md:text-xs text-gray-500 font-bold mb-1">HEVC</div>
+            <div class="text-lg md:text-2xl font-black text-green-500" id="codecHevc">-</div>
+        </div>
+        <div class="apple-card p-3 md:p-4 text-center">
+            <div class="text-[10px] md:text-xs text-gray-500 font-bold mb-1">SDR</div>
+            <div class="text-lg md:text-2xl font-black text-gray-500" id="hdrSdr">-</div>
+        </div>
+        <div class="apple-card p-3 md:p-4 text-center">
+            <div class="text-[10px] md:text-xs text-gray-500 font-bold mb-1">异常</div>
+            <div class="text-lg md:text-2xl font-black text-amber-500" id="totalAnomaly">-</div>
+        </div>
+        </div>
+
+        <!-- 加载中 -->
+    <div id="items-loading" class="text-center py-16 text-gray-400 hidden">
+        <i class="fa-solid fa-circle-notch fa-spin text-3xl mb-3 text-brand-500"></i>
+        <p class="text-sm font-bold">正在加载...</p>
+    </div>
+
+    <!-- 列表容器 -->
+    <div id="itemsContainer" class="apple-card overflow-hidden p-0">
+        <div id="itemsList" class="divide-y divide-gray-100 dark:divide-gray-700/50">
+            <div class="p-12 text-center text-gray-400 text-sm">加载中...</div>
+        </div>
+    </div>
+
+    <!-- 分页 -->
+    <div class="flex items-center justify-between mt-6">
+        <div class="text-sm text-gray-500 font-bold" id="pageInfo2">第 0 页</div>
+        <div class="flex gap-2">
+            <button id="prevBtn" class="px-4 py-2 text-sm font-bold text-gray-600 dark:text-gray-300 bg-gray-100 dark:bg-apple-hoverDark hover:bg-gray-200 dark:hover:bg-[#3A3A3C] rounded-xl transition-colors shadow-sm border border-gray-200 dark:border-white/5 disabled:opacity-50 disabled:cursor-not-allowed" onclick="changePage(-1)" disabled>← 上一页</button>
+            <button id="nextBtn" class="px-4 py-2 text-sm font-bold text-gray-600 dark:text-gray-300 bg-gray-100 dark:bg-apple-hoverDark hover:bg-gray-200 dark:hover:bg-[#3A3A3C] rounded-xl transition-colors shadow-sm border border-gray-200 dark:border-white/5 disabled:opacity-50 disabled:cursor-not-allowed" onclick="changePage(1)" disabled>下一页 →</button>
+        </div>
+    </div>
+</div>
+
+<!-- 搜索 Modal（直接搜索高质量版本，无需创建计划） -->
+<div id="search-modal" class="fixed inset-0 z-[110] hidden opacity-0 transition-opacity duration-200">
+    <div class="absolute inset-0 bg-black/50 backdrop-blur-sm" onclick="closeSearchModal()"></div>
+    <div class="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[95%] max-w-3xl bg-white dark:bg-apple-cardDark rounded-[24px] shadow-2xl border border-gray-200 dark:border-white/5 overflow-hidden flex flex-col transform scale-95 transition-transform duration-200 max-h-[90vh]" id="search-modal-container">
+        <div class="px-5 py-4 border-b border-gray-100 dark:border-white/5 flex justify-between items-center bg-gray-50/50 dark:bg-black/10 shrink-0">
+            <h3 class="font-bold text-[16px] flex items-center gap-2"><i class="fa-solid fa-magnifying-glass text-brand-500"></i> <span id="search-modal-title">搜索高质量版本</span></h3>
+            <button onclick="closeSearchModal()" class="text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 transition-colors w-8 h-8 rounded-full flex justify-center items-center bg-gray-100 dark:bg-white/5"><i class="fa-solid fa-xmark"></i></button>
+        </div>
+        <div id="search-modal-body" class="p-5 overflow-y-auto mac-scrollbar flex-1 space-y-4">
+            <!-- 动态填充 -->
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+    let currentPage = 1;
+    let totalItems = 0;
+    let currentItemId = '';
+    const pageSize = 30;
+    let embyBaseUrl = '';
+    let embyServerId = '';
+
+    document.addEventListener('DOMContentLoaded', async () => {
+        // 获取 Emby 地址和 ServerId
+        try {
+            const cfgResp = await fetch('/api/config');
+            const cfgJson = await cfgResp.json();
+            if (cfgJson.status === 'success') {
+                embyBaseUrl = cfgJson.data.emby_host || '';
+                embyServerId = cfgJson.data.emby_server_id || '';
+            }
+        } catch(e) {}
+        // 初始化扫描管理器（按钮状态 + 检查正在运行的扫描）
+        ScanManager.init('btnReScan');
+        loadItems();
+        // 如果URL中有search参数，自动跳转到搜索页面
+        const params = new URLSearchParams(window.location.search);
+        const searchName = params.get('search');
+        if (searchName) {
+            // 只是加载列表时高亮，找到匹配项
+            setTimeout(() => {
+                const rows = document.querySelectorAll('#itemsList > div');
+                rows.forEach(row => {
+                    if (row.textContent.includes(searchName)) {
+                        row.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                    }
+                });
+            }, 500);
+        }
+    });
+
+    // 筛选状态
+    const filterState = { resolution: '', codec: '', hdr: '', anomaly: '' };
+
+    function setTagFilter(btn) {
+        const group = btn.dataset.group;
+        const value = btn.dataset.value;
+        document.querySelectorAll(`.tag-filter[data-group="${group}"]`).forEach(b => b.classList.remove('active'));
+        btn.classList.add('active');
+        filterState[group] = value;
+        currentPage = 1;
+        loadItems();
+    }
+
+    async function loadItems() {
+        const sortOrder = document.getElementById('sortOrder').value;
+
+        const listEl = document.getElementById('itemsList');
+        const loading = document.getElementById('items-loading');
+
+        loading.classList.remove('hidden');
+        listEl.innerHTML = '';
+
+        // 安全的 JSON 解析
+        async function safeJson(resp) {
+            const text = await resp.text();
+            try { return JSON.parse(text); } catch(e) {
+                throw new Error(`服务器返回异常 (${resp.status}): ${text.slice(0, 200)}`);
+            }
+        }
+
+        try {
+            const params = new URLSearchParams({
+                min_score: 0, max_score: 100, page: currentPage,
+                page_size: pageSize, sort_order: sortOrder
+            });
+            if (filterState.resolution) params.set('resolution', filterState.resolution);
+            if (filterState.codec) params.set('video_codec', filterState.codec);
+            if (filterState.hdr) params.set('video_range', filterState.hdr);
+            if (filterState.anomaly) params.set('anomaly', filterState.anomaly);
+            const resp = await fetch(`/api/scan/items?${params}`);
+            const json = await safeJson(resp);
+            if (json.status !== 'success') throw new Error(json.message);
+
+            const data = json.data;
+            const items = data.items || [];
+            const summary = data.summary || {};
+            totalItems = data.total || 0;
+
+            loading.classList.add('hidden');
+
+            // 统计
+            document.getElementById('totalCount').textContent = summary.total_count || '-';
+            const rd = summary.resolution_dist || {};
+            document.getElementById('res4k').textContent = rd['4k'] || '-';
+            const cd = summary.codec_dist || {};
+            document.getElementById('codecHevc').textContent = cd['hevc'] || '-';
+            const hd = summary.hdr_dist || {};
+            document.getElementById('hdrSdr').textContent = hd['sdr'] || '-';
+
+            // 异常统计
+            const anomalyItems = items.filter(i => i.is_anomaly);
+            document.getElementById('totalAnomaly').textContent = summary.anomaly_count || 0;
+
+            // 分页信息
+            const maxPage = Math.ceil(totalItems / pageSize);
+            document.getElementById('pageInfo2').textContent = `第 ${currentPage} 页 / 共 ${maxPage} 页 (${totalItems} 条)`;
+            document.getElementById('prevBtn').disabled = currentPage <= 1;
+            document.getElementById('nextBtn').disabled = currentPage >= maxPage;
+
+            if (items.length === 0) {
+                listEl.innerHTML = '<div class="p-16 text-center text-gray-400 text-sm"><i class="fa-solid fa-face-smile text-4xl mb-3 opacity-30"></i><br>未发现低质量条目</div>';
+                return;
+            }
+
+            listEl.innerHTML = items.map(item => {
+                const score = item.quality_score || 0;
+                const scoreColor = score <= 30 ? 'text-red-500' : score <= 50 ? 'text-yellow-500' : score <= 80 ? 'text-blue-500' : 'text-green-500';
+                return `
+                    <div class="flex items-center px-4 md:px-5 py-3.5 table-row-hover group">
+                        <div class="flex-1 min-w-0">
+                            <div class="flex items-center gap-2">
+                                <span class="font-medium text-sm truncate">${item.name}</span>
+                                ${item.year ? `<span class="text-xs text-gray-400 font-normal">(${item.year})</span>` : ''}
+                                ${item.is_anomaly ? '<span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300"><i class="fa-solid fa-triangle-exclamation text-[9px]"></i> 异常</span>' : ''}
+                                <a href="${embyBaseUrl}/web/index.html#!/item?id=${item.emby_id}&serverId=${embyServerId}" target="_blank" rel="noopener" class="inline-flex items-center justify-center w-5 h-5 rounded-full text-gray-400 hover:text-brand-500 hover:bg-brand-50 dark:hover:bg-brand-900/20 transition-all" title="在 Emby 中打开">
+                                    <i class="fa-solid fa-external-link text-[10px]"></i>
+                                </a>
+                            </div>
+                            <div class="flex items-center gap-1.5 mt-1.5 flex-wrap">
+                                ${badgeRes(item.resolution)}
+                                ${badgeCodec(item.video_codec)}
+                                ${badgeHdr(item.video_range)}
+                            </div>
+                            <div class="text-[11px] text-gray-400 mt-1 truncate">${item.path || item.library_name || ''}</div>
+                        </div>
+                        <div class="flex items-center gap-3 ml-4">
+                            <span class="font-mono font-bold text-lg quality-score ${scoreColor}">${score}</span>
+                            <button onclick="openUpgrade('${item.emby_id}', '${escapeHtml(item.name).replace(/'/g, "\\'")}')" class="px-3.5 py-2 text-xs font-bold text-white bg-brand-500 hover:bg-brand-600 rounded-xl transition-all active:scale-95 shadow-sm">
+                                洗版
+                            </button>
+                        </div>
+                    </div>
+                `;
+            }).join('');
+        } catch(e) {
+            loading.classList.add('hidden');
+            document.getElementById('itemsList').innerHTML = `<div class="p-12 text-center text-red-400 text-sm">加载失败: ${e.message}</div>`;
+        }
+    }
+
+    function changePage(delta) {
+        const maxPage = Math.ceil(totalItems / pageSize);
+        const newPage = currentPage + delta;
+        if (newPage < 1 || newPage > maxPage) return;
+        currentPage = newPage;
+        loadItems();
+        document.getElementById('itemsList').scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }
+
+    // === 直接搜索 Modal（替代创建计划的升级流程） ===
+    let _currentSearchItemId = '';
+    let _currentSearchItemName = '';
+    let _allResults = [];
+    let _currentPlanId = '';
+    let _currentEmbyId = '';
+    let _searchTab = 'all'; // 'all' | 'mp' | 'hd'
+
+    // 搜索缓存 Map: embyId -> { results, errors, timestamp, keyword, planId, source }
+    const _searchCache = new Map();
+    const SEARCH_CACHE_TTL = 60 * 60 * 1000; // 1 小时
+
+    async function openUpgrade(itemId, itemName) {
+        _currentSearchItemId = itemId;
+        _currentSearchItemName = itemName;
+
+        // 在后台轻量创建洗版计划（便于下载追踪，用户无感知）
+        let planId = '';
+        try {
+            const planResp = await fetch(`/api/items/${itemId}/upgrade`, {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({ item_id: itemId, target_quality: 'any' })
+            });
+            const planJson = await planResp.json();
+            if (planJson.status === 'success') planId = planJson.data.id;
+        } catch(e) { /* 计划创建失败不影响搜索 */ }
+
+        // 检查是否有 1h 内缓存
+        const cached = _searchCache.get(itemId);
+        const now = Date.now();
+        let useCache = cached && (now - cached.timestamp < SEARCH_CACHE_TTL);
+
+        // 直接打开搜索界面并自动搜索
+        document.getElementById('search-modal-title').textContent = `搜索高质量版本: ${itemName}`;
+
+        const cacheNotice = useCache
+            ? `<div class="flex items-center gap-2 p-2 rounded-xl bg-emerald-50 dark:bg-emerald-900/20 border border-emerald-100 dark:border-emerald-800/30 text-xs text-emerald-600 dark:text-emerald-300 mb-2">
+                  <i class="fa-solid fa-database"></i> 使用缓存结果（${Math.round((now - cached.timestamp) / 60000)} 分钟前搜索）
+               </div>`
+            : '';
+
+        document.getElementById('search-modal-body').innerHTML = `
+            <div class="flex items-center gap-3 p-3 rounded-2xl bg-gray-50 dark:bg-apple-hoverDark border border-gray-100 dark:border-white/5 mb-3">
+                <i class="fa-solid fa-circle-info text-gray-400"></i>
+                <span class="text-xs text-gray-500">正在为 <b class="text-gray-700 dark:text-gray-300">${escapeHtml(itemName)}</b> 搜索更高清版本</span>
+            </div>
+            <div class="space-y-4">
+                ${cacheNotice}
+                <input id="searchKeyword" type="hidden" value="${escapeHtml(itemName)}">
+                <div class="flex items-center gap-4 text-xs font-medium text-gray-500">
+                    <span>搜索来源:</span>
+                    <label class="flex items-center gap-1.5 cursor-pointer hover:text-gray-700 dark:hover:text-gray-300">
+                        <input type="radio" name="searchSource" value="all" checked class="text-brand-500 focus:ring-brand-500"> 全部
+                    </label>
+                    <select id="searchSort" class="ml-auto px-3 py-1.5 rounded-xl bg-gray-100 dark:bg-apple-hoverDark border border-gray-200 dark:border-white/5 text-gray-600 dark:text-gray-300 font-medium text-xs focus:ring-2 focus:ring-brand-500 outline-none" onchange="reSortResults()">
+                        <option value="quality">排序: 质量</option>
+                        <option value="size">排序: 大小</option>
+                        <option value="seeders">排序: 评分</option>
+                    </select>
+                    <button onclick="reSearch('${planId}', '${itemId}')" class="px-3 py-1.5 text-xs font-bold text-brand-500 hover:text-brand-600 hover:bg-brand-50 dark:hover:bg-brand-900/20 rounded-lg transition-colors flex items-center gap-1">
+                        <i class="fa-solid fa-rotate"></i> 重新搜索
+                    </button>
+                </div>
+                <div id="searchResults" class="${useCache ? '' : 'text-center py-8 text-gray-400'}">
+                    ${useCache ? '' : '<i class="fa-solid fa-circle-notch fa-spin text-2xl mb-3 text-brand-500"></i><p class="text-sm font-medium">正在搜索中...</p>'}
+                </div>
+            </div>
+        `;
+
+        const modal = document.getElementById('search-modal');
+        modal.classList.remove('hidden');
+        void modal.offsetWidth;
+        modal.classList.remove('opacity-0');
+        document.getElementById('search-modal-container').classList.remove('scale-95');
+
+        if (useCache) {
+            // 使用缓存结果
+            _allResults = cached.results;
+            _currentPlanId = cached.planId || planId;
+            _currentEmbyId = itemId;
+            renderSearchResults();
+        } else {
+            // 延迟一点让 Modal 出现后自动触发搜索
+            setTimeout(() => doSearch(planId, itemId), 300);
+        }
+    }
+
+    function closeSearchModal() {
+        const modal = document.getElementById('search-modal');
+        modal.classList.add('opacity-0');
+        document.getElementById('search-modal-container').classList.add('scale-95');
+        setTimeout(() => modal.classList.add('hidden'), 200);
+    }
+
+    async function doSearch(planId, embyId) {
+        const keyword = document.getElementById('searchKeyword').value.trim();
+        const source = document.querySelector('input[name="searchSource"]:checked')?.value || 'all';
+        const resultsDiv = document.getElementById('searchResults');
+
+        if (!keyword) { showToast('warning', '请输入搜索关键词'); return; }
+
+        resultsDiv.innerHTML = '<div class="py-8 text-gray-400"><i class="fa-solid fa-circle-notch fa-spin text-2xl mb-3"></i><br>搜索中...</div>';
+
+        // 影巢搜索需要 emby_id 以解析 TMDB ID
+        const embyParam = embyId ? `&emby_id=${embyId}` : '';
+
+        try {
+            let allResults = [];
+            let errors = {};
+
+            // 安全的 JSON 解析，防止后端返回非 JSON 错误
+            async function safeJson(resp) {
+                const text = await resp.text();
+                try { return JSON.parse(text); } catch(e) {
+                    throw new Error(`服务器返回异常 (${resp.status}): ${text.slice(0, 200)}`);
+                }
+            }
+
+            if (source === 'all') {
+                const resp = await fetch(`/api/search/all?keyword=${encodeURIComponent(keyword)}${embyParam}`);
+                const json = await safeJson(resp);
+                if (json.status === 'success') {
+                    const data = json.data;
+                    if (data.moviepilot) allResults.push(...data.moviepilot.map(r => ({ ...r, _source: r.site_name || 'MoviePilot' })));
+                    if (data.hdhive) allResults.push(...data.hdhive.map(r => ({ ...r, _source: '影巢' })));
+                    if (data.errors) errors = data.errors;
+                } else {
+                    errors.general = json.message;
+                }
+            } else {
+                try {
+                    const apiUrl = source === 'hdhive'
+                        ? `/api/search/hdhive?keyword=${encodeURIComponent(keyword)}${embyParam}`
+                        : `/api/search/${source}?keyword=${encodeURIComponent(keyword)}`;
+                    const resp = await fetch(apiUrl);
+                    const json = await safeJson(resp);
+                    if (json.status === 'success' && json.data) {
+                        const srcLabel = source === 'moviepilot' ? 'MoviePilot' : '影巢';
+                        allResults.push(...json.data.map(r => ({ ...r, _source: r.site_name || srcLabel })));
+                    } else if (json.status === 'error') {
+                        errors[source] = json.message;
+                    }
+                } catch(e) {
+                    errors[source] = '请求失败: ' + e.message;
+                }
+            }
+
+            const errorEntries = Object.entries(errors);
+            const errorHtml = errorEntries.length > 0 ? `
+                <div class="space-y-2 mb-4">
+                    ${errorEntries.map(([k, v]) => `
+                        <div class="flex items-start gap-2 p-3 rounded-xl bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-100 dark:border-yellow-800/30 text-xs text-yellow-700 dark:text-yellow-300">
+                            <i class="fa-solid fa-triangle-exclamation mt-0.5 shrink-0"></i>
+                            <span><b>${k === 'general' ? '系统' : k === 'moviepilot' ? 'MoviePilot' : '影巢'}:</b> ${escapeHtml(v)}</span>
+                        </div>
+                    `).join('')}
+                </div>
+            ` : '';
+
+            if (allResults.length === 0) {
+                resultsDiv.innerHTML = errorHtml + '<div class="py-12 text-gray-400"><i class="fa-solid fa-face-frown text-4xl mb-3 opacity-30"></i><br><p class="text-sm font-medium">未找到高质量版本</p>' + (errorEntries.length > 0 ? '<p class="text-xs mt-2 opacity-60">请先在系统配置中设置相关服务的连接信息</p>' : '') + '</div>';
+                return;
+            }
+
+            // 有结果才写入缓存
+            if (embyId) {
+                _searchCache.set(embyId, {
+                    results: allResults,
+                    errors: errors,
+                    timestamp: Date.now(),
+                    keyword: keyword,
+                    planId: planId
+                });
+            }
+
+            // 保存全局，用于切换排序
+            _allResults = allResults;
+            _currentPlanId = planId;
+            _currentEmbyId = embyId;
+
+            renderSearchResults();
+        } catch(e) {
+            resultsDiv.innerHTML = `<div class="py-8 text-red-400">搜索失败: ${escapeHtml(e.message)}</div>`;
+        }
+    }
+
+    // 排序 + 渲染搜索结果
+    function getResWeight(r) {
+        const res = (r.resolution || r.quality || '').toLowerCase();
+        if (res.includes('2160') || res.includes('4k')) return 4;
+        if (res.includes('1080')) return 3;
+        if (res.includes('720')) return 2;
+        if (res.includes('480')) return 1;
+        if (r.video_resolution && Array.isArray(r.video_resolution) && r.video_resolution.length > 0) {
+            const vr = r.video_resolution[0].toLowerCase();
+            if (vr.includes('4k') || vr.includes('2160')) return 4;
+            if (vr.includes('1080')) return 3;
+            if (vr.includes('720')) return 2;
+        }
+        return 0;
+    }
+
+    function getSizeBytes(r) {
+        if (r.share_size) {
+            const m = r.share_size.match(/^([\d.]+)\s*(GB|MB|TB|KB)/i);
+            if (m) {
+                const v = parseFloat(m[1]);
+                const u = m[2].toUpperCase();
+                if (u === 'TB') return v * 1024 * 1024 * 1024 * 1024;
+                if (u === 'GB') return v * 1024 * 1024 * 1024;
+                if (u === 'MB') return v * 1024 * 1024;
+                if (u === 'KB') return v * 1024;
+            }
+        }
+        return r.size || 0;
+    }
+
+    function getSortValue(r, mode) {
+        if (mode === 'quality') return getResWeight(r);
+        if (mode === 'size') return getSizeBytes(r);
+        if (mode === 'seeders') return r.seeders || 0;
+        return 0;
+    }
+
+    window._resultData = [];
+
+    function renderResultItem(r, planId) {
+        const isHdhive = r._source === '影巢';
+        const title = r.title || '未知';
+        const url = isHdhive ? (r.slug || '') : (r.enclosure || r.page_url || '');
+
+        const ridx = window._resultData.length;
+        window._resultData.push({ planId, url, title, source: isHdhive ? '影巢' : 'MoviePilot', siteName: r.site_name || '', pageUrl: r.page_url || '', size: r.size || 0, seeders: r.seeders || 0 });
+
+        let resHtml = '';
+        const res = r.resolution || r.quality || '';
+        if (res) {
+            const rLow = res.toLowerCase();
+            if (rLow.includes('2160') || rLow.includes('4k')) resHtml = '<span class="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold bg-purple-100 text-purple-700 dark:bg-purple-900/40 dark:text-purple-300">' + escapeHtml(res) + '</span>';
+            else if (rLow.includes('1080')) resHtml = '<span class="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-300">' + escapeHtml(res) + '</span>';
+            else if (rLow.includes('720')) resHtml = '<span class="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold bg-teal-100 text-teal-700 dark:bg-teal-900/40 dark:text-teal-300">' + escapeHtml(res) + '</span>';
+            else resHtml = '<span class="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold bg-gray-200 text-gray-600 dark:bg-gray-700 dark:text-gray-300">' + escapeHtml(res) + '</span>';
+        }
+
+        let hdResHtml = '';
+        if (r.video_resolution && Array.isArray(r.video_resolution)) {
+            r.video_resolution.forEach(res => {
+                const rLow = (res || '').toLowerCase();
+                if (rLow.includes('4k') || rLow.includes('2160')) hdResHtml += '<span class="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold bg-purple-100 text-purple-700 dark:bg-purple-900/40 dark:text-purple-300">' + escapeHtml(res) + '</span>';
+                else if (rLow.includes('1080')) hdResHtml += '<span class="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-300">' + escapeHtml(res) + '</span>';
+                else hdResHtml += '<span class="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold bg-gray-200 text-gray-600 dark:bg-gray-700 dark:text-gray-300">' + escapeHtml(res) + '</span>';
+            });
+        }
+
+        let extraTags = '';
+        if (isHdhive && r.source && Array.isArray(r.source)) {
+            r.source.forEach(s => { if (s) extraTags += '<span class="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold bg-gray-100 text-gray-600 dark:bg-gray-700 dark:text-gray-300 mr-1">' + escapeHtml(s) + '</span>'; });
+        } else if (!isHdhive) {
+            if (r.source_type) extraTags += '<span class="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold bg-gray-100 text-gray-600 dark:bg-gray-700 dark:text-gray-300 mr-1">' + escapeHtml(r.source_type) + '</span>';
+            if (r.video_encode) extraTags += '<span class="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold bg-green-100 text-green-700 dark:bg-green-900/40 dark:text-green-300 mr-1">' + escapeHtml(r.video_encode) + '</span>';
+        }
+
+        let metaHtml = '';
+        if (r.share_size) metaHtml += '<span>大小: ' + r.share_size + '</span>';
+        else if (r.size) metaHtml += '<span>大小: ' + formatBytes(r.size) + '</span>';
+        if (r.seeders !== undefined) metaHtml += '<span>做种: ' + r.seeders + '</span>';
+        if (r.is_unlocked !== undefined) metaHtml += '<span>' + (r.is_unlocked ? '✅ 已解锁' : (r.unlock_points === 0 || r.unlock_points === null ? '🆓 免费' : '🔴 ' + r.unlock_points + ' 积分')) + '</span>';
+        if (r.remark) metaHtml += '<span class="truncate max-w-[120px] sm:max-w-[200px]">' + escapeHtml(r.remark) + '</span>';
+        if (r.subtitle && !metaHtml) metaHtml += '<span class="truncate max-w-[120px] sm:max-w-[200px]">' + escapeHtml(r.subtitle) + '</span>';
+
+        return `
+            <div class="flex items-center justify-between p-4 rounded-2xl bg-gray-50 dark:bg-apple-hoverDark border border-gray-100 dark:border-white/5 hover:bg-gray-100 dark:hover:bg-[#3A3A3C] transition-colors group">
+                <div class="flex-1 min-w-0">
+                    <div class="flex items-center gap-2 flex-wrap">
+                        <span class="font-medium text-sm truncate">${escapeHtml(title)}</span>
+                        ${resHtml}${hdResHtml}
+                        ${extraTags}
+                    </div>
+                    <div class="flex items-center gap-3 mt-1 text-xs text-gray-500 flex-wrap">
+                        ${metaHtml}
+                    </div>
+                </div>
+                <button onclick="startDownloadByIndex(${ridx})" class="shrink-0 px-4 py-2 text-xs font-bold text-white ${isHdhive ? 'bg-purple-500 hover:bg-purple-600' : 'bg-brand-500 hover:bg-brand-600'} rounded-xl transition-all active:scale-95 shadow-sm ml-3">
+                    ${isHdhive ? '<i class="fa-solid fa-cloud-arrow-up"></i> 转存' : '<i class="fa-solid fa-download"></i> 下载'}
+                </button>
+            </div>
+        `;
+    }
+
+    function renderSearchResults() {
+        window._resultData = [];
+
+        const allResults = _allResults;
+        const planId = _currentPlanId;
+        const resultsDiv = document.getElementById('searchResults');
+        const sortMode = (document.getElementById('searchSort')?.value) || 'quality';
+
+        if (!allResults || allResults.length === 0) return;
+
+        // 按来源分组
+        const mpResults = allResults.filter(r => r._source !== '影巢');
+        const hdResults = allResults.filter(r => r._source === '影巢');
+
+        // 按当前排序模式排序
+        const sortDir = -1; // 都是降序
+        mpResults.sort((a, b) => (getSortValue(b, sortMode) - getSortValue(a, sortMode)) * sortDir);
+        hdResults.sort((a, b) => (getSortValue(b, sortMode) - getSortValue(a, sortMode)) * sortDir);
+
+        const hasMp = mpResults.length > 0;
+        const hasHd = hdResults.length > 0;
+
+        // 默认选中 tab：all 优先，其次 hd
+        if (_searchTab === 'all' && !hasMp && !hasHd) _searchTab = 'all';
+        if (_searchTab === 'mp' && !hasMp) _searchTab = hasHd ? 'hd' : 'all';
+        if (_searchTab === 'hd' && !hasHd) _searchTab = hasMp ? 'mp' : 'all';
+        if (_searchTab === 'all' && (!hasMp || !hasHd)) _searchTab = hasMp ? 'mp' : 'hd';
+
+        // 标签栏
+        const tabBar = `
+            <div class="flex gap-1 p-1 rounded-xl bg-gray-100 dark:bg-apple-hoverDark mb-3">
+                ${hasMp ? `
+                <button class="flex-1 py-2 px-3 text-xs font-bold rounded-lg transition-all ${_searchTab === 'mp' || _searchTab === 'all' ? 'bg-white dark:bg-[#3A3A3C] text-gray-800 dark:text-gray-100 shadow-sm' : 'text-gray-500 hover:text-gray-700 dark:text-gray-400'}" onclick="switchSearchTab('mp')">
+                    <i class="fa-solid fa-download mr-1"></i> MoviePilot <span class="ml-1 opacity-60">${mpResults.length}</span>
+                </button>
+                ` : ''}
+                ${hasHd ? `
+                <button class="flex-1 py-2 px-3 text-xs font-bold rounded-lg transition-all ${_searchTab === 'hd' || _searchTab === 'all' ? 'bg-white dark:bg-[#3A3A3C] text-gray-800 dark:text-gray-100 shadow-sm' : 'text-gray-500 hover:text-gray-700 dark:text-gray-400'}" onclick="switchSearchTab('hd')">
+                    <i class="fa-solid fa-cloud mr-1"></i> 影巢 <span class="ml-1 opacity-60">${hdResults.length}</span>
+                </button>
+                ` : ''}
+                ${hasMp && hasHd ? `
+                <button class="flex-1 py-2 px-3 text-xs font-bold rounded-lg transition-all ${_searchTab === 'all' ? 'bg-white dark:bg-[#3A3A3C] text-gray-800 dark:text-gray-100 shadow-sm' : 'text-gray-500 hover:text-gray-700 dark:text-gray-400'}" onclick="switchSearchTab('all')">
+                    <i class="fa-solid fa-layer-group mr-1"></i> 全部 <span class="ml-1 opacity-60">${allResults.length}</span>
+                </button>
+                ` : ''}
+            </div>
+        `;
+
+        // 渲染各组结果
+        let bodyHtml = '';
+        if (_searchTab === 'mp' || _searchTab === 'all') {
+            bodyHtml += `
+                <div class="space-y-2 ${_searchTab === 'all' && hasMp && hasHd ? 'mb-4' : ''}">
+                    ${mpResults.map(r => renderResultItem(r, planId)).join('')}
+                </div>
+            `;
+        }
+        if (_searchTab === 'hd' || _searchTab === 'all') {
+            bodyHtml += `
+                <div class="space-y-2">
+                    ${hdResults.map(r => renderResultItem(r, planId)).join('')}
+                </div>
+            `;
+        }
+
+        resultsDiv.innerHTML = tabBar + bodyHtml;
+    }
+
+    function switchSearchTab(tab) {
+        _searchTab = tab;
+        renderSearchResults();
+    }
+
+    function reSortResults() {
+        renderSearchResults();
+    }
+
+    function startDownloadByIndex(idx) {
+        const d = window._resultData[idx];
+        if (!d) { showToast('error', '数据异常'); return; }
+        startDownload(d.planId, d.url, d.title, d.source, d.siteName, d.pageUrl, d.size, d.seeders);
+    }
+
+    async function startDownload(planId, url, title, source, siteName, pageUrl, sizeBytes, seedersCount) {
+        if (!url) { showToast('error', '没有可用的下载链接'); return; }
+
+        try {
+            let resp;
+            if (source === '影巢') {
+                const q = new URLSearchParams({ plan_id: planId, resource_id: url });
+                resp = await fetch('/api/download/hdhive-transfer?' + q.toString(), { method: 'POST' });
+            } else {
+                const q = new URLSearchParams({
+                    plan_id: planId,
+                    torrent_url: url,
+                    title: title,
+                });
+                if (siteName) q.set('site_name', siteName);
+                if (pageUrl) q.set('page_url', pageUrl);
+                if (sizeBytes > 0) q.set('size', sizeBytes);
+                if (seedersCount > 0) q.set('seeders', seedersCount);
+                resp = await fetch('/api/download/moviepilot?' + q.toString(), { method: 'POST' });
+            }
+            const json = await resp.json();
+            if (json.status === 'success') {
+                showToast('success', `已提交${source === '影巢' ? '转存' : '下载'}请求`);
+                closeSearchModal();
+            } else if (json.status === 'already_owned') {
+                showToast('info', json.message || '该资源已在 115 中，跳过');
+                closeSearchModal();
+            } else {
+                showToast('error', '操作失败: ' + (json.message || ''));
+            }
+        } catch(e) {
+            showToast('error', '请求失败: ' + e.message);
+        }
+    }
+
+    function reSearch(planId, embyId) {
+        // 清除该媒体的缓存，强制重新搜索
+        _searchCache.delete(embyId);
+        // 显示搜索框，让用户修改关键词后手动搜索
+        const input = document.getElementById('searchKeyword');
+        input.type = 'text';
+        input.style.display = '';
+        input.focus();
+        input.select();
+        // 添加搜索按钮
+        const container = input.parentElement;
+        if (!container.querySelector('button')) {
+            const btn = document.createElement('button');
+            btn.className = 'px-5 py-3 text-sm font-bold text-white bg-brand-500 hover:bg-brand-600 rounded-xl transition-all active:scale-95 shadow-sm flex items-center gap-2';
+            btn.innerHTML = '<i class="fa-solid fa-magnifying-glass"></i> 搜索';
+            btn.onclick = () => doSearch(planId, embyId);
+            container.appendChild(btn);
+        }
+        // 绑定回车
+        input.onkeydown = (e) => { if (e.key === 'Enter') doSearch(planId, embyId); };
+    }
+</script>
+{% endblock %}

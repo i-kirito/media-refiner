@@ -1,0 +1,380 @@
+{% extends "base.html" %}
+{% block title %}系统配置{% endblock %}
+{% block content %}
+<div class="max-w-3xl mx-auto w-full px-4 md:px-8 py-6 pb-24 relative">
+
+    <div class="flex items-center gap-3 mb-8">
+        <div class="w-12 h-12 bg-gray-100 dark:bg-gray-800 rounded-xl flex items-center justify-center border border-gray-200 dark:border-gray-700">
+            <i class="fa-solid fa-gear text-gray-500 text-xl"></i>
+        </div>
+        <div>
+            <h1 class="text-xl font-black text-gray-900 dark:text-white">系统配置</h1>
+            <p class="text-xs text-gray-500 mt-0.5">配置 Emby、MoviePilot、影巢、115 网盘连接</p>
+        </div>
+    </div>
+
+    <form id="configForm" class="space-y-4" onsubmit="return saveConfig(event)">
+
+        <!-- Emby -->
+        <div class="apple-card p-5 md:p-6">
+            <h3 class="font-bold text-sm mb-5 flex items-center gap-2 text-gray-800 dark:text-gray-200">
+                <i class="fa-solid fa-film text-brand-500"></i> Emby 连接
+            </h3>
+            <div class="space-y-4">
+                <div>
+                    <label class="block text-xs font-bold text-gray-500 mb-1.5">Emby 地址</label>
+                    <input name="emby_host" class="w-full px-4 py-3 rounded-xl bg-gray-100 dark:bg-apple-hoverDark border border-gray-200 dark:border-white/5 text-gray-700 dark:text-gray-300 font-medium focus:ring-2 focus:ring-brand-500 outline-none text-sm" placeholder="http://192.168.31.213:8096" value="{{ config.emby_host or '' }}">
+                </div>
+                <div>
+                    <label class="block text-xs font-bold text-gray-500 mb-1.5">API Key</label>
+                    <input name="emby_api_key" class="w-full px-4 py-3 rounded-xl bg-gray-100 dark:bg-apple-hoverDark border border-gray-200 dark:border-white/5 text-gray-700 dark:text-gray-300 font-medium focus:ring-2 focus:ring-brand-500 outline-none text-sm" type="password" placeholder="输入 Emby API Key" value="">
+                    <p class="text-[11px] text-gray-400 mt-1.5">当前: {{ config.emby_api_key or '未设置' }}</p>
+                </div>
+                <button type="button" class="px-4 py-2 text-xs font-bold text-gray-600 dark:text-gray-300 bg-gray-100 dark:bg-apple-hoverDark hover:bg-gray-200 dark:hover:bg-[#3A3A3C] rounded-xl transition-colors border border-gray-200 dark:border-white/5" onclick="testConnection('emby')">
+                    <i class="fa-solid fa-plug mr-1"></i> 测试连接
+                </button>
+            </div>
+        </div>
+
+        <!-- MoviePilot -->
+        <div class="apple-card p-5 md:p-6">
+            <h3 class="font-bold text-sm mb-5 flex items-center gap-2 text-gray-800 dark:text-gray-200">
+                <i class="fa-solid fa-rocket text-orange-500"></i> MoviePilot（搜索 + 下载）
+            </h3>
+            <div class="space-y-4">
+                <div>
+                    <label class="block text-xs font-bold text-gray-500 mb-1.5">MoviePilot 地址</label>
+                    <input name="moviepilot_url" class="w-full px-4 py-3 rounded-xl bg-gray-100 dark:bg-apple-hoverDark border border-gray-200 dark:border-white/5 text-gray-700 dark:text-gray-300 font-medium focus:ring-2 focus:ring-brand-500 outline-none text-sm" placeholder="http://192.168.31.213:3000" value="{{ config.moviepilot_url or '' }}">
+                </div>
+                <div>
+                    <label class="block text-xs font-bold text-gray-500 mb-1.5">API Token</label>
+                    <input name="moviepilot_token" class="w-full px-4 py-3 rounded-xl bg-gray-100 dark:bg-apple-hoverDark border border-gray-200 dark:border-white/5 text-gray-700 dark:text-gray-300 font-medium focus:ring-2 focus:ring-brand-500 outline-none text-sm" type="password" placeholder="输入 MoviePilot API Token" value="">
+                    <p class="text-[11px] text-gray-400 mt-1.5">当前: {{ config.moviepilot_token or '未设置' }}</p>
+                </div>
+                <button type="button" class="px-4 py-2 text-xs font-bold text-gray-600 dark:text-gray-300 bg-gray-100 dark:bg-apple-hoverDark hover:bg-gray-200 dark:hover:bg-[#3A3A3C] rounded-xl transition-colors border border-gray-200 dark:border-white/5" onclick="testConnection('moviepilot')">
+                    <i class="fa-solid fa-plug mr-1"></i> 测试连接
+                </button>
+            </div>
+        </div>
+
+        <!-- 影巢 HDHive -->
+        <div class="apple-card p-5 md:p-6">
+            <h3 class="font-bold text-sm mb-5 flex items-center gap-2 text-gray-800 dark:text-gray-200">
+                <i class="fa-solid fa-cloud text-purple-500"></i> 影巢 HDHive（高质量片源搜索 + 115 转存）
+            </h3>
+            <div class="space-y-4">
+                <div>
+                    <label class="block text-xs font-bold text-gray-500 mb-1.5">API Key</label>
+                    <input name="hdhive_api_key" class="w-full px-4 py-3 rounded-xl bg-gray-100 dark:bg-apple-hoverDark border border-gray-200 dark:border-white/5 text-gray-700 dark:text-gray-300 font-medium focus:ring-2 focus:ring-brand-500 outline-none text-sm" type="password" placeholder="输入影巢 API Key (登录影巢 → 个人设置 → API 管理)" value="">
+                    <p class="text-[11px] text-gray-400 mt-1.5">当前: {{ config.hdhive_api_key or '未设置' }}</p>
+                </div>
+                <button type="button" class="px-4 py-2 text-xs font-bold text-gray-600 dark:text-gray-300 bg-gray-100 dark:bg-apple-hoverDark hover:bg-gray-200 dark:hover:bg-[#3A3A3C] rounded-xl transition-colors border border-gray-200 dark:border-white/5" onclick="testConnection('hdhive')">
+                    <i class="fa-solid fa-plug mr-1"></i> 测试连接
+                </button>
+            </div>
+        </div>
+
+        <!-- 115 网盘 -->
+        <div class="apple-card p-5 md:p-6">
+            <h3 class="font-bold text-sm mb-5 flex items-center gap-2 text-gray-800 dark:text-gray-200">
+                <i class="fa-solid fa-cloud-arrow-up text-cyan-500"></i> 115 网盘（接收转存）
+            </h3>
+            <div class="space-y-4">
+                <div>
+                    <label class="block text-xs font-bold text-gray-500 mb-1.5">Cookie</label>
+                    <input name="cloud115_cookie" class="w-full px-4 py-3 rounded-xl bg-gray-100 dark:bg-apple-hoverDark border border-gray-200 dark:border-white/5 text-gray-700 dark:text-gray-300 font-medium focus:ring-2 focus:ring-brand-500 outline-none text-sm" type="password" placeholder="输入 115 Cookie" value="">
+                    <p class="text-[11px] text-gray-400 mt-1.5">当前: {{ config.cloud115_cookie or '未设置' }}</p>
+                </div>
+                <div>
+                    <label class="block text-xs font-bold text-gray-500 mb-1.5">转存目标目录 ID</label>
+                    <input name="cloud115_folder_id" class="w-full px-4 py-3 rounded-xl bg-gray-100 dark:bg-apple-hoverDark border border-gray-200 dark:border-white/5 text-gray-700 dark:text-gray-300 font-medium focus:ring-2 focus:ring-brand-500 outline-none text-sm" placeholder="0 = 根目录" value="{{ config.cloud115_folder_id or '0' }}">
+                    <p class="text-[11px] text-gray-400 mt-1.5">在 115 网盘打开目标目录，浏览器地址栏 URL 中 cid= 后面的数字</p>
+                </div>
+                <button type="button" class="px-4 py-2 text-xs font-bold text-gray-600 dark:text-gray-300 bg-gray-100 dark:bg-apple-hoverDark hover:bg-gray-200 dark:hover:bg-[#3A3A3C] rounded-xl transition-colors border border-gray-200 dark:border-white/5" onclick="testConnection('cloud115')">
+                    <i class="fa-solid fa-plug mr-1"></i> 测试连接
+                </button>
+            </div>
+        </div>
+
+        <!-- 全局代理 -->
+        <div class="apple-card p-5 md:p-6">
+            <h3 class="font-bold text-sm mb-5 flex items-center gap-2 text-gray-800 dark:text-gray-200">
+                <i class="fa-solid fa-globe text-amber-500"></i> 网络代理 <span class="text-gray-400 font-normal text-[11px]">（影巢 + Telegram 共用）</span>
+            </h3>
+            <div class="space-y-4">
+                <div>
+                    <label class="block text-xs font-bold text-gray-500 mb-1.5">代理地址 <span class="text-gray-400 font-normal">（NAS 无法直连时使用，例如 http://192.168.31.213:7890）</span></label>
+                    <input name="proxy" class="w-full px-4 py-3 rounded-xl bg-gray-100 dark:bg-apple-hoverDark border border-gray-200 dark:border-white/5 text-gray-700 dark:text-gray-300 font-medium focus:ring-2 focus:ring-brand-500 outline-none text-sm" placeholder="http://192.168.31.213:7890" value="{{ config.proxy or '' }}">
+                    <p class="text-[11px] text-gray-400 mt-1.5">同时用于影巢 API（绕过 Cloudflare 拦截）和 Telegram API（NAS 无法直连时）</p>
+                </div>
+            </div>
+        </div>
+
+        <!-- Telegram 通知 -->
+        <div class="apple-card p-5 md:p-6">
+            <h3 class="font-bold text-sm mb-5 flex items-center gap-2 text-gray-800 dark:text-gray-200">
+                <i class="fa-brands fa-telegram text-sky-500"></i> Telegram 通知与审核操作
+            </h3>
+            <div class="space-y-4">
+                <div>
+                    <label class="block text-xs font-bold text-gray-500 mb-1.5">Bot Token</label>
+                    <input name="tg_bot_token" class="w-full px-4 py-3 rounded-xl bg-gray-100 dark:bg-apple-hoverDark border border-gray-200 dark:border-white/5 text-gray-700 dark:text-gray-300 font-medium focus:ring-2 focus:ring-brand-500 outline-none text-sm" type="password" placeholder="123456:ABCdef..." value="">
+                    <p class="text-[11px] text-gray-400 mt-1.5">
+                        当前: {{ config.tg_bot_token or '未设置' }}
+                        <button type="button" class="ml-2 text-brand-500 hover:text-brand-600 underline text-[10px]" onclick="fetchTgChatId()">自动获取 Chat ID</button>
+                    </p>
+                </div>
+                <div>
+                    <label class="block text-xs font-bold text-gray-500 mb-1.5">Chat ID <span class="text-gray-400 font-normal">（接收通知的用户/群组 ID）</span></label>
+                    <input name="tg_chat_id" class="w-full px-4 py-3 rounded-xl bg-gray-100 dark:bg-apple-hoverDark border border-gray-200 dark:border-white/5 text-gray-700 dark:text-gray-300 font-medium focus:ring-2 focus:ring-brand-500 outline-none text-sm" placeholder="123456789" value="{{ config.tg_chat_id or '' }}">
+                </div>
+                <div>
+                    <label class="block text-xs font-bold text-gray-500 mb-1.5">通知事件 <span class="text-gray-400 font-normal">（选择需要推送的事件）</span></label>
+                    <div class="flex flex-wrap gap-3 mt-2" id="notifyEvents">
+                        <label class="flex items-center gap-2 cursor-pointer select-none">
+                            <input type="checkbox" name="tg_notify_review" value="1" class="w-4 h-4 rounded border-gray-300 text-brand-500 focus:ring-brand-500">
+                            <span class="text-xs text-gray-600 dark:text-gray-400">🆕 新审核项</span>
+                        </label>
+                        <label class="flex items-center gap-2 cursor-pointer select-none">
+                            <input type="checkbox" name="tg_notify_scan" value="1" class="w-4 h-4 rounded border-gray-300 text-brand-500 focus:ring-brand-500">
+                            <span class="text-xs text-gray-600 dark:text-gray-400">📊 扫描完成</span>
+                        </label>
+                        <label class="flex items-center gap-2 cursor-pointer select-none">
+                            <input type="checkbox" name="tg_notify_download" value="1" class="w-4 h-4 rounded border-gray-300 text-brand-500 focus:ring-brand-500">
+                            <span class="text-xs text-gray-600 dark:text-gray-400">⬇️ 下载/转存结果</span>
+                        </label>
+                    </div>
+                </div>
+                <div class="flex items-center gap-2">
+                    <button type="button" class="px-4 py-2 text-xs font-bold text-gray-600 dark:text-gray-300 bg-gray-100 dark:bg-apple-hoverDark hover:bg-gray-200 dark:hover:bg-[#3A3A3C] rounded-xl transition-colors border border-gray-200 dark:border-white/5" onclick="testConnection('telegram')">
+                        <i class="fa-solid fa-plug mr-1"></i> 测试 Token
+                    </button>
+                    <button type="button" class="px-4 py-2 text-xs font-bold text-sky-600 dark:text-sky-400 bg-sky-50 dark:bg-sky-900/20 hover:bg-sky-100 dark:hover:bg-sky-900/30 rounded-xl transition-colors border border-sky-200 dark:border-sky-900/30" onclick="sendTestTg()">
+                        <i class="fa-solid fa-paper-plane mr-1"></i> 发送测试消息
+                    </button>
+                </div>
+                <div class="text-[11px] text-gray-400 mt-2 bg-gray-50 dark:bg-apple-hoverDark rounded-xl px-4 py-3 border border-gray-100 dark:border-white/5">
+                    <i class="fa-solid fa-info-circle mr-1"></i> 
+                    开启「新审核项」通知后，TG 会收到详细对比卡片 + <strong>通过/拒绝/忽略</strong> 操作按钮。点击即可直接操作审核。
+                </div>
+            </div>
+        </div>
+
+        <!-- 其他 -->
+        <div class="apple-card p-5 md:p-6">
+            <h3 class="font-bold text-sm mb-5 flex items-center gap-2 text-gray-800 dark:text-gray-200">
+                <i class="fa-solid fa-sliders text-gray-500"></i> 其他设置
+            </h3>
+            <div>
+                <label class="block text-xs font-bold text-gray-500 mb-2">排除的媒体库（扫描时跳过）</label>
+                <div class="bg-gray-50 dark:bg-apple-hoverDark rounded-xl border border-gray-200 dark:border-white/5 p-3 max-h-64 overflow-y-auto space-y-1.5" id="libraryCheckboxes">
+                    {% if libraries %}
+                        {% for lib in libraries %}
+                        <label class="flex items-center gap-2.5 px-2 py-1.5 rounded-lg hover:bg-white/50 dark:hover:bg-white/5 cursor-pointer transition-colors">
+                            <input type="checkbox" name="exclude_library" value="{{ lib.id }}" class="w-4 h-4 rounded border-gray-300 text-brand-500 focus:ring-brand-400 cursor-pointer"
+                                {% if lib.excluded %}checked{% endif %}>
+                            <span class="text-sm text-gray-700 dark:text-gray-300 font-medium">{{ lib.name }}</span>
+                            <span class="text-[10px] text-gray-400 font-mono ml-auto">{{ lib.id }}</span>
+                        </label>
+                        {% endfor %}
+                    {% else %}
+                        <div class="text-sm text-gray-400 py-2 text-center">
+                            <i class="fa-solid fa-circle-exclamation mr-1"></i> 无法加载媒体库列表，请先配置 Emby 连接
+                        </div>
+                    {% endif %}
+                </div>
+                <input type="hidden" name="exclude_library_ids" id="excludeLibraryIds" value="{{ config.exclude_library_ids or '' }}">
+                <div class="text-[11px] text-gray-400 mt-2 flex items-center gap-1">
+                    <i class="fa-solid fa-info-circle"></i> 勾选的媒体库在质量扫描时将被跳过。留空表示扫描所有电影库。
+                </div>
+            </div>
+        </div>
+
+        <div class="flex justify-end">
+            <button type="submit" class="px-6 py-3 text-sm font-bold text-white bg-brand-500 hover:bg-brand-600 rounded-xl transition-all active:scale-95 shadow-md shadow-brand-500/20 flex items-center gap-2">
+                <i class="fa-solid fa-check"></i> 保存配置
+            </button>
+        </div>
+    </form>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+    // 加载配置
+    async function loadConfig() {
+        try {
+            const resp = await fetch('/api/config');
+            const json = await resp.json();
+            if (json.status === 'success') {
+                const c = json.data;
+                const form = document.getElementById('configForm');
+                Array.from(form.elements).forEach(el => {
+                    if (c[el.name] !== undefined && el.tagName === 'INPUT' && el.type !== 'password') {
+                        el.value = c[el.name];
+                    }
+                });
+                // 更新排除媒体库复选框状态
+                const excludedIds = (c.exclude_library_ids || '').split(',').map(s => s.trim()).filter(Boolean);
+                document.querySelectorAll('[name="exclude_library"]').forEach(cb => {
+                    cb.checked = excludedIds.includes(cb.value);
+                });
+                // 更新"当前:"状态文字
+                document.querySelectorAll('.apple-card p.text-\\[11px\\]').forEach(p => {
+                    const prev = p.previousElementSibling;
+                    if (prev && prev.name) {
+                        const val = c[prev.name];
+                        if (val !== undefined) {
+                            p.textContent = '当前: ' + (val || '未设置');
+                        }
+                    }
+                });
+                // 解析 TG 通知事件复选框
+                const tgEvents = (c.tg_notify_events || '').split(',').map(s => s.trim()).filter(Boolean);
+                document.querySelectorAll('[name^="tg_notify_"]').forEach(cb => {
+                    const evt = cb.name.replace('tg_notify_', '');
+                    cb.checked = tgEvents.includes(evt);
+                });
+            }
+        } catch(e) {}
+    }
+    loadConfig();
+
+    async function saveConfig(e) {
+        e.preventDefault();
+        const form = document.getElementById('configForm');
+        const data = {};
+        new FormData(form).forEach((v, k) => { data[k] = v; });
+
+        // 将 TG 通知复选框合并为逗号分隔字符串
+        const tgEvents = [];
+        if (document.querySelector('[name="tg_notify_review"]')?.checked) tgEvents.push('review');
+        if (document.querySelector('[name="tg_notify_scan"]')?.checked) tgEvents.push('scan');
+        if (document.querySelector('[name="tg_notify_download"]')?.checked) tgEvents.push('download');
+        data['tg_notify_events'] = tgEvents.join(',');
+
+        // 将排除媒体库复选框合并为逗号分隔 ID 字符串
+        const excludedLibs = [];
+        document.querySelectorAll('[name="exclude_library"]:checked').forEach(cb => {
+            excludedLibs.push(cb.value);
+        });
+        data['exclude_library_ids'] = excludedLibs.join(',');
+
+        // 移除多余的复选框数据（隐藏字段已包含合并结果）
+        delete data['exclude_library'];
+
+        try {
+            const resp = await fetch('/api/config', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify(data),
+            });
+            const json = await resp.json();
+            if (json.status === 'success') {
+                showToast('success', '配置已保存');
+                loadConfig(); // 刷新当前值显示
+            } else {
+                showToast('error', '保存失败: ' + (json.message || ''));
+            }
+        } catch(e) {
+            showToast('error', '请求失败');
+        }
+        return false;
+    }
+
+    async function testConnection(type) {
+        const buttons = document.querySelectorAll('button');
+        let btn = null;
+        buttons.forEach(b => {
+            const card = b.closest('.apple-card');
+            if (b.textContent.includes('测试连接') && card) {
+                const inputs = card.querySelectorAll('input[name]');
+                for (const inp of inputs) {
+                    if (inp.name.startsWith(type)) { btn = b; break; }
+                }
+            }
+        });
+        // Fallback: find by onclick
+        if (!btn) {
+            buttons.forEach(b => {
+                if (b.getAttribute('onclick')?.includes(type)) btn = b;
+            });
+        }
+
+        if (btn) {
+            btn.disabled = true;
+            btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin mr-1"></i> 测试中...';
+        }
+
+        try {
+            const resp = await fetch(`/api/config/test/${type}`, { method: 'POST' });
+            const json = await resp.json();
+            showToast(json.status === 'success' ? 'success' : 'error',
+                      json.message || (json.status === 'success' ? '连接成功' : '连接失败'));
+        } catch(e) {
+            showToast('error', '请求失败');
+        }
+
+        if (btn) {
+            btn.disabled = false;
+            btn.innerHTML = '<i class="fa-solid fa-plug mr-1"></i> 测试连接';
+        }
+    }
+
+    async function fetchTgChatId() {
+        try {
+            const resp = await fetch('/api/config/test/telegram');
+            const json = await resp.json();
+            if (json.status === 'success') {
+                // 获取 updates 中的 chat_id
+                const upResp = await fetch('/api/telegram/updates');
+                const upJson = await upResp.json();
+                if (upJson.status === 'success' && upJson.data.length > 0) {
+                    const chatId = upJson.data[0].chat_id;
+                    document.querySelector('[name="tg_chat_id"]').value = chatId;
+                    showToast('success', '已自动填入 Chat ID: ' + chatId);
+                } else {
+                    showToast('info', '机器人连接成功！请先给机器人发一条消息，然后重新点击此按钮');
+                }
+            } else {
+                showToast('error', json.message || '机器人连接失败');
+            }
+        } catch(e) {
+            showToast('error', '请求失败');
+        }
+    }
+
+    async function sendTestTg() {
+        // 先保存配置（确保 token 和 chat_id 已保存）
+        const form = document.getElementById('configForm');
+        const data = {};
+        new FormData(form).forEach((v, k) => { data[k] = v; });
+        const tgEvents = [];
+        if (document.querySelector('[name="tg_notify_review"]')?.checked) tgEvents.push('review');
+        if (document.querySelector('[name="tg_notify_scan"]')?.checked) tgEvents.push('scan');
+        if (document.querySelector('[name="tg_notify_download"]')?.checked) tgEvents.push('download');
+        data['tg_notify_events'] = tgEvents.join(',');
+        const excludedLibs = [];
+        document.querySelectorAll('[name="exclude_library"]:checked').forEach(cb => {
+            excludedLibs.push(cb.value);
+        });
+        data['exclude_library_ids'] = excludedLibs.join(',');
+        delete data['exclude_library'];
+        try {
+            await fetch('/api/config', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify(data),
+            });
+        } catch(e) {}
+
+        try {
+            const resp = await fetch('/api/config/test/telegram/send', { method: 'POST' });
+            const json = await resp.json();
+            showToast(json.status === 'success' ? 'success' : 'error', json.message || '发送完成');
+        } catch(e) {
+            showToast('error', '请求失败');
+        }
+    }
+</script>
+{% endblock %}
