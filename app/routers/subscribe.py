@@ -1194,20 +1194,31 @@ async def _run_matching(rules: list[dict]):
                     if best and review_id:
                         try:
                             tg = TelegramNotifier()
-                            await tg.send_review_card({
-                                "id": review_id,
-                                "rule_id": rule_id,
-                                "rule_name": rule_name,
-                                "item_id": item_id,
-                                "item_name": item_name,
-                                "current_quality": item,
-                                "search_result": best,
-                                "source": src,
-                                "action_type": action_type,
-                            })
-                            await tg.close()
+                            try:
+                                sent = await tg.send_review_card({
+                                    "id": review_id,
+                                    "rule_id": rule_id,
+                                    "rule_name": rule_name,
+                                    "item_id": item_id,
+                                    "item_name": item_name,
+                                    "current_quality": item,
+                                    "search_result": best,
+                                    "source": src,
+                                    "action_type": action_type,
+                                })
+                                if not sent:
+                                    await add_subscribe_log(
+                                        rule_id, rule_name, "warn", item_name, item_id,
+                                        "TG 审核卡片发送失败，请检查 Bot 权限、Chat ID 或 Telegram 网络"
+                                    )
+                            finally:
+                                await tg.close()
                         except Exception as e:
                             logger.warning(f"[Subscribe] TG 审核通知失败: {e}")
+                            await add_subscribe_log(
+                                rule_id, rule_name, "warn", item_name, item_id,
+                                f"TG 审核通知异常: {str(e)[:80]}"
+                            )
 
                 except Exception as e:
                     await add_subscribe_log(rule_id, rule_name, "error", item_name, item_id, str(e))

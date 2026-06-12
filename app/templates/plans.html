@@ -1120,15 +1120,21 @@
             const batchBtn = document.getElementById('batchApproveBtn');
             const clearBtn = document.getElementById('clearReviewsBtn');
 
-            if (pendingCount === 0) {
-                section.classList.add('hidden');
-                return;
-            }
-
             section.classList.remove('hidden');
             badge.textContent = pendingCount;
             batchBtn.classList[pendingCount > 1 ? 'remove' : 'add']('hidden');
-            clearBtn.classList.remove('hidden');
+            clearBtn.classList[pendingCount > 0 ? 'remove' : 'add']('hidden');
+
+            if (pendingCount === 0) {
+                container.innerHTML = `
+                    <div class="apple-card p-6 text-center text-sm text-gray-400 dark:text-gray-500">
+                        <i class="fa-solid fa-clipboard-check text-2xl mb-2 opacity-40"></i>
+                        <div class="font-bold text-gray-500 dark:text-gray-400">暂无待审核项</div>
+                        <div class="text-xs mt-1">运行订阅规则后，匹配到的洗版资源会出现在这里。</div>
+                    </div>
+                `;
+                return;
+            }
 
              container.innerHTML = reviews.map(r => {
                 const cq = r.current_quality || {};

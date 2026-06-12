@@ -211,6 +211,51 @@ class TelegramNotifier:
 
     # ─── 基础 API ───
 
+    async def _send_to_chat(self, chat_id: str, text: str, parse_mode: str = "Markdown",
+                            reply_markup: dict = None) -> bool:
+        """发送消息；Markdown 解析失败时自动降级为纯文本，避免动态片名/资源名阻断通知。"""
+        if not self.token or not chat_id:
+            return False
+
+        payload = {
+            "chat_id": str(chat_id),
+            "text": text,
+            "disable_web_page_preview": True,
+        }
+        if parse_mode:
+            payload["parse_mode"] = parse_mode
+        if reply_markup:
+            payload["reply_markup"] = reply_markup
+
+        try:
+            resp = await self._client.post(
+                f"https://api.telegram.org/bot{self.token}/sendMessage",
+                json=payload
+            )
+            data = resp.json()
+            if data.get("ok", False):
+                return True
+
+            desc = data.get("description", "unknown error")
+            logger.warning(f"[Telegram] 消息发送失败: {desc}")
+
+            if parse_mode:
+                fallback = dict(payload)
+                fallback.pop("parse_mode", None)
+                resp = await self._client.post(
+                    f"https://api.telegram.org/bot{self.token}/sendMessage",
+                    json=fallback
+                )
+                retry_data = resp.json()
+                if retry_data.get("ok", False):
+                    logger.info("[Telegram] Markdown 发送失败，已降级为纯文本发送")
+                    return True
+                logger.warning(f"[Telegram] 纯文本重试失败: {retry_data.get('description', 'unknown error')}")
+            return False
+        except Exception as e:
+            logger.warning(f"[Telegram] 消息发送失败: {e}")
+            return False
+
     async def check_connectivity(self) -> bool:
         """检查机器人 Token 是否有效"""
         if not self.token:
@@ -250,27 +295,7 @@ class TelegramNotifier:
         """发送消息到已配置的 Chat ID"""
         if not self.is_configured:
             return False
-        try:
-            payload = {
-                "chat_id": self.chat_id,
-                "text": text,
-                "disable_web_page_preview": True,
-            }
-            if parse_mode:
-                payload["parse_mode"] = parse_mode
-            if reply_markup:
-                payload["reply_markup"] = reply_markup
-            resp = await self._client.post(
-                f"https://api.telegram.org/bot{self.token}/sendMessage",
-                json=payload
-            )
-            data = resp.json()
-            if not data.get("ok", False):
-                logger.warning(f"[Telegram] 消息发送失败: {data.get('description', 'unknown error')}")
-            return data.get("ok", False)
-        except Exception as e:
-            logger.warning(f"[Telegram] 消息发送失败: {e}")
-            return False
+        return await self._send_to_chat(self.chat_id, text, parse_mode=parse_mode, reply_markup=reply_markup)
 
     async def send_notification(self, event: str, title: str, detail: str = "") -> bool:
         """发送格式化通知（仅当该事件类型已启用时）"""
@@ -531,20 +556,7 @@ class TelegramNotifier:
 
     async def _send_command_reply(self, chat_id: str, text: str):
         """向指定 chat 发送纯文本回复（不依赖 self.chat_id）"""
-        if not self.token:
-            return
-        try:
-            await self._client.post(
-                f"https://api.telegram.org/bot{self.token}/sendMessage",
-                json={
-                    "chat_id": chat_id,
-                    "text": text,
-                    "parse_mode": "Markdown",
-                    "disable_web_page_preview": True,
-                }
-            )
-        except Exception as e:
-            logger.warning(f"[Telegram] 发送回复失败: {e}")
+        await self._send_to_chat(chat_id, text, parse_mode="Markdown")
 
     async def _handle_list_reviews(self, chat_id: str):
         """列出所有待审核项 → 点 #号 弹出操作菜单"""
@@ -571,7 +583,7 @@ class TelegramNotifier:
             name = _e(r.get("item_name", "?"))
             src = "影巢" if r.get("source") == "hdhive" else "MP"
             r_res = (r.get("search_result", {}) or {})
-            quality = _e(_fmt_resolution(r_res.get("resolution", "")))
+            quality = _e(_fmt_quality(r_res) or _fmt_resolution(r_res.get("resolution", "")) or "未知")
             lines.append(f"`#{idx}` {name} ({src} · {quality})")
         if len(reviews) > 10:
             lines.append(f"\n...还有 {len(reviews) - 10} 项")
@@ -598,21 +610,9 @@ class TelegramNotifier:
         reply_markup = {"inline_keyboard": keyboard}
         text = "\n".join(lines)
 
-        if not self.token:
-            return
-        try:
-            await self._client.post(
-                f"https://api.telegram.org/bot{self.token}/sendMessage",
-                json={
-                    "chat_id": chat_id,
-                    "text": text,
-                    "parse_mode": "Markdown",
-                    "disable_web_page_preview": True,
-                    "reply_markup": reply_markup,
-                }
-            )
-        except Exception as e:
-            logger.warning(f"[Telegram] 发送审核列表失败: {e}")
+        ok = await self._send_to_chat(chat_id, text, parse_mode="Markdown", reply_markup=reply_markup)
+        if not ok:
+            logger.warning("[Telegram] 发送审核列表失败")
 
     async def _handle_list_rules(self, chat_id: str):
         """列出所有订阅规则"""
