@@ -39,6 +39,7 @@ docker rm -f "$CONTAINER_NAME" >/dev/null 2>&1 || true
 
 docker run -d \
     --name "$CONTAINER_NAME" \
+    --network host \
     --restart unless-stopped \
     -v /var/run/docker.sock:/var/run/docker.sock \
     -v /volume2/docker:/volume2/docker \
