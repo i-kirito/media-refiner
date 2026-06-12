@@ -5,19 +5,266 @@
 /* ── Dashboard 网格布局 ── */
 #dashboard-grid {
     display: grid;
-    gap: 1.25rem;
+    gap: 1rem;
     grid-auto-rows: minmax(60px, auto);
+    grid-template-columns: repeat(var(--dashboard-cols, 1), minmax(0, 1fr));
+    align-items: start;
 }
-@media (min-width: 768px)  { #dashboard-grid { grid-template-columns: repeat(2, 1fr); } }
-@media (min-width: 1024px) { #dashboard-grid { grid-template-columns: repeat(3, 1fr); } }
-@media (min-width: 1366px) { #dashboard-grid { grid-template-columns: repeat(4, 1fr); } }
+.dashboard-page {
+    --dash-border: rgba(226, 232, 240, 0.9);
+    --dash-muted: rgb(100, 116, 139);
+    --dash-panel: rgba(255, 255, 255, 0.94);
+}
+.dark .dashboard-page {
+    --dash-border: rgba(255, 255, 255, 0.08);
+    --dash-muted: rgb(148, 163, 184);
+    --dash-panel: rgba(28, 28, 30, 0.86);
+}
+.dashboard-page .apple-card,
+.dashboard-hero {
+    border-radius: 20px;
+    border-color: var(--dash-border);
+    background: var(--dash-panel);
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
+    box-shadow: 0 12px 30px -26px rgba(15, 23, 42, 0.48);
+}
+.dark .dashboard-page .apple-card,
+.dark .dashboard-hero {
+    box-shadow: 0 14px 36px -28px rgba(0, 0, 0, 0.9);
+}
+.dashboard-page .apple-card:hover {
+    transform: none;
+}
 
 .widget-item {
     overflow: hidden;
     position: relative;
+    min-width: 0;
+    container-type: inline-size;
 }
-.widget-item > .apple-card { height: 100%; }
-.widget-item .widget-scroll { min-height: 0; overflow: auto; }
+.widget-item > .apple-card {
+    height: 100%;
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
+}
+.widget-item.has-fixed-height {
+    min-height: 0;
+}
+.widget-item .widget-scroll {
+    flex: 1 1 auto;
+    min-height: 0;
+    overflow: auto;
+    overscroll-behavior: contain;
+    scrollbar-gutter: stable;
+    padding-bottom: 0.45rem;
+}
+.widget-item .widget-scroll::-webkit-scrollbar { width: 6px; height: 6px; }
+.widget-item .widget-scroll::-webkit-scrollbar-thumb {
+    background: rgba(148, 163, 184, 0.45);
+    border-radius: 999px;
+}
+.widget-item .widget-scroll::-webkit-scrollbar-track { background: transparent; }
+
+/* ── 自适应主卡片 ── */
+.dashboard-hero {
+    display: flex;
+    flex-direction: column;
+    gap: 0.9rem;
+}
+.dashboard-hero-icon {
+    width: 42px;
+    height: 42px;
+    border-radius: 14px;
+}
+.dashboard-actions {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: flex-end;
+    gap: 0.75rem;
+}
+.dashboard-action-btn {
+    min-height: 42px;
+    white-space: nowrap;
+    line-height: 1.15;
+}
+.dashboard-stat-grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 0;
+    overflow: hidden;
+    border: 1px solid var(--dash-border);
+    border-radius: 16px;
+}
+.dashboard-metric {
+    min-width: 0;
+    padding: 0.85rem 1rem;
+    border-right: 1px solid var(--dash-border);
+    border-bottom: 1px solid var(--dash-border);
+}
+.dashboard-metric:nth-child(2n) { border-right: 0; }
+.dashboard-metric:nth-last-child(-n + 2) { border-bottom: 0; }
+.dashboard-metric-label {
+    color: var(--dash-muted);
+    font-size: 0.72rem;
+    line-height: 1.2;
+    font-weight: 800;
+}
+.adaptive-grid-2 {
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: 1rem;
+}
+.hdr-cards {
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: 0;
+    overflow: hidden;
+    border: 1px solid var(--dash-border);
+    border-radius: 16px;
+}
+.hdr-card {
+    min-height: 78px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 1rem;
+    padding: 0.95rem 1rem;
+    border-radius: 0;
+    border: 0;
+    border-bottom: 1px solid var(--dash-border);
+    background: transparent;
+}
+.hdr-card:last-child {
+    border-bottom: 0;
+}
+.hdr-card-label {
+    color: var(--dash-muted);
+    font-size: 0.72rem;
+    line-height: 1.15;
+    font-weight: 900;
+    letter-spacing: 0;
+    word-break: keep-all;
+    overflow-wrap: normal;
+}
+.hdr-card-value {
+    font-size: clamp(1.55rem, 5cqw, 2rem);
+    line-height: 1;
+    color: rgb(17, 24, 39);
+}
+.dark .hdr-card-value {
+    color: rgb(248, 250, 252);
+}
+.hdr-card-desc {
+    color: var(--dash-muted);
+    font-size: 0.68rem;
+    line-height: 1.25;
+}
+.library-card {
+    display: block;
+    width: 100%;
+    padding: 0.9rem 0;
+    text-align: left;
+    color: inherit;
+    font: inherit;
+    border-left: 0;
+    border-top: 0;
+    border-right: 0;
+    border-bottom: 1px solid var(--dash-border);
+    background: transparent;
+    transition: background-color 0.16s ease;
+}
+.library-card:last-child {
+    border-bottom: 0;
+}
+.library-card:hover {
+    background: rgba(148, 163, 184, 0.08);
+}
+.library-card .library-title {
+    font-size: 0.92rem;
+}
+.dashboard-pill {
+    display: inline-flex;
+    align-items: center;
+    border-radius: 999px;
+    padding: 0.12rem 0.45rem;
+    font-size: 0.62rem;
+    font-weight: 800;
+    background: rgba(100, 116, 139, 0.1);
+    color: rgb(71, 85, 105);
+}
+.dark .dashboard-pill {
+    background: rgba(255, 255, 255, 0.08);
+    color: rgb(203, 213, 225);
+}
+.poor-row {
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+    padding: 0.85rem 1.25rem;
+    transition: background-color 0.16s ease;
+}
+.poor-row:hover {
+    background: rgba(148, 163, 184, 0.08);
+}
+.poor-score {
+    min-width: 44px;
+    height: 44px;
+    border-radius: 14px;
+    display: inline-flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    border: 1px solid var(--dash-border);
+    background: rgba(248, 250, 252, 0.72);
+}
+.dark .poor-score {
+    background: rgba(255, 255, 255, 0.04);
+}
+@media (min-width: 768px) {
+    .dashboard-hero {
+        flex-direction: row;
+        align-items: center;
+        justify-content: space-between;
+    }
+}
+@container (min-width: 620px) {
+    .dashboard-stat-grid {
+        grid-template-columns: repeat(4, minmax(0, 1fr));
+    }
+    .dashboard-metric,
+    .dashboard-metric:nth-child(2n) {
+        border-right: 1px solid var(--dash-border);
+        border-bottom: 0;
+    }
+    .dashboard-metric:last-child {
+        border-right: 0;
+    }
+    .adaptive-grid-2 {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 1.25rem;
+    }
+    .hdr-cards {
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+    }
+    .hdr-card {
+        min-height: 104px;
+        display: block;
+        padding: 1rem;
+        border-right: 1px solid var(--dash-border);
+        border-bottom: 0;
+    }
+    .hdr-card:last-child {
+        border-right: 0;
+    }
+}
+@container (max-width: 440px) {
+    .dashboard-stat-grid {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+}
 
 /* ── 拖拽手柄（左上） ── */
 .widget-drag-handle {
@@ -46,31 +293,46 @@
 .widget-menu-btn:hover { background: rgba(0,0,0,0.04); color: #6b7280; }
 .dark .widget-menu-btn:hover { background: rgba(255,255,255,0.08); color: #d1d5db; }
 @media (max-width: 767px) { .widget-menu-btn { opacity: 1; } }
+.widget-menu-btn-inline {
+    position: static !important;
+    z-index: auto !important;
+    opacity: 1 !important;
+    flex: 0 0 auto;
+}
 
 /* ── 底边缩放手柄 ── */
 .widget-resize-handle {
     position: absolute !important;
-    bottom: 0 !important; left: 50% !important;
-    transform: translateX(-50%) !important;
-    width: 50px !important; height: 14px !important;
+    bottom: 0 !important; left: 0 !important; right: auto !important;
+    transform: none !important;
+    width: 100% !important; height: 22px !important;
+    display: flex;
+    align-items: center;
+    justify-content: center;
     cursor: ns-resize !important;
     z-index: 99999 !important;
     pointer-events: auto !important;
     opacity: 0; transition: opacity 0.2s;
     background: transparent !important;
+    touch-action: none;
 }
 .widget-item:hover .widget-resize-handle { opacity: 1; }
 .widget-resize-handle::before {
     content: '';
-    position: absolute; left: 50%; top: 50%;
-    transform: translate(-50%, -50%);
-    width: 28px; height: 4px;
+    display: block;
+    flex: 0 0 auto;
+    width: min(84px, 42%); height: 4px;
     background: rgba(99,102,241,0.5); border-radius: 2px;
 }
+.widget-item.resizing .widget-resize-handle { opacity: 1; }
 .widget-resize-handle:hover::before { background: rgba(99,102,241,0.8); }
 .dark .widget-resize-handle::before { background: rgba(255,159,10,0.5); }
 .dark .widget-resize-handle:hover::before { background: rgba(255,159,10,0.8); }
-@media (max-width: 767px) { .widget-resize-handle { display: none !important; } }
+body.dashboard-resizing, body.dashboard-resizing * { cursor: ns-resize !important; }
+@media (max-width: 767px) {
+    .widget-resize-handle { height: 14px !important; opacity: 0 !important; }
+    .widget-item.resizing .widget-resize-handle { opacity: 1 !important; }
+}
 
 /* ── 右边缘列宽缩放手柄 ── */
 .widget-resize-w {
@@ -108,17 +370,17 @@
 .dark .apple-blur { background: rgba(28,28,30,0.85); }
 
 /* ── 统计数字 ── */
-.stat-number { font-size: 2rem; line-height: 1; }
+.stat-number { font-size: 1.85rem; line-height: 1; font-variant-numeric: tabular-nums; letter-spacing: 0; }
 @media (max-width: 767px) { .stat-number { font-size: 1.5rem; } }
 </style>
 {% endblock %}
 {% block content %}
-<div class="max-w-7xl mx-auto w-full px-4 md:px-8 py-6 pb-24 relative">
+<div class="dashboard-page max-w-7xl mx-auto w-full px-4 md:px-8 py-6 pb-24 relative">
 
     <!-- 标题 + 操作 -->
-    <div class="flex flex-col md:flex-row justify-between items-center mb-8 gap-4 bg-white dark:bg-gray-800 p-4 rounded-2xl shadow-sm border border-gray-100 dark:border-gray-700">
+    <div class="dashboard-hero mb-6 p-4 border">
         <div class="flex items-center gap-3">
-            <div class="w-12 h-12 bg-brand-50 dark:bg-brand-900/30 rounded-xl flex items-center justify-center border border-brand-100 dark:border-brand-800">
+            <div class="dashboard-hero-icon bg-brand-50 dark:bg-brand-900/30 flex items-center justify-center border border-brand-100 dark:border-brand-800">
                 <i class="fa-solid fa-chart-line text-brand-500 text-xl"></i>
             </div>
             <div>
@@ -129,13 +391,13 @@
                 <p class="text-xs text-gray-500 mt-0.5" id="scan-time">点击开始扫描，盘点 Emby 媒体库质量</p>
             </div>
         </div>
-        <div class="flex items-center gap-2 sm:gap-3">
-            <button onclick="ScanManager.start()" id="btn-start-scan" class="px-3 sm:px-5 py-2 text-xs sm:text-sm font-bold text-white bg-brand-500 hover:bg-brand-600 rounded-xl shadow-md transition active:scale-95 flex items-center gap-1.5 sm:gap-2">
+        <div class="dashboard-actions">
+            <button onclick="ScanManager.start()" id="btn-start-scan" class="dashboard-action-btn px-3 sm:px-5 py-2 text-xs sm:text-sm font-bold text-white bg-brand-500 hover:bg-brand-600 rounded-xl shadow-md transition active:scale-95 flex items-center gap-1.5 sm:gap-2">
                 <i class="fa-solid fa-rotate" id="scan-icon"></i> <span class="hidden sm:inline">开始质量扫描</span><span class="sm:hidden">扫描</span>
             </button>
             <!-- 定时扫描按钮 -->
             <div class="relative" id="scheduleWrapper">
-                <button onclick="toggleScheduleDropdown()" id="scheduleToggle" class="flex items-center gap-1.5 sm:gap-2 px-3 sm:px-4 py-2 text-xs font-bold rounded-xl transition-all active:scale-95 shadow-sm border border-gray-200 dark:border-white/5 bg-gray-100 dark:bg-apple-hoverDark text-gray-500 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-[#3A3A3C]">
+                <button onclick="toggleScheduleDropdown()" id="scheduleToggle" class="dashboard-action-btn flex items-center gap-1.5 sm:gap-2 px-3 sm:px-4 py-2 text-xs font-bold rounded-xl transition-all active:scale-95 shadow-sm border border-gray-200 dark:border-white/5 bg-gray-100 dark:bg-apple-hoverDark text-gray-500 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-[#3A3A3C]">
                     <i class="fa-regular fa-clock"></i>
                     <span id="scheduleText" class="hidden sm:inline">定时扫描</span>
                     <i class="fa-solid fa-chevron-down text-[10px] ml-0.5 opacity-60"></i>
@@ -191,22 +453,24 @@
                         </h3>
                         <span class="text-[10px] font-bold text-gray-400">{% if summary %}{{ summary.total_count|default(0) }}{% else %}-{% endif %} 部</span>
                     </div>
-                    <div class="grid grid-cols-2 md:grid-cols-4 gap-3 md:gap-4">
-                        <div class="text-center">
-                            <div class="text-gray-500 dark:text-gray-400 text-xs font-bold mb-1">媒体总数</div>
-                            <div class="stat-number font-black text-gray-900 dark:text-white" id="stat-total">-</div>
-                        </div>
-                        <div class="text-center">
-                            <div class="text-gray-500 dark:text-gray-400 text-xs font-bold mb-1">4K 超高清</div>
-                            <div class="stat-number font-black text-purple-500" id="stat-4k">-</div>
-                        </div>
-                        <div class="text-center">
-                            <div class="text-gray-500 dark:text-gray-400 text-xs font-bold mb-1">HEVC 编码</div>
-                            <div class="stat-number font-black text-green-500" id="stat-hevc">-</div>
-                        </div>
-                        <div class="text-center">
-                            <div class="text-gray-500 dark:text-gray-400 text-xs font-bold mb-1">杜比视界</div>
-                            <div class="stat-number font-black text-indigo-500" id="stat-dv">-</div>
+                    <div class="widget-scroll">
+                        <div class="dashboard-stat-grid">
+                            <div class="dashboard-metric">
+                                <div class="dashboard-metric-label mb-1">媒体总数</div>
+                                <div class="stat-number font-black text-gray-900 dark:text-white" id="stat-total">-</div>
+                            </div>
+                            <div class="dashboard-metric">
+                                <div class="dashboard-metric-label mb-1">4K 超高清</div>
+                                <div class="stat-number font-black text-purple-500" id="stat-4k">-</div>
+                            </div>
+                            <div class="dashboard-metric">
+                                <div class="dashboard-metric-label mb-1">HEVC 编码</div>
+                                <div class="stat-number font-black text-green-500" id="stat-hevc">-</div>
+                            </div>
+                            <div class="dashboard-metric">
+                                <div class="dashboard-metric-label mb-1">杜比视界</div>
+                                <div class="stat-number font-black text-indigo-500" id="stat-dv">-</div>
+                            </div>
                         </div>
                     </div>
                 </div>
@@ -222,14 +486,16 @@
                     <h3 class="text-sm font-black text-gray-800 dark:text-gray-100 mb-4 flex items-center gap-2">
                         <i class="fa-solid fa-chart-bar text-brand-500"></i> 质量分布
                     </h3>
-                    <div class="grid grid-cols-1 md:grid-cols-2 gap-4 md:gap-6">
-                        <div>
-                            <div class="text-xs font-bold text-gray-500 mb-3 uppercase tracking-wide">分辨率矩阵</div>
-                            <div id="resolution-chart" class="space-y-1"></div>
-                        </div>
-                        <div>
-                            <div class="text-xs font-bold text-gray-500 mb-3 uppercase tracking-wide">编码格式分布</div>
-                            <div id="codec-chart" class="space-y-1"></div>
+                    <div class="widget-scroll">
+                        <div class="adaptive-grid-2">
+                            <div>
+                                <div class="text-xs font-bold text-gray-500 mb-3 uppercase tracking-wide">分辨率矩阵</div>
+                                <div id="resolution-chart" class="space-y-1"></div>
+                            </div>
+                            <div>
+                                <div class="text-xs font-bold text-gray-500 mb-3 uppercase tracking-wide">编码格式分布</div>
+                                <div id="codec-chart" class="space-y-1"></div>
+                            </div>
                         </div>
                     </div>
                 </div>
@@ -245,49 +511,63 @@
                     <h3 class="text-sm font-black text-gray-800 dark:text-gray-100 mb-4 flex items-center gap-2">
                         <i class="fa-solid fa-sun text-brand-500"></i> HDR 概览
                     </h3>
-                    <div class="grid grid-cols-1 md:grid-cols-3 gap-3 md:gap-4">
-                        <div class="bento-card rounded-3xl p-5 bg-gradient-to-br from-indigo-50/50 to-purple-50/50 dark:from-indigo-900/20 dark:to-purple-900/20 border border-purple-200 dark:border-purple-800 relative overflow-hidden">
-                            <div class="absolute -right-2 top-2 opacity-10 pointer-events-none"><i class="fa-solid fa-certificate text-6xl text-purple-500"></i></div>
-                            <div class="text-purple-600 dark:text-purple-400 text-sm font-black tracking-widest mb-2">DOLBY VISION</div>
-                            <div class="text-3xl font-black text-gray-900 dark:text-white" id="stat-dv-lg">0</div>
-                            <p class="text-[10px] text-gray-500 mt-1 font-medium">顶级 HDR 体验</p>
-                        </div>
-                        <div class="bento-card rounded-3xl p-5 bg-gradient-to-br from-teal-50/50 to-cyan-50/50 dark:from-teal-900/20 dark:to-cyan-900/20 border border-teal-200 dark:border-teal-800 relative overflow-hidden">
-                            <div class="absolute -right-2 top-2 opacity-10 pointer-events-none"><i class="fa-solid fa-sun text-6xl text-teal-500"></i></div>
-                            <div class="text-teal-600 dark:text-teal-400 text-sm font-black tracking-widest mb-2">HDR10</div>
-                            <div class="text-3xl font-black text-gray-900 dark:text-white" id="stat-hdr-lg">0</div>
-                            <p class="text-[10px] text-gray-500 mt-1 font-medium">标准 HDR</p>
-                        </div>
-                        <div class="bento-card rounded-3xl p-5 bg-gradient-to-br from-gray-50/50 to-gray-100/50 dark:from-gray-800/20 dark:to-gray-700/20 border border-gray-200 dark:border-gray-700 relative overflow-hidden">
-                            <div class="absolute -right-2 top-2 opacity-10 pointer-events-none"><i class="fa-solid fa-tv text-6xl text-gray-400"></i></div>
-                            <div class="text-gray-500 dark:text-gray-400 text-sm font-black tracking-widest mb-2">SDR</div>
-                            <div class="text-3xl font-black text-gray-900 dark:text-white" id="stat-sdr-lg">0</div>
-                            <p class="text-[10px] text-gray-500 mt-1 font-medium">标准动态范围</p>
+                    <div class="widget-scroll">
+                        <div class="hdr-cards">
+                            <div class="hdr-card">
+                                <div class="min-w-0">
+                                    <div class="hdr-card-label mb-1.5">DOLBY VISION</div>
+                                    <div class="hdr-card-value font-black text-gray-900 dark:text-white" id="stat-dv-lg">0</div>
+                                    <p class="hdr-card-desc text-gray-500 mt-1 font-medium">顶级 HDR 体验</p>
+                                </div>
+                            </div>
+                            <div class="hdr-card">
+                                <div class="min-w-0">
+                                    <div class="hdr-card-label mb-1.5">HDR10</div>
+                                    <div class="hdr-card-value font-black text-gray-900 dark:text-white" id="stat-hdr-lg">0</div>
+                                    <p class="hdr-card-desc text-gray-500 mt-1 font-medium">标准 HDR</p>
+                                </div>
+                            </div>
+                            <div class="hdr-card">
+                                <div class="min-w-0">
+                                    <div class="hdr-card-label mb-1.5">SDR</div>
+                                    <div class="hdr-card-value font-black text-gray-900 dark:text-white" id="stat-sdr-lg">0</div>
+                                    <p class="hdr-card-desc text-gray-500 mt-1 font-medium">标准动态范围</p>
+                                </div>
+                            </div>
                         </div>
                     </div>
                 </div>
             </div>
 
-            <!-- ===== Widget：深入分析 ===== -->
-            <div class="widget-item" data-module="histogram" data-default-size="3x1">
+            <!-- ===== Widget：质量分数分布 ===== -->
+            <div class="widget-item" data-module="score" data-default-size="1x1">
                 <div class="apple-card p-5 md:p-6 relative overflow-hidden">
                     <div class="widget-drag-handle" title="拖拽排序"><i class="fa-solid fa-grip-lines"></i></div>
                     <div class="widget-resize-handle" title="调整高度"></div>
                     <div class="widget-resize-w" title="拖拽缩放列宽"></div>
-                    <button onclick="toggleWidgetMenu(event, 'histogram')" class="widget-menu-btn" title="更多操作"><i class="fa-solid fa-ellipsis text-xs"></i></button>
+                    <button onclick="toggleWidgetMenu(event, 'score')" class="widget-menu-btn" title="更多操作"><i class="fa-solid fa-ellipsis text-xs"></i></button>
                     <h3 class="text-sm font-black text-gray-800 dark:text-gray-100 mb-4 flex items-center gap-2">
-                        <i class="fa-solid fa-chart-bar text-brand-500"></i> 深入分析
+                        <i class="fa-solid fa-chart-column text-brand-500"></i> 质量分数分布
                     </h3>
-                    <div class="grid grid-cols-1 md:grid-cols-2 gap-4 md:gap-6">
-                        <div>
-                            <div class="text-xs font-bold text-gray-500 mb-3 uppercase tracking-wide">质量分数分布</div>
-                            <div id="score-histogram" class="h-52 flex items-end gap-2"></div>
-                        </div>
-                        <div>
-                            <div class="text-xs font-bold text-gray-500 mb-3 uppercase tracking-wide">媒体库分布</div>
-                            <div id="library-dist" class="space-y-2">
-                                <div class="text-center py-8 text-gray-400 text-sm">加载中...</div>
-                            </div>
+                    <div class="widget-scroll">
+                        <div id="score-histogram" class="h-52 flex items-end gap-2"></div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- ===== Widget：媒体库分布 ===== -->
+            <div class="widget-item" data-module="libraries" data-default-size="1x1">
+                <div class="apple-card p-5 md:p-6 relative overflow-hidden">
+                    <div class="widget-drag-handle" title="拖拽排序"><i class="fa-solid fa-grip-lines"></i></div>
+                    <div class="widget-resize-handle" title="调整高度"></div>
+                    <div class="widget-resize-w" title="拖拽缩放列宽"></div>
+                    <button onclick="toggleWidgetMenu(event, 'libraries')" class="widget-menu-btn" title="更多操作"><i class="fa-solid fa-ellipsis text-xs"></i></button>
+                    <h3 class="text-sm font-black text-gray-800 dark:text-gray-100 mb-4 flex items-center gap-2">
+                        <i class="fa-solid fa-folder-tree text-brand-500"></i> 媒体库分布
+                    </h3>
+                    <div class="widget-scroll">
+                        <div id="library-dist" class="space-y-2">
+                            <div class="text-center py-8 text-gray-400 text-sm">加载中...</div>
                         </div>
                     </div>
                 </div>
@@ -299,16 +579,18 @@
                     <div class="widget-drag-handle" title="拖拽排序"><i class="fa-solid fa-grip-lines"></i></div>
                     <div class="widget-resize-handle" title="调整高度"></div>
                     <div class="widget-resize-w" title="拖拽缩放列宽"></div>
-                    <button onclick="toggleWidgetMenu(event, 'poor')" class="widget-menu-btn" title="更多操作"><i class="fa-solid fa-ellipsis text-xs"></i></button>
-                    <div class="px-5 py-4 border-b border-gray-100 dark:border-gray-700/50 flex justify-between items-center">
-                        <h3 class="font-bold text-sm flex items-center gap-2 text-rose-600 dark:text-rose-400">
+                    <div class="px-5 py-4 border-b border-gray-100 dark:border-gray-700/50 flex justify-between items-center gap-3">
+                        <h3 class="font-bold text-sm flex items-center gap-2 text-rose-600 dark:text-rose-400 min-w-0">
                             <i class="fa-solid fa-triangle-exclamation"></i> 低质量条目
                         </h3>
-                        <a href="/items" class="text-xs font-bold text-brand-500 hover:text-brand-600 transition-colors flex items-center gap-1">
-                            查看全部 <i class="fa-solid fa-arrow-right text-[10px]"></i>
-                        </a>
+                        <div class="flex items-center gap-1.5 shrink-0">
+                            <button onclick="toggleWidgetMenu(event, 'poor')" class="widget-menu-btn widget-menu-btn-inline" title="更多操作"><i class="fa-solid fa-ellipsis text-xs"></i></button>
+                            <a href="/items" class="text-xs font-bold text-brand-500 hover:text-brand-600 transition-colors flex items-center gap-1 whitespace-nowrap">
+                                查看全部 <i class="fa-solid fa-arrow-right text-[10px]"></i>
+                            </a>
+                        </div>
                     </div>
-                    <div id="poor-items-preview" class="divide-y divide-gray-100 dark:divide-gray-700/50">
+                    <div id="poor-items-preview" class="widget-scroll divide-y divide-gray-100 dark:divide-gray-700/50">
                         <div class="p-8 text-center text-gray-400 text-sm">暂无低质量数据</div>
                     </div>
                 </div>
@@ -440,6 +722,10 @@ function renderBarChart(containerId, data, keys, colors) {
     `).join('');
 }
 
+function fmtNum(value) {
+    return Number(value || 0).toLocaleString('zh-CN');
+}
+
 let _allItems = [];
 let _libData = [];
 
@@ -467,10 +753,10 @@ function _updateScheduleUI(hours) {
     const btn = document.getElementById('scheduleToggle');
     const text = document.getElementById('scheduleText');
     if (hours > 0) {
-        btn.className = 'flex items-center gap-2 px-4 py-2 text-xs font-bold rounded-xl transition-all active:scale-95 shadow-sm border border-brand-500 bg-brand-500 text-white hover:bg-brand-600';
+        btn.className = 'dashboard-action-btn flex items-center gap-2 px-4 py-2 text-xs font-bold rounded-xl transition-all active:scale-95 shadow-sm border border-brand-500 bg-brand-500 text-white hover:bg-brand-600';
         text.textContent = `每 ${hours}h`;
     } else {
-        btn.className = 'flex items-center gap-2 px-4 py-2 text-xs font-bold rounded-xl transition-all active:scale-95 shadow-sm border border-gray-200 dark:border-white/5 bg-gray-100 dark:bg-apple-hoverDark text-gray-500 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-[#3A3A3C]';
+        btn.className = 'dashboard-action-btn flex items-center gap-2 px-4 py-2 text-xs font-bold rounded-xl transition-all active:scale-95 shadow-sm border border-gray-200 dark:border-white/5 bg-gray-100 dark:bg-apple-hoverDark text-gray-500 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-[#3A3A3C]';
         text.textContent = '定时扫描';
     }
     document.querySelectorAll('#scheduleDropdown button[data-schedule-hour]').forEach(el => {
@@ -544,14 +830,14 @@ async function loadDashboard() {
         const rd = summary.resolution_dist || {};
         const cd = summary.codec_dist || {};
         const hd = summary.hdr_dist || {};
-        document.getElementById('stat-total').textContent = summary.total_count || 0;
-        document.getElementById('stat-4k').textContent = rd['4k'] || 0;
-        document.getElementById('stat-hevc').textContent = cd['hevc'] || 0;
-        document.getElementById('stat-dv').textContent = hd['dolby_vision'] || 0;
-        badge.textContent = `总计: ${summary.total_count || 0} 部`;
-        document.getElementById('stat-dv-lg').textContent = hd['dolby_vision'] || 0;
-        document.getElementById('stat-hdr-lg').textContent = hd['hdr10'] || 0;
-        document.getElementById('stat-sdr-lg').textContent = hd['sdr'] || 0;
+        document.getElementById('stat-total').textContent = fmtNum(summary.total_count);
+        document.getElementById('stat-4k').textContent = fmtNum(rd['4k']);
+        document.getElementById('stat-hevc').textContent = fmtNum(cd['hevc']);
+        document.getElementById('stat-dv').textContent = fmtNum(hd['dolby_vision']);
+        badge.textContent = `总计: ${fmtNum(summary.total_count)} 部`;
+        document.getElementById('stat-dv-lg').textContent = fmtNum(hd['dolby_vision']);
+        document.getElementById('stat-hdr-lg').textContent = fmtNum(hd['hdr10']);
+        document.getElementById('stat-sdr-lg').textContent = fmtNum(hd['sdr']);
 
         renderBarChart('resolution-chart', rd, ['4k', '1080p', '720p', 'sd'],
             ['rgba(147,51,234,0.7)', 'rgba(59,130,246,0.7)', 'rgba(20,184,166,0.7)', 'rgba(156,163,175,0.5)']);
@@ -626,14 +912,14 @@ async function loadDashboard() {
             previewContainer.innerHTML = poorItems.map(item => {
                 const score = item.quality_score || 0;
                 const sc = score <= 30 ? 'text-red-500' : 'text-yellow-500';
-                return `<div class="flex items-center px-4 md:px-5 py-3 table-row-hover group">
+                return `<div class="poor-row group">
                     <div class="flex-1 min-w-0">
-                        <div class="font-medium text-sm truncate">${item.name}${item.year ? ` <span class="text-gray-400 text-xs font-normal">(${item.year})</span>` : ''}</div>
+                        <div class="font-semibold text-sm truncate">${item.name}${item.year ? ` <span class="text-gray-400 text-xs font-normal">(${item.year})</span>` : ''}</div>
                         <div class="flex items-center gap-1.5 mt-1 flex-wrap">${badgeRes(item.resolution)}${badgeCodec(item.video_codec)}${badgeHdr(item.video_range)}</div>
                     </div>
-                    <div class="flex items-center gap-3 ml-4">
-                        <span class="font-mono font-bold text-sm ${sc}">${score}</span>
-                        <button onclick="location.href='/items?search=${encodeURIComponent(item.name)}'" class="px-3 py-1.5 text-xs font-bold text-white bg-brand-500 hover:bg-brand-600 rounded-lg transition-all active:scale-95 shadow-sm">洗版</button>
+                    <div class="flex items-center gap-2 shrink-0">
+                        <span class="poor-score"><span class="font-mono font-black text-sm ${sc}">${score}</span><span class="text-[9px] text-gray-400 font-bold">分</span></span>
+                        <button onclick="location.href='/items?search=${encodeURIComponent(item.name)}'" class="px-3 py-2 text-xs font-bold text-white bg-brand-500 hover:bg-brand-600 rounded-xl transition-colors">洗版</button>
                     </div>
                 </div>`;
             }).join('');
@@ -661,34 +947,27 @@ function renderLibraries() {
     }
     container.innerHTML = _libData.map(lib => {
         const avg = lib.items.length > 0 ? (lib.totalScore / lib.items.length).toFixed(0) : '?';
-        const lowPct = lib.items.length > 0 ? (lib.lowCount / lib.items.length * 100).toFixed(0) : 0;
         const hevcPct = lib.items.length > 0 ? (lib.codecDist.hevc / lib.items.length * 100).toFixed(0) : 0;
         const res4kPct = lib.items.length > 0 ? (lib.resDist['4k'] / lib.items.length * 100).toFixed(0) : 0;
         const hdrPct = lib.items.length > 0 ? ((lib.hdrDist.dolby_vision + lib.hdrDist.hdr10) / lib.items.length * 100).toFixed(0) : 0;
         const avgColor = avg >= 70 ? 'text-green-500' : avg >= 50 ? 'text-yellow-500' : 'text-red-500';
-        return `<div class="apple-card p-3.5 cursor-pointer hover:shadow-md transition-all" onclick="openLibModal('${escapeHtml(lib.name)}')">
-            <div class="flex items-center justify-between mb-2">
-                <div class="flex items-center gap-2.5 min-w-0">
-                    <div class="w-8 h-8 rounded-lg bg-cyan-50 dark:bg-cyan-900/30 flex items-center justify-center shrink-0 border border-cyan-100 dark:border-cyan-800">
-                        <i class="fa-solid fa-folder-open text-cyan-500 text-xs"></i>
-                    </div>
-                    <div class="min-w-0">
-                        <div class="font-bold text-sm text-gray-800 dark:text-gray-200 truncate">${lib.name}</div>
-                        <div class="text-xs text-gray-500">${lib.items.length} 项 · 平均 <span class="font-bold ${avgColor}">${avg}</span></div>
-                    </div>
+        return `<button class="library-card" onclick="openLibModal('${escapeHtml(lib.name)}')">
+            <div class="flex items-center justify-between gap-3">
+                <div class="min-w-0">
+                    <div class="library-title font-bold text-gray-800 dark:text-gray-200 truncate">${lib.name}</div>
+                    <div class="text-xs text-gray-500 mt-0.5">${fmtNum(lib.items.length)} 项 · 平均 <span class="font-bold ${avgColor}">${avg}</span></div>
                 </div>
-                <div class="flex items-center gap-1.5 shrink-0">
-                    <span class="text-xs font-bold ${lib.lowCount > 0 ? 'text-rose-500' : 'text-green-500'}">${lib.lowCount}</span>
+                <div class="flex items-center gap-2 shrink-0">
+                    <span class="text-xs font-bold ${lib.lowCount > 0 ? 'text-rose-500' : 'text-green-500'}">${fmtNum(lib.lowCount)}</span>
                     <i class="fa-solid fa-chevron-right text-gray-300 dark:text-gray-600 text-xs"></i>
                 </div>
             </div>
-            <div class="flex gap-1.5 text-[10px] flex-wrap">
-                <span class="px-1.5 py-0.5 rounded bg-green-50 dark:bg-green-900/20 text-green-600 dark:text-green-400 font-bold">HEVC ${hevcPct}%</span>
-                <span class="px-1.5 py-0.5 rounded bg-purple-50 dark:bg-purple-900/20 text-purple-600 dark:text-purple-400 font-bold">4K ${res4kPct}%</span>
-                <span class="px-1.5 py-0.5 rounded bg-indigo-50 dark:bg-indigo-900/20 text-indigo-600 dark:text-indigo-400 font-bold">HDR ${hdrPct}%</span>
+            <div class="flex gap-1.5 text-[10px] flex-wrap mt-2">
+                <span class="dashboard-pill">HEVC ${hevcPct}%</span>
+                <span class="dashboard-pill">4K ${res4kPct}%</span>
+                <span class="dashboard-pill">HDR ${hdrPct}%</span>
             </div>
-            ${lowPct > 50 ? `<div class="mt-2 h-1 rounded-full bg-rose-100 dark:bg-rose-900/30 overflow-hidden"><div class="h-full rounded-full bg-rose-500" style="width:${lowPct}%"></div></div>` : ''}
-        </div>`;
+        </button>`;
     }).join('');
 }
 
@@ -849,18 +1128,53 @@ document.getElementById('lib-modal')?.addEventListener('click', function(e) { if
 function escapeHtml(text) { if (!text) return ''; const div = document.createElement('div'); div.textContent = text; return div.innerHTML; }
 
 // ========== 网格布局引擎 ==========
-const MODULE_NAMES = { stats: '统计概览', charts: '质量分布', hdr: 'HDR 概览', histogram: '深入分析', poor: '低质量预览' };
-const MODULE_ICONS = { stats: 'fa-chart-simple', charts: 'fa-chart-bar', hdr: 'fa-sun', histogram: 'fa-chart-bar', poor: 'fa-triangle-exclamation' };
-const MODULE_COLORS = { stats: 'from-blue-500 to-cyan-500', charts: 'from-green-500 to-teal-500', hdr: 'from-indigo-500 to-purple-500', histogram: 'from-amber-500 to-orange-500', poor: 'from-rose-500 to-pink-500' };
+const MODULE_NAMES = { stats: '统计概览', charts: '质量分布', hdr: 'HDR 概览', score: '质量分数分布', libraries: '媒体库分布', poor: '低质量预览' };
+const MODULE_ICONS = { stats: 'fa-chart-simple', charts: 'fa-chart-bar', hdr: 'fa-sun', score: 'fa-chart-column', libraries: 'fa-folder-tree', poor: 'fa-triangle-exclamation' };
+const MODULE_COLORS = { stats: 'from-blue-500 to-cyan-500', charts: 'from-green-500 to-teal-500', hdr: 'from-indigo-500 to-purple-500', score: 'from-amber-500 to-orange-500', libraries: 'from-sky-500 to-blue-500', poor: 'from-rose-500 to-pink-500' };
 const MODULE_ORDER = Object.keys(MODULE_NAMES);
 
 // ── DashboardState 持久化 ──
 const DashboardState = {
     _key: 'dashboardLayout',
     _defaultKey: 'dashboardLayoutDefault',
-    _version: 2,
+    _version: 3,
     _default() {
-        return { version: this._version, order: [...MODULE_ORDER], visibility: {}, widths: { stats: 3, charts: 1, hdr: 1, histogram: 3, poor: 3 }, heights: { poor_px: 402 } };
+        return {
+            version: this._version,
+            order: [...MODULE_ORDER],
+            visibility: {},
+            widths: { stats: 3, charts: 1, hdr: 1, score: 1, libraries: 1, poor: 3 },
+            heights: { score_px: 320, libraries_px: 520, poor_px: 402 }
+        };
+    },
+    _normalize(state) {
+        const def = this._default();
+        const next = {
+            ...def,
+            ...state,
+            visibility: { ...def.visibility, ...(state.visibility || {}) },
+            widths: { ...def.widths, ...(state.widths || {}) },
+            heights: { ...def.heights, ...(state.heights || {}) },
+        };
+
+        const rawOrder = Array.isArray(state.order) ? state.order : def.order;
+        const order = [];
+        rawOrder.forEach(id => {
+            const replacement = id === 'histogram' ? ['score', 'libraries'] : [id];
+            replacement.forEach(mid => {
+                if (MODULE_NAMES[mid] && !order.includes(mid)) order.push(mid);
+            });
+        });
+        MODULE_ORDER.forEach(id => { if (!order.includes(id)) order.push(id); });
+
+        delete next.visibility.histogram;
+        delete next.widths.histogram;
+        delete next.heights.histogram;
+        delete next.heights.histogram_px;
+
+        next.order = order;
+        next.version = this._version;
+        return next;
     },
     load() {
         try {
@@ -879,7 +1193,9 @@ const DashboardState = {
                 parsed.version = this._version;
                 this.save(parsed);
             }
-            return { ...this._default(), ...parsed };
+            const normalized = this._normalize(parsed);
+            if (JSON.stringify(normalized) !== JSON.stringify(parsed)) this.save(normalized);
+            return normalized;
         } catch(e) { return this._default(); }
     },
     save(state) {
@@ -896,7 +1212,7 @@ const DashboardState = {
             const s = localStorage.getItem(this._defaultKey);
             if (!s) return this._default();
             const parsed = JSON.parse(s);
-            return { ...this._default(), ...parsed };
+            return this._normalize(parsed);
         } catch(e) { return this._default(); }
     },
     /** 重置为「用户默认」或有则「硬编码默认」 */
@@ -925,10 +1241,11 @@ const DashboardState = {
 const Layout = {
     _cols: 2, // 由 resize 更新
     getCols() {
-        const w = window.innerWidth;
-        if (w >= 1366) return 4;
-        if (w >= 1024) return 3;
-        if (w >= 768) return 2;
+        const grid = document.getElementById('dashboard-grid');
+        const w = grid?.clientWidth || window.innerWidth;
+        if (w >= 1480) return 4;
+        if (w >= 1080) return 3;
+        if (w >= 620) return 2;
         return 1;
     },
     apply() {
@@ -936,6 +1253,7 @@ const Layout = {
         if (!grid) return;
         const state = DashboardState.load();
         this._cols = this.getCols();
+        grid.style.setProperty('--dashboard-cols', this._cols);
 
         // 1) 排序
         if (state.order) {
@@ -962,7 +1280,7 @@ const Layout = {
             el.style.gridColumn = `span ${maxCols}`;
         });
 
-        // 4) 行高
+        // 4) 高度：默认自适应，用户拖拽后固定像素高度，超出内容在卡片内部滚动
         grid.querySelectorAll('[data-module]').forEach(el => {
             const id = el.dataset.module;
             const h = state.heights[id];
@@ -974,11 +1292,14 @@ const Layout = {
                 const [, defaultRows] = ds.split('x').map(Number);
                 if (defaultRows > 1) el.style.gridRow = `span ${defaultRows}`;
             }
-            // 自定义高度 min-height
             const customH = state.heights[id + '_px'];
             if (customH) {
-                el.style.minHeight = customH + 'px';
+                el.classList.add('has-fixed-height');
+                el.style.height = customH + 'px';
+                el.style.minHeight = '0';
             } else {
+                el.classList.remove('has-fixed-height');
+                el.style.height = '';
                 el.style.minHeight = '';
             }
         });
@@ -993,7 +1314,7 @@ function initGridSortable() {
         animation: 300, easing: 'cubic-bezier(0.4, 0, 0.2, 1)',
         handle: '.widget-drag-handle',
         ghostClass: 'sortable-ghost', dragClass: 'sortable-drag',
-        filter: '.widget-menu-btn, .widget-resize-handle, button, input, select, a',
+        filter: '.widget-menu-btn, .widget-resize-handle, .widget-resize-w, button, input, select, a',
         preventOnFilter: false,
         onEnd() {
             const order = Array.from(grid.querySelectorAll('[data-module]')).map(el => el.dataset.module);
@@ -1002,51 +1323,103 @@ function initGridSortable() {
     });
 }
 
-// ── 底边缩放手柄（行高） ──
-let _resizingEl = null, _resizeStartY = 0, _resizeStartH = 0, _resizeBadge = null;
+// ── 底边缩放手柄（吸附对齐高度） ──
+const RESIZE_MIN_HEIGHT = 132;
+const RESIZE_SNAP_PX = 20;
+const RESIZE_ALIGN_THRESHOLD = 16;
+let _resizingEl = null, _resizeStartY = 0, _resizeStartH = 0, _resizeBadge = null, _resizePointerId = null;
+
+function _snapResizeHeight(rawH) {
+    if (!_resizingEl) return { height: Math.max(RESIZE_MIN_HEIGHT, rawH), aligned: false };
+    const safeH = Math.max(RESIZE_MIN_HEIGHT, rawH);
+    let snappedH = Math.round(safeH / RESIZE_SNAP_PX) * RESIZE_SNAP_PX;
+    let aligned = false;
+
+    const currentRect = _resizingEl.getBoundingClientRect();
+    const rawBottom = currentRect.top + safeH;
+    document.querySelectorAll('#dashboard-grid .widget-item:not(.hidden)').forEach(other => {
+        if (other === _resizingEl) return;
+        const rect = other.getBoundingClientRect();
+        const sameRow = Math.abs(rect.top - currentRect.top) <= RESIZE_ALIGN_THRESHOLD;
+        const targetH = Math.max(RESIZE_MIN_HEIGHT, Math.round(rect.bottom - currentRect.top));
+        const nearBottom = Math.abs(rect.bottom - rawBottom) <= RESIZE_ALIGN_THRESHOLD;
+        if ((sameRow || nearBottom) && Math.abs(targetH - safeH) <= RESIZE_ALIGN_THRESHOLD) {
+            snappedH = targetH;
+            aligned = true;
+        }
+    });
+
+    return { height: Math.max(RESIZE_MIN_HEIGHT, snappedH), aligned };
+}
+
+function _positionResizeBadge(height, aligned = false) {
+    if (!_resizingEl || !_resizeBadge) return;
+    const rect = _resizingEl.getBoundingClientRect();
+    _resizeBadge.textContent = aligned ? `${Math.round(height)}px · 对齐` : `${Math.round(height)}px`;
+    _resizeBadge.style.left = (rect.left + rect.width / 2) + 'px';
+    _resizeBadge.style.top = (rect.bottom - 38) + 'px';
+}
 
 function initResizeHandles() {
     document.querySelectorAll('.widget-resize-handle').forEach(h => {
         h.removeEventListener('mousedown', _onResizeStart);
-        h.addEventListener('mousedown', _onResizeStart);
+        h.removeEventListener('pointerdown', _onResizeStart);
+        h.addEventListener('pointerdown', _onResizeStart);
     });
 }
 
 function _onResizeStart(e) {
+    if (e.button !== undefined && e.button !== 0) return;
     e.preventDefault(); e.stopPropagation();
     const el = e.currentTarget.closest('[data-module]');
     if (!el) return;
     _resizingEl = el;
     _resizeStartY = e.clientY;
     _resizeStartH = el.offsetHeight;
+    _resizePointerId = e.pointerId ?? null;
+    if (_resizePointerId !== null && e.currentTarget.setPointerCapture) {
+        try { e.currentTarget.setPointerCapture(_resizePointerId); } catch (_) {}
+    }
+    el.classList.add('has-fixed-height');
     el.classList.add('resizing');
+    el.style.height = _resizeStartH + 'px';
+    el.style.minHeight = '0';
+    document.body.classList.add('dashboard-resizing');
     _resizeBadge = document.createElement('div');
-    _resizeBadge.style.cssText = 'position:fixed;padding:4px 10px;background:rgba(0,122,255,0.9);color:#fff;font-size:12px;font-weight:700;border-radius:8px;pointer-events:none;z-index:10000;font-family:ui-monospace,monospace;box-shadow:0 2px 8px rgba(0,0,0,0.2);';
+    _resizeBadge.style.cssText = 'position:fixed;transform:translateX(-50%);padding:4px 10px;background:rgba(0,122,255,0.9);color:#fff;font-size:12px;font-weight:700;border-radius:999px;pointer-events:none;z-index:10000;font-family:ui-monospace,monospace;box-shadow:0 2px 8px rgba(0,0,0,0.2);';
     document.body.appendChild(_resizeBadge);
-    document.addEventListener('mousemove', _onResizeMove);
-    document.addEventListener('mouseup', _onResizeEnd);
+    _positionResizeBadge(_resizeStartH, false);
+    document.addEventListener('pointermove', _onResizeMove);
+    document.addEventListener('pointerup', _onResizeEnd);
+    document.addEventListener('pointercancel', _onResizeEnd);
 }
 
 function _onResizeMove(e) {
     if (!_resizingEl || !_resizeBadge) return;
-    const newH = Math.max(120, _resizeStartH + (e.clientY - _resizeStartY));
-    _resizingEl.style.minHeight = newH + 'px';
-    _resizeBadge.textContent = Math.round(newH) + 'px';
-    _resizeBadge.style.left = (e.clientX + 12) + 'px';
-    _resizeBadge.style.top = (e.clientY - 20) + 'px';
+    if (_resizePointerId !== null && e.pointerId !== _resizePointerId) return;
+    const snapped = _snapResizeHeight(_resizeStartH + (e.clientY - _resizeStartY));
+    const newH = snapped.height;
+    _resizingEl.style.height = Math.round(newH) + 'px';
+    _resizingEl.style.minHeight = '0';
+    _positionResizeBadge(newH, snapped.aligned);
 }
 
-function _onResizeEnd() {
+function _onResizeEnd(e) {
     if (_resizingEl) {
+        if (_resizePointerId !== null && e?.pointerId !== undefined && e.pointerId !== _resizePointerId) return;
         const id = _resizingEl.dataset.module;
-        const h = _resizingEl.offsetHeight;
+        const h = Math.round(_resizingEl.getBoundingClientRect().height);
         DashboardState.setHeight(id + '_px', h);
         _resizingEl.classList.remove('resizing');
+        Layout.apply();
     }
     if (_resizeBadge) { _resizeBadge.remove(); _resizeBadge = null; }
     _resizingEl = null;
-    document.removeEventListener('mousemove', _onResizeMove);
-    document.removeEventListener('mouseup', _onResizeEnd);
+    _resizePointerId = null;
+    document.body.classList.remove('dashboard-resizing');
+    document.removeEventListener('pointermove', _onResizeMove);
+    document.removeEventListener('pointerup', _onResizeEnd);
+    document.removeEventListener('pointercancel', _onResizeEnd);
 }
 
 // ── 右边缘列宽缩放手柄 ──

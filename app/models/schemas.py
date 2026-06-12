@@ -108,6 +108,12 @@ class ConfigModel(BaseModel):
     moviepilot_url: str = ""
     moviepilot_token: str = ""
     hdhive_api_key: str = ""        # 影巢 API Key (X-API-Key)
+    hdhive_mode: str = "openapi"    # openapi / symedia
+    symedia_url: str = ""
+    symedia_token: str = ""
+    symedia_cookie: str = ""
+    symedia_cloud_type: str = "channel_115"
+    symedia_parent_id: str = ""
     cloud115_cookie: str = ""
     cloud115_folder_id: str = "0"   # 115 转存目录 ID
     exclude_library_ids: str = ""
@@ -145,7 +151,7 @@ class SubscribeRule(BaseModel):
     # 调度
     cron_expression: str = ""          # cron 表达式，如 "0 3 * * *"（每日3点），空=不自动执行
     interval_hours: int = 6
-    batch_size: int = 20               # 每次运行最多处理
+    batch_size: int = Field(default=20, ge=1, le=1000)  # 每次运行最多处理
     # 状态
     last_run: str = ""
     total_upgraded: int = 0

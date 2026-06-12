@@ -53,11 +53,12 @@ class MoviePilotClient:
             resp.raise_for_status()
             return resp.json() if resp.content else {"status": "ok"}
         except httpx.HTTPStatusError as e:
-            print(f"[MoviePilot] POST {path} HTTP {e.response.status_code}: {e.response.text[:200]}")
-            return None
+            msg = e.response.text[:200]
+            print(f"[MoviePilot] POST {path} HTTP {e.response.status_code}: {msg}")
+            return {"success": False, "message": f"HTTP {e.response.status_code}: {msg}"}
         except Exception as e:
             print(f"[MoviePilot] POST {path} failed: {e}")
-            return None
+            return {"success": False, "message": str(e)}
 
     async def search(self, keyword: str, media_type: str = "movie") -> list[dict]:
         """
@@ -144,7 +145,8 @@ class MoviePilotClient:
         if not self.is_configured:
             raise RuntimeError("MoviePilot 未配置")
 
-        # 从 torrent_info 构建 TorrentInfo，优先使用传入的字段
+        # 从 torrent_info 构建 TorrentInfo，优先保留 MP 搜索返回的完整 torrent_info。
+        # 只传拍平字段会丢站点、UA、Cookie、代理和下载器等信息，部分站点会因此添加失败。
         payload = {
             "torrent_in": {
                 "enclosure": torrent_url,
@@ -152,22 +154,31 @@ class MoviePilotClient:
         }
 
         if torrent_info:
-            # 复制所有 TorrentInfo 相关字段
+            raw_torrent = (torrent_info.get("_raw") or {}).get("torrent_info") or {}
+            if isinstance(raw_torrent, dict):
+                for key, value in raw_torrent.items():
+                    if value is not None and value != "":
+                        payload["torrent_in"][key] = value
+
+            # 复制拍平字段，覆盖为当前审核卡片展示的候选信息
             for key in ("title", "site_name", "description", "imdbid", "page_url",
-                        "size", "seeders", "peers", "labels", "enclosure"):
+                        "size", "seeders", "peers", "labels", "enclosure",
+                        "site", "site_cookie", "site_ua", "site_proxy", "site_order",
+                        "site_downloader", "uploadvolumefactor", "downloadvolumefactor",
+                        "hit_and_run"):
                 if key in torrent_info and torrent_info[key]:
                     payload["torrent_in"][key] = torrent_info[key]
 
-            # 自动从 MP 获取站点 Cookie/UA（解决"无法识别媒体信息"/"任务添加失败"问题）
+            # 自动从 MP 获取站点 Cookie/UA（仅在搜索结果缺失时补齐）
             site_name = torrent_info.get("site_name", "")
             if site_name:
                 site_config = await self._get_site_config(site_name)
                 if site_config:
                     cookie = site_config.get("cookie", "")
                     ua = site_config.get("ua", "")
-                    if cookie:
+                    if cookie and not payload["torrent_in"].get("site_cookie"):
                         payload["torrent_in"]["site_cookie"] = cookie
-                    if ua:
+                    if ua and not payload["torrent_in"].get("site_ua"):
                         payload["torrent_in"]["site_ua"] = ua
 
         # 确保 enclosure 覆盖为正确的下载 URL
@@ -181,7 +192,13 @@ class MoviePilotClient:
         else:
             payload["download_setting"] = -1
 
-        return await self._post("/api/v1/download/add", payload)
+        result = await self._post("/api/v1/download/add", payload)
+        if result and "success" not in result:
+            status = str(result.get("status", "")).lower()
+            code = result.get("code")
+            if status in ("ok", "success") or code in (0, "0"):
+                result["success"] = True
+        return result
 
     async def _get_site_config(self, site_name: str) -> dict | None:
         """从 MP 获取站点配置（包含 cookie/ua）"""

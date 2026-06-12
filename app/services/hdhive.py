@@ -16,8 +16,12 @@ class HDHiveClient:
 
     def __init__(self, api_key: str = "", proxy: str = ""):
         self.api_key = api_key or settings.hdhive_api_key
+        self.mode = (settings.hdhive_mode or "openapi").strip().lower()
+        self.symedia_url = (settings.symedia_url or "").rstrip("/")
+        self.symedia_cloud_type = settings.symedia_cloud_type or "channel_115"
         self.proxy = proxy or settings.proxy
-        client_kwargs = {"timeout": 15.0, "verify": False}
+        timeout = 30.0 if self.mode == "symedia" else 15.0
+        client_kwargs = {"timeout": timeout, "verify": False}
         if self.proxy:
             client_kwargs["proxy"] = self.proxy
             print(f"[HDHive] 使用代理: {self.proxy}")
@@ -26,6 +30,8 @@ class HDHiveClient:
     @property
     def is_configured(self) -> bool:
         """检查是否已配置"""
+        if self.mode == "symedia":
+            return bool(self.symedia_url and (settings.symedia_token or settings.symedia_cookie))
         return bool(self.api_key)
 
     def _headers(self) -> dict:
@@ -34,6 +40,26 @@ class HDHiveClient:
             "Content-Type": "application/json",
             "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
         }
+
+    def _symedia_headers(self) -> dict:
+        headers = {
+            "Content-Type": "application/json",
+            "Accept": "application/json",
+            "User-Agent": "Media-Refiner/1.1",
+        }
+        if settings.symedia_token:
+            token = settings.symedia_token.strip()
+            headers["Authorization"] = token if " " in token else f"Bearer {token}"
+        if settings.symedia_cookie:
+            headers["Cookie"] = settings.symedia_cookie.strip()
+        return headers
+
+    def _symedia_api_url(self, path: str) -> str:
+        """Return a Symedia backend API URL, accepting either host root or /api/v1 base."""
+        base = self.symedia_url
+        if not base.endswith("/api/v1"):
+            base = f"{base}/api/v1"
+        return f"{base}{path if path.startswith('/') else '/' + path}"
 
     async def _get(self, path: str, params: dict = None) -> dict | list | None:
         """GET 请求"""
@@ -84,12 +110,18 @@ class HDHiveClient:
             video_resolution[], source[], remark, slug,
             is_official, validate_status, user{username,nickname}
         """
+        if self.mode == "symedia":
+            return await self._symedia_search(keyword, tmdb_id, emby_item_id, media_type)
+
         if not self.is_configured:
             raise RuntimeError("影巢未配置：请先在系统配置中设置 API Key")
 
+        media_type = self._normalize_media_type(media_type)
+
         # 从 emby_id 获取 TMDB ID
         if not tmdb_id and emby_item_id:
-            tmdb_id = await self._resolve_tmdb_id(emby_item_id)
+            tmdb_id, resolved_type = await self._resolve_emby_info(emby_item_id)
+            media_type = resolved_type or media_type
 
         if tmdb_id:
             resources = await self._get_resources(tmdb_id, media_type)
@@ -110,20 +142,42 @@ class HDHiveClient:
 
     async def _resolve_tmdb_id(self, emby_item_id: str) -> int:
         """从 Emby 条目提取 TMDB ID"""
+        tmdb_id, _ = await self._resolve_emby_info(emby_item_id)
+        return tmdb_id
+
+    async def _resolve_emby_info(self, emby_item_id: str) -> tuple[int, str]:
+        """从 Emby 条目提取 TMDB ID，并推断 HDHive/Symedia 媒体类型。"""
         from app.services.emby import EmbyClient
         emby = EmbyClient()
         try:
-            item = await emby.get_item(emby_item_id)
+            item = await emby.get_item(
+                emby_item_id,
+                fields="ProviderIds,Type,SeriesId,SeriesName,ParentId",
+            )
             if item:
+                item_type = item.get("Type", "")
+                media_type = self._normalize_media_type(item_type)
+                if item_type in ("Episode", "Season") and item.get("SeriesId"):
+                    series = await emby.get_item(item.get("SeriesId"), fields="ProviderIds,Type")
+                    if series:
+                        item = series
+                        media_type = "tv"
                 pid = item.get("ProviderIds", {})
                 tmdb_str = pid.get("Tmdb", "")
                 if tmdb_str and tmdb_str.isdigit():
-                    return int(tmdb_str)
+                    return int(tmdb_str), media_type
         except Exception as e:
             print(f"[HDHive] 解析 TMDB ID 失败: {e}")
         finally:
             await emby.close()
-        return 0
+        return 0, "movie"
+
+    @staticmethod
+    def _normalize_media_type(media_type: str = "movie") -> str:
+        value = (media_type or "movie").strip().lower()
+        if value in ("series", "season", "episode", "tvshow", "tv"):
+            return "tv"
+        return "movie"
 
     async def _get_resources(self, tmdb_id: int, media_type: str = "movie") -> list[dict]:
         """
@@ -141,6 +195,8 @@ class HDHiveClient:
 
     async def unlock(self, slug: str) -> dict | None:
         """解锁资源 - /resources/unlock"""
+        if self.mode == "symedia":
+            return await self._symedia_transfer(slug)
         return await self._post("/resources/unlock", {"slug": slug})
 
     async def transfer(self, slug: str, folder_id: str = "") -> dict | None:
@@ -158,6 +214,9 @@ class HDHiveClient:
         1. 调用 HDHive unlock 获取 115 分享链接
         2. 如果资源尚未拥有，通过 115 API 转存到目标文件夹
         """
+        if self.mode == "symedia":
+            return await self._symedia_transfer(slug, folder_id)
+
         unlock_result = await self.unlock(slug)
         if not unlock_result:
             return {"status": "error", "message": "HDHive unlock 返回空", "data": None}
@@ -226,7 +285,24 @@ class HDHiveClient:
     async def check_connectivity(self) -> dict:
         """检查连接，返回详细状态"""
         if not self.is_configured:
+            if self.mode == "symedia":
+                return {"ok": False, "message": "未配置 Symedia：请设置 URL 和 Token/Cookie"}
             return {"ok": False, "message": "未配置影巢 API Key"}
+        if self.mode == "symedia":
+            try:
+                resp = await self._client.get(
+                    self._symedia_api_url("/discover/hdhive_status"),
+                    headers=self._symedia_headers(),
+                )
+                if resp.status_code in (401, 403):
+                    return {"ok": False, "message": "Symedia 认证失败：请检查 Token/Cookie"}
+                resp.raise_for_status()
+                data = resp.json()
+                if data.get("configured"):
+                    return {"ok": True, "message": "Symedia 影巢连接成功"}
+                return {"ok": False, "message": data.get("message") or "Symedia 影巢未授权"}
+            except Exception as e:
+                return {"ok": False, "message": f"Symedia 连接异常: {e}"}
         try:
             # 使用 /usage 替代已废弃的 /account
             usage = await self.get_usage()
@@ -242,3 +318,81 @@ class HDHiveClient:
 
     async def close(self):
         await self._client.aclose()
+
+    async def _symedia_search(
+        self,
+        keyword: str = "",
+        tmdb_id: int = 0,
+        emby_item_id: str = "",
+        media_type: str = "movie",
+    ) -> list[dict]:
+        if not self.is_configured:
+            raise RuntimeError("影巢未配置：请先配置 Symedia URL 和 Token/Cookie")
+        if not tmdb_id and emby_item_id:
+            tmdb_id, resolved_type = await self._resolve_emby_info(emby_item_id)
+            media_type = resolved_type or media_type
+        media_type = self._normalize_media_type(media_type)
+
+        payload = {
+            "title": keyword or "",
+            "media_type": media_type,
+            "cloud_type": self.symedia_cloud_type,
+            "tmdb_id": tmdb_id or None,
+            "target": "hdhive",
+        }
+        resp = await self._client.post(
+            self._symedia_api_url("/discover/search_resources"),
+            json=payload,
+            headers=self._symedia_headers(),
+        )
+        if resp.status_code in (401, 403):
+            raise RuntimeError("Symedia 认证失败：请检查 Token/Cookie")
+        resp.raise_for_status()
+        data = resp.json()
+        hdhive = data.get("hdhive") if isinstance(data, dict) else {}
+        if hdhive and hdhive.get("configured") is False:
+            raise RuntimeError(hdhive.get("message") or "Symedia 影巢未授权")
+        items = hdhive.get("items", []) if isinstance(hdhive, dict) else []
+        results = []
+        for item in items if isinstance(items, list) else []:
+            if not isinstance(item, dict):
+                continue
+            normalized = dict(item)
+            resource_url = normalized.get("resource_url") or normalized.get("url") or ""
+            if resource_url:
+                normalized["hdhive_slug"] = normalized.get("slug", "")
+                normalized["slug"] = resource_url
+                normalized.setdefault("page_url", resource_url)
+            normalized.setdefault("source", ["HDHive"])
+            results.append(normalized)
+        print(f"[HDHive] Symedia 搜索 tmdb_id={tmdb_id} 返回 {len(results)} 条结果")
+        return results
+
+    async def _symedia_transfer(self, resource_url: str, folder_id: str = "") -> dict | None:
+        if not self.is_configured:
+            return {"status": "error", "message": "未配置 Symedia：请设置 URL 和 Token/Cookie", "data": None}
+        if not resource_url:
+            return {"status": "error", "message": "Symedia 转存缺少资源链接", "data": None}
+
+        parent_id = folder_id or settings.symedia_parent_id or settings.cloud115_folder_id or "0"
+        payload = {
+            "cloud_type": self.symedia_cloud_type,
+            "parent_id": parent_id,
+            "url": resource_url,
+        }
+        resp = await self._client.post(
+            self._symedia_api_url("/telegramsearch/transfer"),
+            json=payload,
+            headers=self._symedia_headers(),
+        )
+        if resp.status_code in (401, 403):
+            return {"status": "error", "message": "Symedia 认证失败：请检查 Token/Cookie", "data": None}
+        try:
+            data = resp.json()
+        except Exception:
+            data = {"text": resp.text[:500]}
+        if resp.is_error:
+            return {"status": "error", "message": f"Symedia 转存失败: HTTP {resp.status_code}", "data": data}
+        if isinstance(data, dict) and data.get("success") is False:
+            return {"status": "error", "message": data.get("message") or "Symedia 转存失败", "data": data}
+        return {"status": "transferred", "message": "已提交 Symedia 转存", "data": data}

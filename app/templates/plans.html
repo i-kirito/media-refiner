@@ -213,12 +213,12 @@
                     </div>
                     <div>
                         <label class="block text-[11px] font-medium text-gray-500 dark:text-gray-400 mb-1">每次处理</label>
-                        <select id="ruleBatchSize" class="w-full px-3 py-2 rounded-xl bg-white dark:bg-apple-hoverDark border border-gray-200 dark:border-white/10 text-gray-700 dark:text-gray-300 font-medium focus:ring-2 focus:ring-brand-500 outline-none text-sm">
-                            <option value="10">10 条</option>
-                            <option value="20" selected>20 条</option>
-                            <option value="50">50 条</option>
-                            <option value="100">100 条</option>
-                        </select>
+                        <div class="relative">
+                            <input id="ruleBatchSize" type="number" min="1" max="1000" step="1" inputmode="numeric" value="20"
+                                class="w-full px-3 py-2 pr-8 rounded-xl bg-white dark:bg-apple-hoverDark border border-gray-200 dark:border-white/10 text-gray-700 dark:text-gray-300 font-medium focus:ring-2 focus:ring-brand-500 outline-none text-sm">
+                            <span class="absolute right-3 top-1/2 -translate-y-1/2 text-xs font-bold text-gray-400 pointer-events-none">条</span>
+                        </div>
+                        <p class="text-[10px] text-gray-400 mt-1">可输入 1-1000</p>
                     </div>
                 </div>
             </div>
@@ -344,6 +344,7 @@
         const autoToggle = document.getElementById('ruleAutoApprove');
         const condArea = document.getElementById('autoApproveConditions');
         const condHint = document.getElementById('autoApproveHint');
+        const batchInput = document.getElementById('ruleBatchSize');
         function toggleAutoConds() {
             const show = autoToggle.checked;
             condArea.style.opacity = show ? '1' : '0.3';
@@ -351,6 +352,9 @@
             if (condHint) condHint.style.opacity = show ? '1' : '0.4';
         }
         autoToggle.addEventListener('change', toggleAutoConds);
+        batchInput?.addEventListener('blur', () => {
+            batchInput.value = normalizeBatchSize(batchInput.value);
+        });
         toggleAutoConds();
     });
 
@@ -597,6 +601,12 @@
         return result;
     }
 
+    function normalizeBatchSize(value) {
+        const n = parseInt(value, 10);
+        if (!Number.isFinite(n) || n < 1) return 1;
+        return Math.min(n, 1000);
+    }
+
     // 自动审核开关 → 联动条件区域的显隐
 
     // ─── 规则 CRUD ───
@@ -700,6 +710,8 @@
 
     async function saveRule() {
         const ruleId = document.getElementById('editRuleId').value;
+        const batchSize = normalizeBatchSize(document.getElementById('ruleBatchSize').value);
+        document.getElementById('ruleBatchSize').value = batchSize;
         const data = {
             name: document.getElementById('ruleName').value.trim() || '未命名',
             max_score: parseInt(document.getElementById('ruleMaxScore').value) || 60,
@@ -709,7 +721,7 @@
             target_hdr: document.getElementById('ruleHdr').value,
             source: document.getElementById('ruleSource').value,
             source_priority: document.getElementById('rulePriority').value,
-            batch_size: parseInt(document.getElementById('ruleBatchSize').value) || 20,
+            batch_size: batchSize,
             prefer_order: getPreferOrder(),
             auto_approve: document.getElementById('ruleAutoApprove').checked,
             auto_approve_conditions: getAutoApproveConditions(),

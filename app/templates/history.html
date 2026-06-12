@@ -85,7 +85,7 @@
     function getItemCategory(item) {
         const s = item.status;
         if (s === 'approved' || s === 'auto_approved' || s === 'download' || s === 'transfer') return 'success';
-        if (s === 'failed') return 'fail';
+        if (s === 'failed' || s === 'error') return 'fail';
         if (s === 'rejected' || s === 'ignored') return 'reject';
         return 'other';
     }
@@ -146,7 +146,7 @@
                             <div class="text-[11px] text-gray-400 mt-1 font-mono">${item.time}</div>
                         </div>
                         ${canRestore ? `
-                        <button onclick="showConfirm('${escapeHtml(item.itemId)}', '${escapeHtml(item.name)}')" class="px-3 py-2 text-[11px] font-bold text-red-500 hover:text-white bg-red-50 dark:bg-red-900/20 hover:bg-red-500 dark:hover:bg-red-600 rounded-xl transition-all flex items-center gap-1.5 shrink-0 active:scale-95">
+                        <button onclick="showConfirm(decodeURIComponent('${encodeURIComponent(item.itemId)}'), decodeURIComponent('${encodeURIComponent(item.name)}'))" class="px-3 py-2 text-[11px] font-bold text-red-500 hover:text-white bg-red-50 dark:bg-red-900/20 hover:bg-red-500 dark:hover:bg-red-600 rounded-xl transition-all flex items-center gap-1.5 shrink-0 active:scale-95">
                             <i class="fa-solid fa-rotate-left"></i> 恢复搜索
                         </button>
                         ` : ''}
@@ -180,14 +180,22 @@
                 const plans = (plansJson.data || []).filter(p => p.status === 'done' || p.status === 'failed');
                 plans.forEach(p => {
                     const cq = safeJson(p.current_quality_json || '{}');
+                    const progress = p.progress || '';
+                    const actionType = progress.includes('115') || progress.includes('影巢') || progress.includes('转存')
+                        ? '影巢转存'
+                        : progress.includes('MoviePilot') || progress.includes('下载')
+                            ? 'MP 下载'
+                            : '手动洗版';
                     _allItems.push({
                         name: cq.name || p.emby_item_id || '未知',
                         status: p.status === 'done' ? 'approved' : 'failed',
                         statusLabel: p.status === 'done' ? '已完成' : '失败',
-                        actionType: 'plan',
-                        detail: p.target_quality ? `目标: ${p.target_quality}` : '',
-                        time: formatDate(p.created_at) || '',
-                        itemId: null,
+                        actionType,
+                        detail: progress || (p.target_quality ? `目标: ${p.target_quality}` : ''),
+                        time: formatDate(p.updated_at) || formatDate(p.created_at) || '',
+                        itemId: p.emby_item_id || '',
+                        ruleName: '手动洗版',
+                        sourceKind: 'plan',
                     });
                 });
             }
@@ -211,6 +219,7 @@
                     time: formatDate(r.updated_at) || formatDate(r.created_at) || '',
                     itemId: r.item_id,
                     ruleName: r.rule_name || '',
+                    sourceKind: 'review',
                 });
             });
 
@@ -221,19 +230,39 @@
                     'auto_approved': '自动通过',
                     'download': '下载完成',
                     'transfer': '转存完成',
+                    'error': '失败',
                 };
                 const label = actionLabel[log.action] || log.action;
                 const brief = (log.message || '').split('\n')[0].substring(0, 120);
+                const actionType = log.action === 'download'
+                    ? 'MP 下载'
+                    : log.action === 'auto_approved'
+                        ? '自动洗版'
+                        : log.action === 'error'
+                            ? '失败'
+                            : '影巢转存';
                 _allItems.push({
                     name: log.item_name || '未知',
                     status: log.action,
                     statusLabel: label,
-                    actionType: log.action === 'download' || log.action === 'auto_approved' ? 'MP 下载' : '影巢转存',
+                    actionType,
                     detail: brief,
                     time: formatDate(log.created_at) || '',
                     itemId: log.item_id,
                     ruleName: log.rule_name || '',
+                    sourceKind: 'log',
                 });
+            });
+
+            // 同一条目已有执行日志时，隐藏手动计划占位，避免重复显示。
+            const logKeys = new Set(
+                _allItems
+                    .filter(i => i.sourceKind === 'log' && i.itemId)
+                    .map(i => `${i.itemId}|${i.actionType}`)
+            );
+            _allItems = _allItems.filter(i => {
+                if (i.sourceKind !== 'plan' || !i.itemId) return true;
+                return !logKeys.has(`${i.itemId}|${i.actionType}`);
             });
 
             // 按时间降序

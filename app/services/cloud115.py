@@ -12,7 +12,11 @@ class Cloud115Client:
 
     def __init__(self, cookie: str = ""):
         self.cookie = cookie or settings.cloud115_cookie
-        self._client = httpx.AsyncClient(timeout=30.0, verify=False)
+        client_kwargs = {"timeout": 30.0, "verify": False}
+        if settings.proxy:
+            client_kwargs["proxy"] = settings.proxy
+            print(f"[Cloud115] 使用代理: {settings.proxy}")
+        self._client = httpx.AsyncClient(**client_kwargs)
 
     async def _get(self, url: str) -> dict | None:
         headers = {

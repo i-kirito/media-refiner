@@ -72,8 +72,20 @@ async def config_page(request: Request):
             "moviepilot_url": settings.moviepilot_url,
             "moviepilot_token": "已设置" if settings.moviepilot_token else "",
             "hdhive_api_key": "已设置" if settings.hdhive_api_key else "",
+            "hdhive_mode": settings.hdhive_mode,
+            "symedia_url": settings.symedia_url,
+            "symedia_token": "已设置" if settings.symedia_token else "",
+            "symedia_cookie": "已设置" if settings.symedia_cookie else "",
+            "symedia_cloud_type": settings.symedia_cloud_type,
+            "symedia_parent_id": settings.symedia_parent_id,
             "cloud115_cookie": "已设置" if settings.cloud115_cookie else "",
+            "cloud115_folder_id": settings.cloud115_folder_id,
             "exclude_library_ids": settings.exclude_library_ids,
+            "scan_schedule": settings.scan_schedule,
+            "proxy": settings.proxy,
+            "tg_bot_token": "已设置" if settings.tg_bot_token else "",
+            "tg_chat_id": settings.tg_chat_id,
+            "tg_notify_events": settings.tg_notify_events,
         },
         "libraries": libraries,
     }
@@ -84,4 +96,3 @@ async def config_page(request: Request):
 async def history_page(request: Request):
     """历史记录"""
     return HTMLResponse(_render("history.html", active_page="history"))
-

@@ -243,6 +243,24 @@ async def get_upgrade_plan(plan_id: str) -> dict | None:
         await db.close()
 
 
+async def update_upgrade_plan_status(plan_id: str, status: str, progress: str = "") -> bool:
+    """只更新洗版计划状态，保留现有质量/搜索 JSON 字段。"""
+    db = await get_db()
+    try:
+        cursor = await db.execute(
+            """
+            UPDATE upgrade_plans
+            SET status = ?, progress = ?, updated_at = datetime('now','localtime')
+            WHERE id = ?
+            """,
+            (status, progress, plan_id),
+        )
+        await db.commit()
+        return cursor.rowcount > 0
+    finally:
+        await db.close()
+
+
 # ─── 订阅规则 ───
 
 async def save_subscribe_rule(rule: dict):
@@ -321,7 +339,7 @@ async def add_subscribe_log(rule_id: str, rule_name: str, action: str, item_name
             )
         else:
             await db.execute(
-                "INSERT INTO subscribe_logs (rule_id, rule_name, action, item_name, item_id, message) VALUES (?, ?, ?, ?, ?, ?)",
+                "INSERT INTO subscribe_logs (rule_id, rule_name, action, item_name, item_id, message, created_at) VALUES (?, ?, ?, ?, ?, ?, datetime('now','localtime'))",
                 (rule_id, rule_name, action, item_name, item_id, message)
             )
         await db.commit()
@@ -406,7 +424,7 @@ async def get_ignore_ids() -> set[str]:
     try:
         cursor = await db.execute("SELECT emby_id FROM ignore_items")
         rows = await cursor.fetchall()
-        return [dict(r) for r in rows]
+        return {r["emby_id"] for r in rows}
     finally:
         await db.close()
 
@@ -429,7 +447,8 @@ async def get_subscribe_logs(limit: int = 20) -> list[dict]:
 async def has_processed_item(rule_id: str, item_id: str) -> str | None:
     """检查某条目是否已被处理过（被任何规则处理过都算）
     返回: None=未处理, 'pending_review'=待审核, 'rejected'=已拒绝（仍可搜索但需排除旧结果）
-          'done'=已完成(download/transfer/auto_approved/approved/ignored/failed)
+          'done'=已完成(download/transfer/auto_approved/approved/ignored)
+    failed 不算完成，允许下次规则运行时重新生成审核项并重试。
     """
     db = await get_db()
     try:
@@ -454,7 +473,9 @@ async def has_processed_item(rule_id: str, item_id: str) -> str | None:
                 return 'pending_review'
             if st == 'rejected':
                 return 'rejected'
-            if st in ('approved', 'ignored', 'failed'):
+            if st == 'failed':
+                return None
+            if st in ('approved', 'ignored'):
                 return 'done'
 
         return None
@@ -492,10 +513,13 @@ async def get_rejected_result_keys(item_id: str) -> list[str]:
 # ─── 订阅审核 ───
 
 async def add_subscribe_review(review: dict):
-    """添加审核条目（自动去重：同一 rule_id + item_id 已有非 pending 审核时跳过）"""
+    """添加审核条目。
+
+    同一 rule_id + item_id 已有 pending 时跳过；approved/ignored 视为完成。
+    rejected/failed 允许再次生成审核项，配合被拒绝结果过滤和失败重试。
+    """
     db = await get_db()
     try:
-        import json
         rule_id = review.get("rule_id", "")
         item_id = review.get("item_id", "")
 
@@ -511,10 +535,12 @@ async def add_subscribe_review(review: dict):
                 # 已有待审核记录，不重复添加
                 print(f"[DB] add_subscribe_review: 跳过重复审核 rule_id={rule_id} item_id={item_id} (已有 pending review #{existing_id})")
                 return
-            else:
-                # 已有已审核记录（approved/rejected/ignored），不重复添加
+            if existing_status in ("approved", "ignored"):
+                # 已完成或已忽略，不重复添加
                 print(f"[DB] add_subscribe_review: 跳过已处理的条目 rule_id={rule_id} item_id={item_id} (status={existing_status})")
                 return
+            if existing_status in ("rejected", "failed"):
+                print(f"[DB] add_subscribe_review: 允许重试 rule_id={rule_id} item_id={item_id} (latest status={existing_status})")
 
         cursor = await db.execute("""
             INSERT INTO subscribe_reviews (rule_id, rule_name, item_id, item_name, current_quality, search_result, source, action_type, status, message)
@@ -555,7 +581,6 @@ async def list_subscribe_reviews(status: str = "pending") -> list[dict]:
                 "SELECT * FROM subscribe_reviews ORDER BY created_at DESC"
             )
         rows = await cursor.fetchall()
-        import json
         results = []
         for r in rows:
             rd = dict(r)
@@ -613,7 +638,7 @@ async def clear_subscribe_reviews():
 
 async def delete_subscribe_history(item_id: str) -> dict:
     """删除指定条目的所有历史记录（日志+审核+忽略+拒绝结果），恢复可搜索状态
-    返回: {"logs": n, "reviews": n, "ignores": n}
+    返回: {"logs": n, "reviews": n, "ignores": n, "plans": n}
     """
     db = await get_db()
     try:
@@ -632,8 +657,12 @@ async def delete_subscribe_history(item_id: str) -> dict:
         # 删除拒绝结果记录
         await db.execute("DELETE FROM rejected_results WHERE item_id = ?", (item_id,))
 
+        # 删除手动洗版计划
+        c4 = await db.execute("DELETE FROM upgrade_plans WHERE emby_item_id = ?", (item_id,))
+        deleted_plans = c4.rowcount
+
         await db.commit()
-        return {"logs": deleted_logs, "reviews": deleted_reviews, "ignores": deleted_ignores}
+        return {"logs": deleted_logs, "reviews": deleted_reviews, "ignores": deleted_ignores, "plans": deleted_plans}
     finally:
         await db.close()
 

@@ -68,6 +68,37 @@
                     <input name="hdhive_api_key" class="w-full px-4 py-3 rounded-xl bg-gray-100 dark:bg-apple-hoverDark border border-gray-200 dark:border-white/5 text-gray-700 dark:text-gray-300 font-medium focus:ring-2 focus:ring-brand-500 outline-none text-sm" type="password" placeholder="输入影巢 API Key (登录影巢 → 个人设置 → API 管理)" value="">
                     <p class="text-[11px] text-gray-400 mt-1.5">当前: {{ config.hdhive_api_key or '未设置' }}</p>
                 </div>
+                <div>
+                    <label class="block text-xs font-bold text-gray-500 mb-1.5">连接模式</label>
+                    <select name="hdhive_mode" class="w-full px-4 py-3 rounded-xl bg-gray-100 dark:bg-apple-hoverDark border border-gray-200 dark:border-white/5 text-gray-700 dark:text-gray-300 font-medium focus:ring-2 focus:ring-brand-500 outline-none text-sm">
+                        <option value="openapi" {% if config.hdhive_mode != 'symedia' %}selected{% endif %}>OpenAPI</option>
+                        <option value="symedia" {% if config.hdhive_mode == 'symedia' %}selected{% endif %}>Symedia</option>
+                    </select>
+                </div>
+                <div>
+                    <label class="block text-xs font-bold text-gray-500 mb-1.5">Symedia 地址</label>
+                    <input name="symedia_url" class="w-full px-4 py-3 rounded-xl bg-gray-100 dark:bg-apple-hoverDark border border-gray-200 dark:border-white/5 text-gray-700 dark:text-gray-300 font-medium focus:ring-2 focus:ring-brand-500 outline-none text-sm" placeholder="https://symedia.ikirito.de" value="{{ config.symedia_url or '' }}">
+                </div>
+                <div>
+                    <label class="block text-xs font-bold text-gray-500 mb-1.5">Symedia Token</label>
+                    <input name="symedia_token" class="w-full px-4 py-3 rounded-xl bg-gray-100 dark:bg-apple-hoverDark border border-gray-200 dark:border-white/5 text-gray-700 dark:text-gray-300 font-medium focus:ring-2 focus:ring-brand-500 outline-none text-sm" type="password" placeholder="Bearer Token 或纯 Token" value="">
+                    <p class="text-[11px] text-gray-400 mt-1.5">当前: {{ config.symedia_token or '未设置' }}</p>
+                </div>
+                <div>
+                    <label class="block text-xs font-bold text-gray-500 mb-1.5">Symedia Cookie</label>
+                    <input name="symedia_cookie" class="w-full px-4 py-3 rounded-xl bg-gray-100 dark:bg-apple-hoverDark border border-gray-200 dark:border-white/5 text-gray-700 dark:text-gray-300 font-medium focus:ring-2 focus:ring-brand-500 outline-none text-sm" type="password" placeholder="无法使用 Token 时填写 Cookie" value="">
+                    <p class="text-[11px] text-gray-400 mt-1.5">当前: {{ config.symedia_cookie or '未设置' }}</p>
+                </div>
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
+                    <div>
+                        <label class="block text-xs font-bold text-gray-500 mb-1.5">Symedia 网盘类型</label>
+                        <input name="symedia_cloud_type" class="w-full px-4 py-3 rounded-xl bg-gray-100 dark:bg-apple-hoverDark border border-gray-200 dark:border-white/5 text-gray-700 dark:text-gray-300 font-medium focus:ring-2 focus:ring-brand-500 outline-none text-sm" placeholder="channel_115" value="{{ config.symedia_cloud_type or 'channel_115' }}">
+                    </div>
+                    <div>
+                        <label class="block text-xs font-bold text-gray-500 mb-1.5">Symedia 转存目录</label>
+                        <input name="symedia_parent_id" class="w-full px-4 py-3 rounded-xl bg-gray-100 dark:bg-apple-hoverDark border border-gray-200 dark:border-white/5 text-gray-700 dark:text-gray-300 font-medium focus:ring-2 focus:ring-brand-500 outline-none text-sm" placeholder="留空则使用 115 目录 ID" value="{{ config.symedia_parent_id or '' }}">
+                    </div>
+                </div>
                 <button type="button" class="px-4 py-2 text-xs font-bold text-gray-600 dark:text-gray-300 bg-gray-100 dark:bg-apple-hoverDark hover:bg-gray-200 dark:hover:bg-[#3A3A3C] rounded-xl transition-colors border border-gray-200 dark:border-white/5" onclick="testConnection('hdhive')">
                     <i class="fa-solid fa-plug mr-1"></i> 测试连接
                 </button>
@@ -212,6 +243,8 @@
                 Array.from(form.elements).forEach(el => {
                     if (c[el.name] !== undefined && el.tagName === 'INPUT' && el.type !== 'password') {
                         el.value = c[el.name];
+                    } else if (c[el.name] !== undefined && el.tagName === 'SELECT') {
+                        el.value = c[el.name];
                     }
                 });
                 // 更新排除媒体库复选框状态
@@ -323,7 +356,7 @@
 
     async function fetchTgChatId() {
         try {
-            const resp = await fetch('/api/config/test/telegram');
+            const resp = await fetch('/api/config/test/telegram', { method: 'POST' });
             const json = await resp.json();
             if (json.status === 'success') {
                 // 获取 updates 中的 chat_id

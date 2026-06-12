@@ -4,6 +4,7 @@ from __future__ import annotations
 import asyncio
 import uuid
 import logging
+import re
 from datetime import datetime
 from fastapi import APIRouter, HTTPException
 from app.models.schemas import SubscribeRule
@@ -86,6 +87,14 @@ def _extract_quality(res: dict) -> str:
     return ""
 
 
+def _media_type_from_item(item: dict) -> str:
+    """Infer the media type used by HDHive/Symedia from an Emby quality-cache item."""
+    item_type = (item.get("type") or "").strip().lower()
+    if item_type in ("series", "season", "episode", "tv", "tvshow"):
+        return "tv"
+    return "movie"
+
+
 def _extract_height(quality_str: str) -> int:
     """从质量标记提取高度值，用于比较"更好" """
     q = quality_str.lower()
@@ -100,6 +109,35 @@ def _extract_height(quality_str: str) -> int:
     if "360" in q:
         return 360
     return 0
+
+
+def _norm_imdb_id(value: str) -> str:
+    """标准化 IMDb ID。"""
+    value = (value or "").strip().lower()
+    return value if value.startswith("tt") else ""
+
+
+def _looks_like_series_pack(res: dict) -> bool:
+    """Movie 条目搜索结果里出现季号时，通常是同名剧集误匹配。"""
+    title = (res.get("title") or res.get("name") or "").lower()
+    if re.search(r"\bs\d{1,2}\b", title):
+        return True
+    if re.search(r"\bseason\s*\d+\b", title):
+        return True
+    if re.search(r"第\s*[0-9一二三四五六七八九十]+\s*季", title):
+        return True
+    return False
+
+
+def _identity_matches(item: dict, res: dict) -> bool:
+    """用外部 ID 和条目形态做保守匹配，避免同名错配。"""
+    item_imdb = _norm_imdb_id(item.get("imdb_id", ""))
+    result_imdb = _norm_imdb_id(res.get("imdbid", ""))
+    if item_imdb and result_imdb and item_imdb != result_imdb:
+        return False
+    if item.get("type") == "Movie" and _looks_like_series_pack(res):
+        return False
+    return True
 
 
 def _is_remux(res: dict) -> bool:
@@ -131,6 +169,19 @@ def _has_subtitle(res: dict) -> bool:
     if subtitle and subtitle.lower() not in ("", "none", "false", "0"):
         return True
     return False
+
+
+def _is_free_hdhive(res: dict) -> bool:
+    """HDHive 自动转存只放行免费或已解锁资源，避免无人值守时消耗点数。"""
+    if res.get("is_unlocked"):
+        return True
+    points = res.get("unlock_points")
+    if points in (None, ""):
+        return False
+    try:
+        return float(points) <= 0
+    except (TypeError, ValueError):
+        return False
 
 
 def _format_resource_detail(res: dict, source: str = "") -> str:
@@ -631,12 +682,16 @@ async def batch_approve():
             elif action_type == "transfer":
                 hd = HDHiveClient()
                 try:
-                    resp = await hd.transfer(result.get("slug", ""))
+                    resp = await hd.unlock_and_transfer(result.get("slug", ""))
                     if not resp:
                         raise ValueError("转存提交失败")
-                    await update_subscribe_review(rev["id"], "approved", "批量批准 - 转存")
-                    await add_subscribe_log(rev.get("rule_id",""), rev.get("rule_name",""), "transfer", rev.get("item_name",""), rev.get("item_id",""), "批量批准")
-                    results["success"] += 1
+                    st = resp.get("status", "")
+                    if st in ("transferred", "already_owned"):
+                        await update_subscribe_review(rev["id"], "approved", "批量批准 - 转存成功")
+                        await add_subscribe_log(rev.get("rule_id",""), rev.get("rule_name",""), "transfer", rev.get("item_name",""), rev.get("item_id",""), "批量批准")
+                        results["success"] += 1
+                    else:
+                        raise ValueError(resp.get("message", f"转存异常: {st}"))
                 finally:
                     await hd.close()
             else:
@@ -710,11 +765,16 @@ async def _run_matching(rules: list[dict]):
         for rule in rules:
             rule_id = rule["id"]
             rule_name = rule.get("name", "未命名")
-            batch_size = rule.get("batch_size", 20)
+            try:
+                batch_size = int(rule.get("batch_size", 20) or 20)
+            except (TypeError, ValueError):
+                batch_size = 20
+            batch_size = max(1, min(batch_size, 1000))
             max_score = rule.get("max_score", 60)
             min_res = rule.get("min_current_resolution", "").lower()
             target_res = rule.get("target_resolution", "1080p").lower()
             source = rule.get("source", "moviepilot")
+            library_ids = {str(x).strip() for x in (rule.get("library_ids") or []) if str(x).strip()}
 
             # 过滤符合规则的低质量条目
             ignore_ids = await get_subscribe_ignore_ids(rule_id)
@@ -722,6 +782,8 @@ async def _run_matching(rules: list[dict]):
             rejected_ids = set()  # 记录被拒绝但可重新搜索的条目
             for item in items:
                 emby_id = item.get("emby_id", "")
+                if library_ids and str(item.get("library_id", "")) not in library_ids:
+                    continue
                 # 跳过已忽略的
                 if emby_id in ignore_ids:
                     continue
@@ -798,7 +860,11 @@ async def _run_matching(rules: list[dict]):
                     if source in ("hdhive", "both"):
                         hd = HDHiveClient()
                         try:
-                            hd_results = await hd.search(keyword=keyword, emby_item_id=item_id, media_type="movie")
+                            hd_results = await hd.search(
+                                keyword=keyword,
+                                emby_item_id=item_id,
+                                media_type=_media_type_from_item(item),
+                            )
                             for r in (hd_results or []):
                                 r["_source_label"] = "hdhive"
                             results.extend(hd_results or [])
@@ -826,6 +892,15 @@ async def _run_matching(rules: list[dict]):
                         if discarded:
                             logger.info(f"[Subscribe] {item_name}: 按年份过滤丢弃 {discarded}/{before} 个结果（目标年份 {item_year}）")
                             results = filtered
+
+                    # ── 外部 ID / 形态过滤 ──
+                    # 有 IMDb ID 时必须一致；电影条目排除 Sxx / Season / 第x季 等剧集包结果。
+                    if results:
+                        before = len(results)
+                        results = [r for r in results if _identity_matches(item, r)]
+                        discarded = before - len(results)
+                        if discarded:
+                            logger.info(f"[Subscribe] {item_name}: 外部ID/形态过滤丢弃 {discarded}/{before} 个疑似错配结果")
 
                     # ── 排除被拒绝过的结果 ──
                     # 用户拒绝后，该条目的某些搜索结果被标记为不再命中
@@ -968,6 +1043,12 @@ async def _run_matching(rules: list[dict]):
                                     checks.append("字幕✓")
                                 else:
                                     checks.append("字幕✗"); auto_ok = False
+                        if action_type == "transfer":
+                            if _is_free_hdhive(best):
+                                checks.append("免费/已解锁✓")
+                            else:
+                                checks.append("免费/已解锁✗")
+                                auto_ok = False
                         if not auto_ok:
                             # 不满足条件，回退到普通审核
                             await add_subscribe_log(rule_id, rule_name, "pending_review", item_name, item_id,
@@ -998,7 +1079,7 @@ async def _run_matching(rules: list[dict]):
                                     try:
                                         resp = await mp.download(torrent_url, torrent_info=best, tmdbid=tmdbid)
                                         if not resp or not resp.get("success"):
-                                            raise ValueError("下载提交失败")
+                                            raise ValueError(f"下载提交失败: {resp.get('message', 'MP API 未返回成功') if resp else 'API 无响应'}")
                                     finally:
                                         await mp.close()
                                     mp_detail = _format_resource_detail(best, src)
@@ -1033,8 +1114,8 @@ async def _run_matching(rules: list[dict]):
                                     transfer_ok = False
                                     transfer_detail = ""
                                     # 尝试当前 best 及后续候选
-                                    candidates = [best] + [r for r in better[1:] if r.get("_source_label") == "hdhive"]
-                                    for candidate in candidates:
+                                    transfer_candidates = [best] + [r for r in better[1:] if r.get("_source_label") == "hdhive"]
+                                    for candidate in transfer_candidates:
                                         slug = candidate.get("slug", "")
                                         if not slug or slug in bad_slugs:
                                             continue

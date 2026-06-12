@@ -17,6 +17,12 @@ class Settings(BaseSettings):
 
     # 影巢 连接（用于搜索高清晰片源）
     hdhive_api_key: str = ""      # X-API-Key 认证
+    hdhive_mode: str = "openapi"  # openapi / symedia
+    symedia_url: str = ""
+    symedia_token: str = ""
+    symedia_cookie: str = ""
+    symedia_cloud_type: str = "channel_115"
+    symedia_parent_id: str = ""
 
     # 115 网盘（用于转存）
     cloud115_cookie: str = ""

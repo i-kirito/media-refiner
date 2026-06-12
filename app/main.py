@@ -97,7 +97,7 @@ def _migrate_proxy():
 app = FastAPI(
     title="Media Refiner - 媒体洗版工坊",
     description="通过 Emby API 盘点媒体质量，使用 MoviePilot/影巢/115 进行自动洗版",
-    version="1.0.0",
+    version="1.1.0",
     lifespan=lifespan,
 )
 

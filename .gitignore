@@ -13,6 +13,7 @@ data/*.log
 
 # 备份
 config/env_backups/
+config/.env.bak*
 
 # Python
 __pycache__/
@@ -40,4 +41,5 @@ Thumbs.db
 
 # Agent
 CLAUDE.md
-deploy.sh backup_env.sh
+deploy.sh
+backup_env.sh

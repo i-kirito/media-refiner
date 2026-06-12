@@ -220,6 +220,8 @@ class TelegramNotifier:
                 f"https://api.telegram.org/bot{self.token}/getMe"
             )
             data = resp.json()
+            if not data.get("ok", False):
+                logger.warning(f"[Telegram] 连接检查失败: {data.get('description', 'unknown error')}")
             return data.get("ok", False)
         except Exception as e:
             logger.warning(f"[Telegram] 连接检查失败: {e}")
@@ -237,6 +239,7 @@ class TelegramNotifier:
             data = resp.json()
             if data.get("ok"):
                 return data.get("result", [])
+            logger.warning(f"[Telegram] 获取更新失败: {data.get('description', 'unknown error')}")
             return []
         except Exception as e:
             logger.warning(f"[Telegram] 获取更新失败: {e}")
@@ -251,9 +254,10 @@ class TelegramNotifier:
             payload = {
                 "chat_id": self.chat_id,
                 "text": text,
-                "parse_mode": parse_mode,
                 "disable_web_page_preview": True,
             }
+            if parse_mode:
+                payload["parse_mode"] = parse_mode
             if reply_markup:
                 payload["reply_markup"] = reply_markup
             resp = await self._client.post(
@@ -261,6 +265,8 @@ class TelegramNotifier:
                 json=payload
             )
             data = resp.json()
+            if not data.get("ok", False):
+                logger.warning(f"[Telegram] 消息发送失败: {data.get('description', 'unknown error')}")
             return data.get("ok", False)
         except Exception as e:
             logger.warning(f"[Telegram] 消息发送失败: {e}")
@@ -293,6 +299,8 @@ class TelegramNotifier:
                 json=payload
             )
             data = resp.json()
+            if not data.get("ok", False):
+                logger.warning(f"[Telegram] 编辑按钮失败: {data.get('description', 'unknown error')}")
             return data.get("ok", False)
         except Exception as e:
             logger.warning(f"[Telegram] 编辑按钮失败: {e}")
@@ -314,6 +322,8 @@ class TelegramNotifier:
                 json=payload
             )
             data = resp.json()
+            if not data.get("ok", False):
+                logger.warning(f"[Telegram] 答复 callback 失败: {data.get('description', 'unknown error')}")
             return data.get("ok", False)
         except Exception as e:
             logger.warning(f"[Telegram] 答复 callback 失败: {e}")
@@ -391,6 +401,7 @@ class TelegramNotifier:
             )
             data = resp.json()
             if not data.get("ok"):
+                logger.warning(f"[Telegram] getUpdates 返回失败: {data.get('description', 'unknown error')}")
                 return
 
             results = data.get("result", [])
@@ -799,10 +810,10 @@ class TelegramNotifier:
         from app.database import delete_subscribe_history
         try:
             result = await delete_subscribe_history(item_id)
-            total = result["logs"] + result["reviews"] + result["ignores"]
             await self._send_command_reply(chat_id,
                 f"🗑 *已重置条目 {item_id}*\n\n"
-                f"删除: {result['logs']} 条日志、{result['reviews']} 条审核、{result['ignores']} 条忽略\n"
+                f"删除: {result['logs']} 条日志、{result['reviews']} 条审核、"
+                f"{result['ignores']} 条忽略、{result.get('plans', 0)} 条手动计划\n"
                 f"下次运行规则时会重新搜索此条目。")
         except Exception as e:
             await self._send_command_reply(chat_id, f"❌ 重置失败: {e}")
@@ -849,7 +860,7 @@ class TelegramNotifier:
                             await emby.close()
                     resp = await mp.download(torrent_url, torrent_info=result, tmdbid=tmdbid)
                     if not resp or not resp.get("success"):
-                        raise ValueError(f"下载提交失败")
+                        raise ValueError(f"下载提交失败: {resp.get('message', 'MP API 未返回成功') if resp else 'API 无响应'}")
                     await update_subscribe_review(review_id, "approved", "✅ TG 批准 - 下载已推送")
                     await add_subscribe_log(review.get("rule_id", ""), review.get("rule_name", ""), "download", item_name, review.get("item_id", ""), "TG 审核通过")
                     await self.answer_callback_query(cb_id, f"✅ {item_name} 下载已推送", show_alert=False)
@@ -872,7 +883,11 @@ class TelegramNotifier:
                         await self.answer_callback_query(cb_id, f"✅ {item_name} 转存成功", show_alert=False)
                     elif status == "already_owned":
                         await update_subscribe_review(review_id, "approved", "✅ TG 批准 - 已在 115 中")
+                        await add_subscribe_log(review.get("rule_id", ""), review.get("rule_name", ""), "transfer", item_name, review.get("item_id", ""), "TG 审核通过 - 资源已在 115 中")
                         await self.answer_callback_query(cb_id, f"ℹ️ {item_name} 已在 115 中", show_alert=False)
+                    elif status == "not_115":
+                        await update_subscribe_review(review_id, "failed", "非 115 网盘资源")
+                        await self.answer_callback_query(cb_id, f"⚠️ {item_name} 非 115 网盘资源，无法转存", show_alert=True)
                     else:
                         raise ValueError(resp.get("message", f"转存异常: {status}"))
                 finally:
@@ -893,7 +908,7 @@ class TelegramNotifier:
 
     async def _handle_reject(self, cb_id: str, review_id: int, message_id: int):
         """处理拒绝操作（来自 callback_query 按钮）"""
-        from app.database import list_subscribe_reviews, update_subscribe_review
+        from app.database import list_subscribe_reviews, update_subscribe_review, add_rejected_result
         reviews = await list_subscribe_reviews("pending")
         review = next((r for r in reviews if r["id"] == review_id), None)
         if not review:
@@ -901,6 +916,15 @@ class TelegramNotifier:
             return
         item_name = review.get("item_name", "")
         await update_subscribe_review(review_id, "rejected", "❌ TG 拒绝")
+
+        # 保存被拒绝的结果标识，下次搜索时排除
+        sr = review.get("search_result") or {}
+        item_id = review.get("item_id", "")
+        result_key = sr.get("enclosure") or sr.get("slug") or sr.get("page_url") or ""
+        result_label = sr.get("title") or ""
+        if item_id and result_key:
+            await add_rejected_result(item_id, result_key, result_label)
+
         await self.answer_callback_query(cb_id, f"❌ 已拒绝：{item_name}", show_alert=False)
         await self.edit_message_reply_markup(message_id, {
             "inline_keyboard": [[{"text": "❌ 已拒绝", "callback_data": "done"}]]
@@ -945,10 +969,13 @@ class TelegramNotifier:
                         result = r.get("search_result", {})
                         url = result.get("enclosure", "")
                         if url:
-                            await mp.download(url, torrent_info=result)
+                            resp = await mp.download(url, torrent_info=result)
+                            if not resp or not resp.get("success"):
+                                raise ValueError(resp.get("message", "下载提交失败") if resp else "API 无响应")
                             await self._update_review_status(review_id, "approved", "批量批准 - 下载已推送")
                             ok += 1
                         else:
+                            await self._update_review_status(review_id, "failed", "无下载链接")
                             fail += 1
                     finally:
                         await mp.close()
@@ -964,14 +991,18 @@ class TelegramNotifier:
                                 await self._update_review_status(review_id, "approved", "批量批准 - 转存成功")
                                 ok += 1
                             else:
+                                await self._update_review_status(review_id, "failed", resp.get("message", f"转存异常: {st}") if resp else "转存失败")
                                 fail += 1
                         else:
+                            await self._update_review_status(review_id, "failed", "无转存标识")
                             fail += 1
                     finally:
                         await hd.close()
                 else:
+                    await self._update_review_status(review_id, "failed", "未知操作类型")
                     fail += 1
-            except Exception:
+            except Exception as e:
+                await self._update_review_status(review_id, "failed", str(e))
                 fail += 1
         msg = f"✅ 批量批准完成：成功 {ok} 项，失败 {fail} 项（共 {total}）"
         await self.answer_callback_query(cb_id, msg, show_alert=True)
@@ -1025,10 +1056,13 @@ class TelegramNotifier:
                     try:
                         url = result.get("enclosure", "")
                         if url:
-                            await mp.download(url, torrent_info=result)
+                            resp = await mp.download(url, torrent_info=result)
+                            if not resp or not resp.get("success"):
+                                raise ValueError(resp.get("message", "下载提交失败") if resp else "API 无响应")
                             await update_subscribe_review(review_id, "approved", "🤖 智能通过 - 4K+Remux+字幕")
                             approved += 1
                         else:
+                            await update_subscribe_review(review_id, "failed", "无下载链接")
                             failed += 1
                     finally:
                         await mp.close()
@@ -1043,14 +1077,18 @@ class TelegramNotifier:
                                 await update_subscribe_review(review_id, "approved", "🤖 智能通过 - 4K+Remux+字幕")
                                 approved += 1
                             else:
+                                await update_subscribe_review(review_id, "failed", resp.get("message", f"转存异常: {st}") if resp else "转存失败")
                                 failed += 1
                         else:
+                            await update_subscribe_review(review_id, "failed", "无转存标识")
                             failed += 1
                     finally:
                         await hd.close()
                 else:
+                    await update_subscribe_review(review_id, "failed", "未知操作类型")
                     failed += 1
-            except Exception:
+            except Exception as e:
+                await update_subscribe_review(review_id, "failed", str(e))
                 failed += 1
 
         msg = (f"🤖 智能通过完成：共 {total} 项\n"

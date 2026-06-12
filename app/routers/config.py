@@ -33,6 +33,12 @@ async def get_config():
             "moviepilot_url": settings.moviepilot_url,
             "moviepilot_token": "••••" + settings.moviepilot_token[-4:] if settings.moviepilot_token else "",
             "hdhive_api_key": "已设置" if settings.hdhive_api_key else "",
+            "hdhive_mode": settings.hdhive_mode,
+            "symedia_url": settings.symedia_url,
+            "symedia_token": "已设置" if settings.symedia_token else "",
+            "symedia_cookie": "已设置" if settings.symedia_cookie else "",
+            "symedia_cloud_type": settings.symedia_cloud_type,
+            "symedia_parent_id": settings.symedia_parent_id,
             "cloud115_cookie": "已设置" if settings.cloud115_cookie else "",
             "cloud115_folder_id": settings.cloud115_folder_id,
             "exclude_library_ids": settings.exclude_library_ids,
@@ -53,18 +59,22 @@ async def save_config(config: ConfigModel):
     try:
         data = config.model_dump()
 
-        # 获取 ConfigModel 各字段的默认值
-        model_defaults = {}
-        for field_name, field_info in ConfigModel.model_fields.items():
-            model_defaults[field_name] = field_info.default
+        sensitive_keys = {
+            "emby_api_key",
+            "moviepilot_token",
+            "hdhive_api_key",
+            "symedia_token",
+            "symedia_cookie",
+            "cloud115_cookie",
+            "tg_bot_token",
+        }
+        masked_values = {"已设置"}
 
-        # 对所有字段：如果传入值是 Pydantic 默认值，且已有真实值 → 保留现有值
-        # 这防止了前端未填字段用默认值覆盖已有的真实配置
-        for key in data:
-            val = data.get(key)
-            default_val = model_defaults.get(key)
+        # 密码框留空代表保留旧值；普通字段允许改回默认值或清空。
+        for key in sensitive_keys:
+            val = data.get(key, "")
             existing = getattr(settings, key, "")
-            if val == default_val and existing and existing != default_val:
+            if existing and (not val or val in masked_values or str(val).startswith("••••")):
                 data[key] = existing
 
         with open(env_path, "w") as f:

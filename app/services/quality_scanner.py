@@ -91,6 +91,14 @@ def parse_filename_resolution(path: str) -> tuple[int,int] | None:
     return None
 
 
+def parse_filename_year(path: str) -> int | None:
+    """从路径中解析 1900-2099 年份，作为 Emby 列表缺年份时的回退。"""
+    if not path:
+        return None
+    m = re.search(r"(?:^|[^\d])((?:19|20)\d{2})(?:[^\d]|$)", path)
+    return int(m.group(1)) if m else None
+
+
 def get_effective_resolution(item: dict, video_stream: dict) -> tuple[int,int]:
     """获取分辨率：Emby 数据优先，文件名回退"""
     width = video_stream.get("Width", 0) or 0
@@ -286,11 +294,11 @@ class QualityScanner:
         try:
             ignored_ids = await get_ignore_ids()
 
-            # ── 1. 获取所有媒体库，筛选 Movie 类型 ──
+            # ── 1. 获取所有媒体库，筛选电影/电视剧类型 ──
             all_libraries = await self.emby.get_libraries()
-            movie_libs = [
+            media_libs = [
                 lib for lib in all_libraries
-                if lib.get("CollectionType") == "movies"
+                if lib.get("CollectionType") in ("movies", "tvshows")
             ]
             lib_map = {lib.get("ItemId", ""): lib.get("Name", "") for lib in all_libraries}
 
@@ -302,7 +310,7 @@ class QualityScanner:
                 if not eid:
                     continue
                 found = False
-                for lib in movie_libs:
+                for lib in media_libs:
                     lib_id = lib.get("ItemId", "")
                     if lib_id == eid:
                         excluded_ids.add(lib_id)
@@ -311,13 +319,13 @@ class QualityScanner:
                         found = True
                         break
                 if not found:
-                    print(f"[Scan] ⚠ 未匹配到 Movie 类型媒体库: {eid}（忽略）")
+                    print(f"[Scan] ⚠ 未匹配到可扫描媒体库: {eid}（忽略）")
 
             # ── 3. 确定要扫描的媒体库 ──
-            included_libs = [lib for lib in movie_libs if lib.get("ItemId", "") not in excluded_ids]
+            included_libs = [lib for lib in media_libs if lib.get("ItemId", "") not in excluded_ids]
 
             if not included_libs:
-                print("[Scan] ⚠ 没有需要扫描的 Movie 媒体库")
+                print("[Scan] ⚠ 没有需要扫描的电影/电视剧媒体库")
                 return {"total_count": 0, "scan_time": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
                         "resolution_dist": {}, "codec_dist": {}, "hdr_dist": {}, "anomaly_count": 0}
 
@@ -333,12 +341,13 @@ class QualityScanner:
 
             for lib in included_libs:
                 lib_id = lib.get("ItemId", "")
-                lib_name = lib.get("Name", "")
+                lib_type = lib.get("CollectionType", "")
+                include_types = "Series" if lib_type == "tvshows" else "Movie"
 
                 # 获取该库总条目数
                 first_page = await self.emby.get_items(
-                    include_types="Movie",
-                    fields="MediaSources,Path,MediaStreams,ProviderIds,DateCreated",
+                    include_types=include_types,
+                    fields="MediaSources,Path,MediaStreams,ProviderIds,ProductionYear,PremiereDate,DateCreated",
                     start_index=0,
                     limit=1,
                     parent_id=lib_id,
@@ -352,28 +361,112 @@ class QualityScanner:
             for lib in included_libs:
                 lib_id = lib.get("ItemId", "")
                 lib_name = lib.get("Name", "")
+                lib_type = lib.get("CollectionType", "")
                 lib_total = lib_totals[lib_id]
-                start = 0
                 lib_scanned = 0
 
-                while start < lib_total and len(all_items) < max_items:
-                    page = await self.emby.get_items(
-                        include_types="Movie",
-                        fields="MediaSources,Path,MediaStreams,ProviderIds,DateCreated",
-                        start_index=start,
-                        limit=limit,
-                        parent_id=lib_id,
-                    )
-                    items = (page or {}).get("Items", [])
-                    if not items:
-                        break
-                    lib_scanned += len(items)
-                    all_items.extend(items)
-                    self._scanned += len(items)
-                    self._progress = min(99, int(self._scanned / self._total * 100) if self._total else 0)
-                    if self._progress % 20 == 0 and self._scanned > 0:
-                        print(f"[Scan] [{lib_name}] 进度 {self._progress}% ({self._scanned}/{self._total})")
-                    start += limit
+                if lib_type == "tvshows":
+                    series_items: list[dict] = []
+                    start = 0
+                    while start < lib_total and len(series_items) < max_items:
+                        page = await self.emby.get_items(
+                            include_types="Series",
+                            fields="Path,ProviderIds,ProductionYear,PremiereDate,RecursiveItemCount,ChildCount",
+                            start_index=start,
+                            limit=limit,
+                            parent_id=lib_id,
+                        )
+                        items = (page or {}).get("Items", [])
+                        if not items:
+                            break
+                        series_items.extend(items)
+                        start += limit
+
+                    semaphore = asyncio.Semaphore(8)
+
+                    async def build_series_item(series: dict) -> dict | None:
+                        sid = series.get("Id", "")
+                        episodes = []
+                        ep_start = 0
+                        ep_total = 1
+                        async with semaphore:
+                            while ep_start < ep_total:
+                                page = await self.emby.get_items(
+                                    include_types="Episode",
+                                    fields="MediaSources,Path,MediaStreams,ProviderIds,ProductionYear,PremiereDate,DateCreated,SeriesId,SeriesName,ParentIndexNumber,IndexNumber",
+                                    start_index=ep_start,
+                                    limit=300,
+                                    parent_id=sid,
+                                )
+                                batch = (page or {}).get("Items", [])
+                                ep_total = (page or {}).get("TotalRecordCount", 0) or 0
+                                if not batch:
+                                    break
+                                episodes.extend(batch)
+                                ep_start += 300
+                        if not episodes:
+                            return None
+                        representative = min(episodes, key=calculate_quality_score)
+                        return {
+                            **representative,
+                            "Id": sid,
+                            "Name": series.get("Name", "") or representative.get("SeriesName", ""),
+                            "Type": "Series",
+                            "ProviderIds": series.get("ProviderIds") or {},
+                            "ProductionYear": series.get("ProductionYear") or parse_filename_year(series.get("Path", "")),
+                            "PremiereDate": series.get("PremiereDate", ""),
+                            "Path": series.get("Path", "") or representative.get("Path", ""),
+                            "_library_id": lib_id,
+                            "_library_name": lib_name,
+                            "_episode_count": len(episodes),
+                            "_representative_episode": {
+                                "id": representative.get("Id", ""),
+                                "season": representative.get("ParentIndexNumber"),
+                                "episode": representative.get("IndexNumber"),
+                                "name": representative.get("Name", ""),
+                            } if representative else {},
+                        }
+
+                    batch_size = 48
+                    for batch_start in range(0, len(series_items), batch_size):
+                        batch = series_items[batch_start:batch_start + batch_size]
+                        if not batch:
+                            continue
+                        self._current_item = f"{lib_name} / {batch[0].get('Name', '')} 等 {len(batch)} 部"
+                        built_items = await asyncio.gather(*(build_series_item(series) for series in batch))
+                        for synthetic in built_items:
+                            lib_scanned += 1
+                            self._scanned += 1
+                            if synthetic:
+                                all_items.append(synthetic)
+                            self._progress = min(99, int(self._scanned / self._total * 100) if self._total else 0)
+                        if self._progress % 20 == 0 and self._scanned > 0:
+                            print(f"[Scan] [{lib_name}] 进度 {self._progress}% ({self._scanned}/{self._total})")
+                        if len(all_items) >= max_items:
+                            break
+                else:
+                    start = 0
+                    while start < lib_total and len(all_items) < max_items:
+                        page = await self.emby.get_items(
+                            include_types="Movie",
+                            fields="MediaSources,Path,MediaStreams,ProviderIds,ProductionYear,PremiereDate,DateCreated",
+                            start_index=start,
+                            limit=limit,
+                            parent_id=lib_id,
+                        )
+                        items = (page or {}).get("Items", [])
+                        if not items:
+                            break
+                        for item in items:
+                            item["_library_id"] = lib_id
+                            item["_library_name"] = lib_name
+                        lib_scanned += len(items)
+                        all_items.extend(items)
+                        self._scanned += len(items)
+                        self._progress = min(99, int(self._scanned / self._total * 100) if self._total else 0)
+                        if self._progress % 20 == 0 and self._scanned > 0:
+                            print(f"[Scan] [{lib_name}] 进度 {self._progress}% ({self._scanned}/{self._total})")
+                        start += limit
 
                 print(f"[Scan] [{lib_name}] 完成，共 {lib_scanned} 条")
 
@@ -400,7 +493,11 @@ class QualityScanner:
                         video_stream = s
                         break
 
-                lib_id = item.get("LibraryId", "") or ""
+                lib_id = item.get("LibraryId", "") or item.get("_library_id", "") or ""
+                lib_name = lib_map.get(lib_id, "") or item.get("_library_name", "")
+                item_type = item.get("Type", "Movie") or "Movie"
+                provider_ids = item.get("ProviderIds") or {}
+                year = item.get("ProductionYear") or parse_filename_year(item.get("Path", ""))
 
                 if video_stream:
                     eff_w, eff_h = get_effective_resolution(item, video_stream)
@@ -408,34 +505,44 @@ class QualityScanner:
                     quality_item = {
                         "emby_id": emby_id,
                         "name": item.get("Name", ""),
-                        "year": item.get("ProductionYear"),
-                        "type": "Movie",
+                        "year": year,
+                        "type": item_type,
+                        "provider_ids": provider_ids,
+                        "tmdb_id": provider_ids.get("Tmdb", ""),
+                        "imdb_id": provider_ids.get("Imdb", ""),
                         "resolution": f"{eff_w}x{eff_h}",
                         "video_codec": video_stream.get("Codec", ""),
                         "video_range": video_stream.get("VideoRange", ""),
                         "path": item.get("Path", ""),
                         "library_id": lib_id,
-                        "library_name": lib_map.get(lib_id, ""),
+                        "library_name": lib_name,
                         "quality_score": calculate_quality_score(item),
                         "size_bytes": ms.get("Size", 0),
                         "is_anomaly": is_anomaly,
+                        "episode_count": item.get("_episode_count", 0),
+                        "representative_episode": item.get("_representative_episode", {}),
                     }
                 else:
                     eff_w, eff_h = parse_filename_resolution(item.get("Path", "")) or (0, 0)
                     quality_item = {
                         "emby_id": emby_id,
                         "name": item.get("Name", ""),
-                        "year": item.get("ProductionYear"),
-                        "type": "Movie",
+                        "year": year,
+                        "type": item_type,
+                        "provider_ids": provider_ids,
+                        "tmdb_id": provider_ids.get("Tmdb", ""),
+                        "imdb_id": provider_ids.get("Imdb", ""),
                         "resolution": f"{eff_w}x{eff_h}",
                         "video_codec": "",
                         "video_range": "",
                         "path": item.get("Path", ""),
                         "library_id": lib_id,
-                        "library_name": lib_map.get(lib_id, ""),
+                        "library_name": lib_name,
                         "quality_score": 30 if eff_h == 0 else calculate_quality_score(item),
                         "size_bytes": ms.get("Size", 0),
                         "is_anomaly": False,
+                        "episode_count": item.get("_episode_count", 0),
+                        "representative_episode": item.get("_representative_episode", {}),
                     }
                 result_items.append(quality_item)
 

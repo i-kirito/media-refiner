@@ -2,72 +2,356 @@
 {% block title %}质量盘点{% endblock %}
 {% block head %}
 <style>
-    .quality-score { font-variant-numeric: tabular-nums; }
+    .quality-shell {
+        isolation: isolate;
+    }
+    .quality-shell::before {
+        content: "";
+        position: fixed;
+        inset: 72px 0 auto 240px;
+        height: 280px;
+        pointer-events: none;
+        z-index: -1;
+        background:
+            radial-gradient(circle at 22% 24%, rgba(0, 122, 255, 0.12), transparent 34%),
+            radial-gradient(circle at 78% 16%, rgba(20, 184, 166, 0.10), transparent 32%),
+            radial-gradient(circle at 48% 72%, rgba(245, 158, 11, 0.08), transparent 28%);
+        filter: blur(2px);
+    }
+    .quality-hero,
+    .quality-panel,
+    .quality-modal {
+        position: relative;
+        overflow: hidden;
+        border: 1px solid rgba(255, 255, 255, 0.72);
+        background:
+            linear-gradient(135deg, rgba(255, 255, 255, 0.92), rgba(255, 255, 255, 0.68)),
+            rgba(255, 255, 255, 0.78);
+        backdrop-filter: blur(24px) saturate(180%);
+        -webkit-backdrop-filter: blur(24px) saturate(180%);
+        box-shadow: 0 18px 42px -28px rgba(15, 23, 42, 0.36), inset 0 1px 0 rgba(255, 255, 255, 0.7);
+    }
+    .dark .quality-hero,
+    .dark .quality-panel,
+    .dark .quality-modal {
+        border-color: rgba(255, 255, 255, 0.08);
+        background:
+            linear-gradient(135deg, rgba(39, 39, 42, 0.92), rgba(24, 24, 27, 0.78)),
+            rgba(28, 28, 30, 0.84);
+        box-shadow: 0 22px 50px -30px rgba(0, 0, 0, 0.82), inset 0 1px 0 rgba(255, 255, 255, 0.08);
+    }
+    .quality-hero::after,
+    .quality-panel::after {
+        content: "";
+        position: absolute;
+        inset: 0 0 auto 0;
+        height: 1px;
+        background: linear-gradient(90deg, transparent, rgba(0, 122, 255, 0.42), rgba(20, 184, 166, 0.36), transparent);
+        pointer-events: none;
+    }
+    .quality-panel {
+        border-radius: 24px;
+        transition: transform 0.24s cubic-bezier(0.4, 0, 0.2, 1), box-shadow 0.24s cubic-bezier(0.4, 0, 0.2, 1), border-color 0.24s ease;
+    }
+    .quality-panel:hover {
+        transform: translateY(-2px);
+        border-color: rgba(0, 122, 255, 0.18);
+        box-shadow: 0 24px 54px -34px rgba(15, 23, 42, 0.48), inset 0 1px 0 rgba(255, 255, 255, 0.75);
+    }
+    .dark .quality-panel:hover {
+        border-color: rgba(20, 184, 166, 0.18);
+        box-shadow: 0 24px 56px -32px rgba(0, 0, 0, 0.9), 0 0 18px rgba(20, 184, 166, 0.08), inset 0 1px 0 rgba(255, 255, 255, 0.1);
+    }
+    .quality-stats-grid {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 0;
+        padding: 0;
+        border-radius: 20px;
+        background: rgba(255, 255, 255, 0.9);
+        backdrop-filter: none;
+        -webkit-backdrop-filter: none;
+        box-shadow: 0 10px 26px -22px rgba(15, 23, 42, 0.44);
+    }
+    .dark .quality-stats-grid {
+        background: rgba(28, 28, 30, 0.72);
+        box-shadow: 0 14px 30px -24px rgba(0, 0, 0, 0.86);
+    }
+    .quality-stats-grid::after {
+        content: none;
+    }
+    .quality-stats-grid:hover,
+    .dark .quality-stats-grid:hover {
+        transform: none;
+        box-shadow: 0 10px 26px -22px rgba(15, 23, 42, 0.44);
+    }
+    .dark .quality-stats-grid:hover {
+        box-shadow: 0 14px 30px -24px rgba(0, 0, 0, 0.86);
+    }
+    @media (min-width: 640px) {
+        .quality-stats-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+    }
+    @media (min-width: 1024px) {
+        .quality-stats-grid { grid-template-columns: repeat(5, minmax(0, 1fr)); }
+    }
+    .quality-stat-card {
+        --stat-accent: #007AFF;
+        min-height: 78px;
+        padding: 16px 18px;
+        position: relative;
+        overflow: hidden;
+        border-right: 1px solid rgba(226, 232, 240, 0.88);
+        border-bottom: 1px solid rgba(226, 232, 240, 0.88);
+        background: transparent;
+    }
+    .dark .quality-stat-card {
+        border-color: rgba(255, 255, 255, 0.08);
+        background: transparent;
+    }
+    .quality-stat-card::before,
+    .quality-stat-card::after {
+        content: none;
+    }
+    .quality-stat-card:hover {
+        transform: none;
+    }
+    .quality-stat-card:nth-child(2n) {
+        border-right: 0;
+    }
+    .quality-stat-card:nth-last-child(-n + 1) {
+        border-bottom: 0;
+    }
+    @media (min-width: 640px) {
+        .quality-stat-card:nth-child(2n) { border-right: 1px solid rgba(226, 232, 240, 0.88); }
+        .dark .quality-stat-card:nth-child(2n) { border-right-color: rgba(255, 255, 255, 0.08); }
+        .quality-stat-card:nth-child(3n) { border-right: 0; }
+        .quality-stat-card:nth-last-child(-n + 2) { border-bottom: 0; }
+    }
+    @media (min-width: 1024px) {
+        .quality-stat-card,
+        .quality-stat-card:nth-child(2n),
+        .quality-stat-card:nth-child(3n) {
+            border-right: 1px solid rgba(226, 232, 240, 0.88);
+            border-bottom: 0;
+        }
+        .dark .quality-stat-card,
+        .dark .quality-stat-card:nth-child(2n),
+        .dark .quality-stat-card:nth-child(3n) {
+            border-right-color: rgba(255, 255, 255, 0.08);
+        }
+        .quality-stat-card:last-child {
+            border-right: 0;
+        }
+    }
+    .stat-card-total,
+    .stat-card-4k,
+    .stat-card-hevc,
+    .stat-card-sdr { --stat-accent: #1f2937; }
+    .dark .stat-card-total,
+    .dark .stat-card-4k,
+    .dark .stat-card-hevc,
+    .dark .stat-card-sdr { --stat-accent: #f8fafc; }
+    .stat-card-anomaly { --stat-accent: #ef4444; }
+    .quality-stat-icon {
+        display: none;
+    }
+    .stat-label {
+        font-size: 11px;
+        font-weight: 900;
+        color: rgb(100, 116, 139);
+        letter-spacing: 0;
+    }
+    .dark .stat-label { color: rgb(148, 163, 184); }
+    .stat-value {
+        color: var(--stat-accent);
+        font-size: 23px;
+        line-height: 1;
+        font-weight: 900;
+        font-variant-numeric: tabular-nums;
+        letter-spacing: 0;
+    }
+    .stat-unit {
+        font-size: 11px;
+        font-weight: 800;
+        color: rgb(148, 163, 184);
+        margin-left: 4px;
+    }
+    .stat-meta {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 8px;
+        margin-top: 7px;
+        font-size: 10px;
+        font-weight: 800;
+        color: rgb(100, 116, 139);
+    }
+    .dark .stat-meta { color: rgb(148, 163, 184); }
+    .stat-percent {
+        color: var(--stat-accent);
+        font-variant-numeric: tabular-nums;
+    }
+    .stat-progress {
+        display: none;
+    }
+    .stat-progress > span {
+        display: block;
+        width: 0%;
+        height: 100%;
+        border-radius: inherit;
+        background: linear-gradient(90deg, var(--stat-accent), color-mix(in srgb, var(--stat-accent) 68%, white));
+        transition: width 0.45s ease;
+    }
+    @supports not (background: color-mix(in srgb, red, white)) {
+        .stat-progress > span { background: var(--stat-accent); }
+    }
+    .quality-filter-label {
+        width: 52px;
+        flex-shrink: 0;
+        font-size: 11px;
+        font-weight: 900;
+        color: rgb(107, 114, 128);
+    }
+    .dark .quality-filter-label {
+        color: rgb(156, 163, 175);
+    }
+    .quality-row {
+        border-left: 3px solid transparent;
+        transition: background-color 0.18s ease, border-color 0.18s ease, transform 0.18s ease;
+    }
+    .quality-row:hover {
+        transform: translateX(2px);
+        border-left-color: rgba(0, 122, 255, 0.62);
+        background: linear-gradient(90deg, rgba(0, 122, 255, 0.06), rgba(20, 184, 166, 0.03), transparent);
+    }
+    .dark .quality-row:hover {
+        background: linear-gradient(90deg, rgba(0, 122, 255, 0.12), rgba(20, 184, 166, 0.06), transparent);
+    }
+    .quality-score {
+        font-variant-numeric: tabular-nums;
+    }
+    .quality-score-ring {
+        width: 56px;
+        height: 52px;
+        border-radius: 18px;
+        display: grid;
+        place-items: center;
+        align-content: center;
+        background: rgba(248, 250, 252, 0.86);
+        border: 1px solid rgba(148, 163, 184, 0.22);
+        box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.66);
+    }
+    .dark .quality-score-ring {
+        background: rgba(255, 255, 255, 0.05);
+        border-color: rgba(255, 255, 255, 0.08);
+        box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.08);
+    }
+    .quality-action {
+        min-height: 40px;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        gap: 7px;
+        border-radius: 14px;
+        box-shadow: 0 10px 18px -14px rgba(0, 122, 255, 0.68);
+    }
+    .quality-result-card {
+        border-radius: 18px;
+        border: 1px solid rgba(226, 232, 240, 0.92);
+        background: rgba(248, 250, 252, 0.8);
+        transition: transform 0.2s ease, border-color 0.2s ease, background-color 0.2s ease;
+    }
+    .quality-result-card:hover {
+        transform: translateY(-1px);
+        border-color: rgba(0, 122, 255, 0.2);
+        background: rgba(241, 245, 249, 0.95);
+    }
+    .dark .quality-result-card {
+        border-color: rgba(255, 255, 255, 0.07);
+        background: rgba(255, 255, 255, 0.045);
+    }
+    .dark .quality-result-card:hover {
+        border-color: rgba(20, 184, 166, 0.16);
+        background: rgba(255, 255, 255, 0.075);
+    }
     .tag-filter {
-        padding: 4px 12px;
+        min-height: 30px;
+        padding: 5px 13px;
         border-radius: 999px;
         font-size: 12px;
-        font-weight: 600;
+        font-weight: 800;
         border: 1.5px solid transparent;
-        transition: all 0.15s ease;
+        transition: all 0.2s ease;
         cursor: pointer;
-        background: rgba(0,0,0,0.04);
+        background: rgba(15, 23, 42, 0.045);
         color: #6b7280;
         white-space: nowrap;
     }
     .dark .tag-filter {
-        background: rgba(255,255,255,0.04);
+        background: rgba(255,255,255,0.055);
         color: #9ca3af;
     }
     .tag-filter:hover {
-        background: rgba(0,0,0,0.08);
+        background: rgba(0,122,255,0.09);
         color: #374151;
+        transform: translateY(-1px);
     }
     .dark .tag-filter:hover {
-        background: rgba(255,255,255,0.08);
+        background: rgba(255,255,255,0.09);
         color: #e5e7eb;
     }
     .tag-filter.active {
-        background: #6366f1;
+        background: linear-gradient(135deg, #007AFF, #14b8a6);
         color: white;
-        border-color: #6366f1;
-        box-shadow: 0 2px 8px rgba(99,102,241,0.25);
+        border-color: rgba(255, 255, 255, 0.38);
+        box-shadow: 0 10px 22px -16px rgba(0, 122, 255, 0.95);
     }
     .dark .tag-filter.active {
-        background: #818cf8;
-        border-color: #818cf8;
+        background: linear-gradient(135deg, #0ea5e9, #14b8a6);
+        border-color: rgba(255, 255, 255, 0.18);
         color: #fff;
+    }
+    @media (max-width: 767px) {
+        .quality-shell::before {
+            left: 0;
+        }
+        .quality-panel:hover,
+        .quality-row:hover,
+        .quality-result-card:hover,
+        .tag-filter:hover {
+            transform: none;
+        }
     }
 </style>
 {% endblock %}
 {% block content %}
-<div class="max-w-7xl mx-auto w-full px-4 md:px-8 py-6 pb-24 relative">
+<div class="quality-shell max-w-7xl mx-auto w-full px-4 md:px-8 py-6 pb-24 relative">
 
     <!-- 标题 + 操作 -->
-    <div class="flex flex-col md:flex-row justify-between items-center mb-6 gap-4 bg-white dark:bg-gray-800 p-4 rounded-2xl shadow-sm border border-gray-100 dark:border-gray-700">
+    <div class="quality-hero flex flex-col md:flex-row justify-between items-center mb-6 gap-4 p-4 md:p-5 rounded-[24px]">
         <div class="flex items-center gap-3">
-            <div class="w-12 h-12 bg-purple-50 dark:bg-purple-900/30 rounded-xl flex items-center justify-center border border-purple-100 dark:border-purple-800">
-                <i class="fa-solid fa-microchip text-purple-500 text-xl"></i>
+            <div class="w-12 h-12 bg-gradient-to-br from-brand-500 to-teal-500 rounded-2xl flex items-center justify-center text-white shadow-lg shadow-brand-500/20 ring-1 ring-white/40 dark:ring-white/10">
+                <i class="fa-solid fa-microchip text-xl"></i>
             </div>
             <div>
                 <h1 class="text-xl font-black text-gray-900 dark:text-white">质量盘点</h1>
-                <p class="text-xs text-gray-500 mt-0.5">浏览媒体质量，发起洗版升级</p>
+                <p class="text-xs text-gray-500 dark:text-gray-400 mt-0.5">浏览媒体质量，发起洗版升级</p>
             </div>
         </div>
         <div class="flex items-center gap-3">
-            <button id="btnReScan" onclick="ScanManager.start()" class="px-4 py-2 text-sm font-bold text-white bg-brand-500 hover:bg-brand-600 rounded-xl shadow-md transition active:scale-95 flex items-center gap-2">
+            <button id="btnReScan" onclick="ScanManager.start()" class="quality-action px-4 py-2 text-sm font-bold text-white bg-brand-500 hover:bg-brand-600 transition active:scale-95">
                 <i class="fa-solid fa-rotate"></i> 重新扫描
             </button>
         </div>
     </div>
 
     <!-- 扫描进度 -->
-    <div id="scan-progress" class="hidden apple-card mb-6 p-5"></div>
+    <div id="scan-progress" class="hidden quality-panel mb-6 p-5"></div>
 
     <!-- 筛选栏: 分辨率 / 编码 / HDR -->
-    <div class="apple-card p-4 mb-6 space-y-3">
+    <div class="quality-panel p-4 mb-6 space-y-3">
         <div class="flex flex-wrap items-center gap-2">
-            <span class="text-[11px] font-black text-gray-400 w-[52px] shrink-0">分辨率</span>
+            <span class="quality-filter-label">分辨率</span>
             <div class="flex items-center gap-1 flex-wrap">
                 <button class="tag-filter active" data-group="resolution" data-value="" onclick="setTagFilter(this)">全部</button>
                 <button class="tag-filter" data-group="resolution" data-value="4k" onclick="setTagFilter(this)">4K</button>
@@ -77,7 +361,7 @@
             </div>
         </div>
         <div class="flex flex-wrap items-center gap-2">
-            <span class="text-[11px] font-black text-gray-400 w-[52px] shrink-0">编码</span>
+            <span class="quality-filter-label">编码</span>
             <div class="flex items-center gap-1 flex-wrap">
                 <button class="tag-filter active" data-group="codec" data-value="" onclick="setTagFilter(this)">全部</button>
                 <button class="tag-filter" data-group="codec" data-value="hevc" onclick="setTagFilter(this)">HEVC</button>
@@ -86,7 +370,7 @@
             </div>
         </div>
         <div class="flex flex-wrap items-center gap-2">
-            <span class="text-[11px] font-black text-gray-400 w-[52px] shrink-0">HDR</span>
+            <span class="quality-filter-label">HDR</span>
             <div class="flex items-center gap-1 flex-wrap">
                 <button class="tag-filter active" data-group="hdr" data-value="" onclick="setTagFilter(this)">全部</button>
                 <button class="tag-filter" data-group="hdr" data-value="sdr" onclick="setTagFilter(this)">SDR</button>
@@ -103,7 +387,7 @@
             </div>
         </div>
         <div class="flex flex-wrap items-center gap-2">
-            <span class="text-[11px] font-black text-gray-400 w-[52px] shrink-0">标记</span>
+            <span class="quality-filter-label">标记</span>
             <div class="flex items-center gap-1 flex-wrap">
                 <button class="tag-filter active" data-group="anomaly" data-value="" onclick="setTagFilter(this)">全部</button>
                 <button class="tag-filter" data-group="anomaly" data-value="yes" onclick="setTagFilter(this)">
@@ -115,26 +399,61 @@
     </div>
 
     <!-- 统计卡片 -->
-    <div class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-5 gap-2 md:gap-3 mb-6">
-        <div class="apple-card p-3 md:p-4 text-center">
-            <div class="text-[10px] md:text-xs text-gray-500 font-bold mb-1">总计</div>
-            <div class="text-lg md:text-2xl font-black text-gray-900 dark:text-white" id="totalCount">-</div>
+    <div class="quality-panel quality-stats-grid mb-6">
+        <div class="quality-stat-card stat-card-total">
+            <div class="relative z-10 flex items-start justify-between gap-3">
+                <div class="min-w-0">
+                    <div class="stat-label mb-2">总计</div>
+                    <div class="flex items-end"><span class="stat-value" id="totalCount">-</span><span class="stat-unit">部</span></div>
+                </div>
+                <span class="quality-stat-icon"><i class="fa-solid fa-layer-group"></i></span>
+            </div>
+            <div class="relative z-10 stat-meta"><span>媒体总量</span><span class="stat-percent" id="totalCountPct">100%</span></div>
+            <div class="relative z-10 stat-progress"><span id="totalCountBar"></span></div>
         </div>
-        <div class="apple-card p-3 md:p-4 text-center">
-            <div class="text-[10px] md:text-xs text-gray-500 font-bold mb-1">4K</div>
-            <div class="text-lg md:text-2xl font-black text-purple-500" id="res4k">-</div>
+        <div class="quality-stat-card stat-card-4k">
+            <div class="relative z-10 flex items-start justify-between gap-3">
+                <div class="min-w-0">
+                    <div class="stat-label mb-2">4K</div>
+                    <div class="flex items-end"><span class="stat-value" id="res4k">-</span><span class="stat-unit">部</span></div>
+                </div>
+                <span class="quality-stat-icon"><i class="fa-solid fa-display"></i></span>
+            </div>
+            <div class="relative z-10 stat-meta"><span>超高清</span><span class="stat-percent" id="res4kPct">0%</span></div>
+            <div class="relative z-10 stat-progress"><span id="res4kBar"></span></div>
         </div>
-        <div class="apple-card p-3 md:p-4 text-center">
-            <div class="text-[10px] md:text-xs text-gray-500 font-bold mb-1">HEVC</div>
-            <div class="text-lg md:text-2xl font-black text-green-500" id="codecHevc">-</div>
+        <div class="quality-stat-card stat-card-hevc">
+            <div class="relative z-10 flex items-start justify-between gap-3">
+                <div class="min-w-0">
+                    <div class="stat-label mb-2">HEVC</div>
+                    <div class="flex items-end"><span class="stat-value" id="codecHevc">-</span><span class="stat-unit">部</span></div>
+                </div>
+                <span class="quality-stat-icon"><i class="fa-solid fa-file-video"></i></span>
+            </div>
+            <div class="relative z-10 stat-meta"><span>高效编码</span><span class="stat-percent" id="codecHevcPct">0%</span></div>
+            <div class="relative z-10 stat-progress"><span id="codecHevcBar"></span></div>
         </div>
-        <div class="apple-card p-3 md:p-4 text-center">
-            <div class="text-[10px] md:text-xs text-gray-500 font-bold mb-1">SDR</div>
-            <div class="text-lg md:text-2xl font-black text-gray-500" id="hdrSdr">-</div>
+        <div class="quality-stat-card stat-card-sdr">
+            <div class="relative z-10 flex items-start justify-between gap-3">
+                <div class="min-w-0">
+                    <div class="stat-label mb-2">SDR</div>
+                    <div class="flex items-end"><span class="stat-value" id="hdrSdr">-</span><span class="stat-unit">部</span></div>
+                </div>
+                <span class="quality-stat-icon"><i class="fa-solid fa-sliders"></i></span>
+            </div>
+            <div class="relative z-10 stat-meta"><span>动态范围</span><span class="stat-percent" id="hdrSdrPct">0%</span></div>
+            <div class="relative z-10 stat-progress"><span id="hdrSdrBar"></span></div>
         </div>
-        <div class="apple-card p-3 md:p-4 text-center">
-            <div class="text-[10px] md:text-xs text-gray-500 font-bold mb-1">异常</div>
-            <div class="text-lg md:text-2xl font-black text-amber-500" id="totalAnomaly">-</div>
+        <div class="quality-stat-card stat-card-anomaly">
+            <div class="relative z-10 flex items-start justify-between gap-3">
+                <div class="min-w-0">
+                    <div class="stat-label mb-2">异常</div>
+                    <div class="flex items-end"><span class="stat-value" id="totalAnomaly">-</span><span class="stat-unit">项</span></div>
+                </div>
+                <span class="quality-stat-icon"><i class="fa-solid fa-triangle-exclamation"></i></span>
+            </div>
+            <div class="relative z-10 stat-meta"><span>需处理</span><span class="stat-percent" id="totalAnomalyPct">0%</span></div>
+            <div class="relative z-10 stat-progress"><span id="totalAnomalyBar"></span></div>
         </div>
         </div>
 
@@ -145,7 +464,7 @@
     </div>
 
     <!-- 列表容器 -->
-    <div id="itemsContainer" class="apple-card overflow-hidden p-0">
+    <div id="itemsContainer" class="quality-panel overflow-hidden p-0">
         <div id="itemsList" class="divide-y divide-gray-100 dark:divide-gray-700/50">
             <div class="p-12 text-center text-gray-400 text-sm">加载中...</div>
         </div>
@@ -164,7 +483,7 @@
 <!-- 搜索 Modal（直接搜索高质量版本，无需创建计划） -->
 <div id="search-modal" class="fixed inset-0 z-[110] hidden opacity-0 transition-opacity duration-200">
     <div class="absolute inset-0 bg-black/50 backdrop-blur-sm" onclick="closeSearchModal()"></div>
-    <div class="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[95%] max-w-3xl bg-white dark:bg-apple-cardDark rounded-[24px] shadow-2xl border border-gray-200 dark:border-white/5 overflow-hidden flex flex-col transform scale-95 transition-transform duration-200 max-h-[90vh]" id="search-modal-container">
+    <div class="quality-modal absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[95%] max-w-3xl rounded-[24px] overflow-hidden flex flex-col transform scale-95 transition-transform duration-200 max-h-[90vh]" id="search-modal-container">
         <div class="px-5 py-4 border-b border-gray-100 dark:border-white/5 flex justify-between items-center bg-gray-50/50 dark:bg-black/10 shrink-0">
             <h3 class="font-bold text-[16px] flex items-center gap-2"><i class="fa-solid fa-magnifying-glass text-brand-500"></i> <span id="search-modal-title">搜索高质量版本</span></h3>
             <button onclick="closeSearchModal()" class="text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 transition-colors w-8 h-8 rounded-full flex justify-center items-center bg-gray-100 dark:bg-white/5"><i class="fa-solid fa-xmark"></i></button>
@@ -227,6 +546,23 @@
         loadItems();
     }
 
+    function formatCount(value) {
+        const n = Number(value || 0);
+        return n.toLocaleString('zh-CN');
+    }
+
+    function updateStatCard(id, value, total, options = {}) {
+        const n = Number(value || 0);
+        const base = Number(total || 0);
+        const pct = options.full ? (base > 0 ? 100 : 0) : (base > 0 ? Math.round((n / base) * 100) : 0);
+        const valueEl = document.getElementById(id);
+        const pctEl = document.getElementById(`${id}Pct`);
+        const barEl = document.getElementById(`${id}Bar`);
+        if (valueEl) valueEl.textContent = formatCount(n);
+        if (pctEl) pctEl.textContent = `${Math.min(100, Math.max(0, pct))}%`;
+        if (barEl) barEl.style.width = `${Math.min(100, Math.max(0, pct))}%`;
+    }
+
     async function loadItems() {
         const sortOrder = document.getElementById('sortOrder').value;
 
@@ -265,17 +601,21 @@
             loading.classList.add('hidden');
 
             // 统计
-            document.getElementById('totalCount').textContent = summary.total_count || '-';
+            const totalCount = Number(summary.total_count || 0);
             const rd = summary.resolution_dist || {};
-            document.getElementById('res4k').textContent = rd['4k'] || '-';
+            const res4k = Number(rd['4k'] || 0);
             const cd = summary.codec_dist || {};
-            document.getElementById('codecHevc').textContent = cd['hevc'] || '-';
+            const codecHevc = Number(cd['hevc'] || 0);
             const hd = summary.hdr_dist || {};
-            document.getElementById('hdrSdr').textContent = hd['sdr'] || '-';
+            const hdrSdr = Number(hd['sdr'] || 0);
 
             // 异常统计
-            const anomalyItems = items.filter(i => i.is_anomaly);
-            document.getElementById('totalAnomaly').textContent = summary.anomaly_count || 0;
+            const anomalyCount = Number(summary.anomaly_count || 0);
+            updateStatCard('totalCount', totalCount, totalCount, { full: true });
+            updateStatCard('res4k', res4k, totalCount);
+            updateStatCard('codecHevc', codecHevc, totalCount);
+            updateStatCard('hdrSdr', hdrSdr, totalCount);
+            updateStatCard('totalAnomaly', anomalyCount, totalCount);
 
             // 分页信息
             const maxPage = Math.ceil(totalItems / pageSize);
@@ -291,28 +631,39 @@
             listEl.innerHTML = items.map(item => {
                 const score = item.quality_score || 0;
                 const scoreColor = score <= 30 ? 'text-red-500' : score <= 50 ? 'text-yellow-500' : score <= 80 ? 'text-blue-500' : 'text-green-500';
+                const scoreLabel = score <= 30 ? '需处理' : score <= 50 ? '偏低' : score <= 80 ? '可用' : '良好';
+                const safeName = escapeHtml(item.name || '');
+                const safePath = escapeHtml(item.path || item.library_name || '');
+                const encodedItemId = encodeURIComponent(item.emby_id || '');
+                const encodedOpenName = encodeURIComponent(item.name || '');
+                const embyUrl = (embyBaseUrl && item.emby_id)
+                    ? `${embyBaseUrl}/web/index.html#!/item?id=${encodeURIComponent(item.emby_id)}&serverId=${encodeURIComponent(embyServerId)}`
+                    : '';
                 return `
-                    <div class="flex items-center px-4 md:px-5 py-3.5 table-row-hover group">
+                    <div class="quality-row flex flex-col sm:flex-row sm:items-center gap-3 px-4 md:px-5 py-4 group">
                         <div class="flex-1 min-w-0">
-                            <div class="flex items-center gap-2">
-                                <span class="font-medium text-sm truncate">${item.name}</span>
+                            <div class="flex items-center gap-2 flex-wrap">
+                                <span class="font-semibold text-sm text-gray-900 dark:text-white truncate max-w-full">${safeName}</span>
                                 ${item.year ? `<span class="text-xs text-gray-400 font-normal">(${item.year})</span>` : ''}
                                 ${item.is_anomaly ? '<span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300"><i class="fa-solid fa-triangle-exclamation text-[9px]"></i> 异常</span>' : ''}
-                                <a href="${embyBaseUrl}/web/index.html#!/item?id=${item.emby_id}&serverId=${embyServerId}" target="_blank" rel="noopener" class="inline-flex items-center justify-center w-5 h-5 rounded-full text-gray-400 hover:text-brand-500 hover:bg-brand-50 dark:hover:bg-brand-900/20 transition-all" title="在 Emby 中打开">
+                                ${embyUrl ? `<a href="${embyUrl}" target="_blank" rel="noopener" class="inline-flex items-center justify-center w-6 h-6 rounded-full text-gray-400 hover:text-brand-500 hover:bg-brand-50 dark:hover:bg-brand-900/20 transition-all" title="在 Emby 中打开">
                                     <i class="fa-solid fa-external-link text-[10px]"></i>
-                                </a>
+                                </a>` : ''}
                             </div>
                             <div class="flex items-center gap-1.5 mt-1.5 flex-wrap">
                                 ${badgeRes(item.resolution)}
                                 ${badgeCodec(item.video_codec)}
                                 ${badgeHdr(item.video_range)}
                             </div>
-                            <div class="text-[11px] text-gray-400 mt-1 truncate">${item.path || item.library_name || ''}</div>
+                            <div class="text-[11px] text-gray-400 mt-1 truncate">${safePath}</div>
                         </div>
-                        <div class="flex items-center gap-3 ml-4">
-                            <span class="font-mono font-bold text-lg quality-score ${scoreColor}">${score}</span>
-                            <button onclick="openUpgrade('${item.emby_id}', '${escapeHtml(item.name).replace(/'/g, "\\'")}')" class="px-3.5 py-2 text-xs font-bold text-white bg-brand-500 hover:bg-brand-600 rounded-xl transition-all active:scale-95 shadow-sm">
-                                洗版
+                        <div class="flex items-center justify-between sm:justify-end gap-3 w-full sm:w-auto sm:ml-4">
+                            <span class="quality-score-ring shrink-0">
+                                <span class="font-mono font-black text-lg leading-none quality-score ${scoreColor}">${score}</span>
+                                <span class="text-[9px] font-bold text-gray-400 mt-0.5">${scoreLabel}</span>
+                            </span>
+                            <button onclick="openUpgrade(decodeURIComponent('${encodedItemId}'), decodeURIComponent('${encodedOpenName}'))" class="quality-action px-3.5 py-2 text-xs font-bold text-white bg-brand-500 hover:bg-brand-600 transition-all active:scale-95 shrink-0">
+                                <i class="fa-solid fa-wand-magic-sparkles"></i> 洗版
                             </button>
                         </div>
                     </div>
@@ -605,7 +956,7 @@
         if (r.subtitle && !metaHtml) metaHtml += '<span class="truncate max-w-[120px] sm:max-w-[200px]">' + escapeHtml(r.subtitle) + '</span>';
 
         return `
-            <div class="flex items-center justify-between p-4 rounded-2xl bg-gray-50 dark:bg-apple-hoverDark border border-gray-100 dark:border-white/5 hover:bg-gray-100 dark:hover:bg-[#3A3A3C] transition-colors group">
+            <div class="quality-result-card flex flex-col sm:flex-row sm:items-center justify-between gap-3 p-4 group">
                 <div class="flex-1 min-w-0">
                     <div class="flex items-center gap-2 flex-wrap">
                         <span class="font-medium text-sm truncate">${escapeHtml(title)}</span>
@@ -616,7 +967,7 @@
                         ${metaHtml}
                     </div>
                 </div>
-                <button onclick="startDownloadByIndex(${ridx})" class="shrink-0 px-4 py-2 text-xs font-bold text-white ${isHdhive ? 'bg-purple-500 hover:bg-purple-600' : 'bg-brand-500 hover:bg-brand-600'} rounded-xl transition-all active:scale-95 shadow-sm ml-3">
+                <button onclick="startDownloadByIndex(${ridx})" class="quality-action shrink-0 px-4 py-2 text-xs font-bold text-white ${isHdhive ? 'bg-teal-500 hover:bg-teal-600' : 'bg-brand-500 hover:bg-brand-600'} transition-all active:scale-95 sm:ml-3">
                     ${isHdhive ? '<i class="fa-solid fa-cloud-arrow-up"></i> 转存' : '<i class="fa-solid fa-download"></i> 下载'}
                 </button>
             </div>

@@ -31,13 +31,14 @@ async def search_moviepilot(keyword: str = Query(..., description="搜索关键�
 @router.get("/hdhive")
 async def search_hdhive(
     keyword: str = Query("", description="搜索关键词"),
+    tmdb_id: int = Query(0, description="TMDB ID（可选，优先用于精准搜索）"),
     emby_id: str = Query("", description="Emby 条目 ID（可选，用于解析 TMDB ID）"),
     media_type: str = "movie",
 ):
     """通过影巢搜索高质量资源（推荐提供 emby_id 以获得 TMDB ID 精准搜索）"""
     hd = HDHiveClient()
     try:
-        results = await hd.search(keyword=keyword, emby_item_id=emby_id, media_type=media_type)
+        results = await hd.search(keyword=keyword, tmdb_id=tmdb_id, emby_item_id=emby_id, media_type=media_type)
         return {"status": "success", "data": results, "source": "hdhive"}
     except RuntimeError as e:
         return {"status": "error", "message": str(e), "data": [], "source": "hdhive"}
@@ -50,19 +51,21 @@ async def search_hdhive(
 @router.get("/all")
 async def search_all(
     keyword: str = Query(..., description="搜索关键词"),
+    tmdb_id: int = Query(0, description="TMDB ID（可选，影巢优先使用）"),
     emby_id: str = Query("", description="Emby 条目 ID（可选，影巢需要 TMDB ID）"),
+    media_type: str = Query("movie", description="媒体类型：movie/tv"),
 ):
-    """并行搜索 MP 和 影巢（MP 60s / 影巢 15s 超时）"""
+    """并行搜索 MP 和 影巢（MP 60s / 影巢 30s 超时）"""
 
     async def _search_with_timeout(client_cls, search_fn, *args, **kwargs):
         client = client_cls()
         try:
             fn = getattr(client, search_fn)
-            to = 60.0 if client_cls.__name__ == "MoviePilotClient" else 15.0
+            to = 60.0 if client_cls.__name__ == "MoviePilotClient" else 30.0
             result = await asyncio.wait_for(fn(*args, **kwargs), timeout=to)
             return result, None, None
         except asyncio.TimeoutError:
-            to = 60.0 if client_cls.__name__ == "MoviePilotClient" else 15.0
+            to = 60.0 if client_cls.__name__ == "MoviePilotClient" else 30.0
             return [], None, f"请求超时（{int(to)}s）"
         except RuntimeError as e:
             return [], None, str(e)
@@ -72,7 +75,14 @@ async def search_all(
             await client.close()
 
     mp_task = _search_with_timeout(MoviePilotClient, "search", keyword)
-    hd_task = _search_with_timeout(HDHiveClient, "search", keyword=keyword, emby_item_id=emby_id, media_type="movie")
+    hd_task = _search_with_timeout(
+        HDHiveClient,
+        "search",
+        keyword=keyword,
+        tmdb_id=tmdb_id,
+        emby_item_id=emby_id,
+        media_type=media_type,
+    )
 
     mp_results, hd_results = await asyncio.gather(mp_task, hd_task)
 

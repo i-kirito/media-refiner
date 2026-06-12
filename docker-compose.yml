@@ -1,14 +1,14 @@
-version: '3.8'
-
 services:
   media-refiner:
-    image: media-refiner:latest
+    image: ${MEDIA_REFINER_IMAGE:-media-refiner:latest}
+    build:
+      context: .
     container_name: media-refiner
     ports:
-      - "10309:10308"
+      - "${MEDIA_REFINER_PORT:-10309}:10308"
     volumes:
-      - ./data:/workspace/data
-      - ./config:/workspace/config
+      - ${MEDIA_REFINER_DATA_DIR:-./data}:/workspace/data
+      - ${MEDIA_REFINER_CONFIG_DIR:-./config}:/workspace/config
     environment:
       - TZ=Asia/Shanghai
       - REFINER_DB_PATH=/workspace/data/refiner.db

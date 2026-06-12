@@ -43,6 +43,34 @@ python run.py
 
 服务默认监听 `http://localhost:10308`，Web 面板访问 `/`。
 
+## NAS 自动更新
+
+推荐把 GitHub 作为发布源，本机只负责提交代码，不需要启动本地容器。
+
+NAS 轮询部署（无需公网 webhook，推荐）：
+
+```bash
+# 在 NAS 上启动 updater 容器，每 2 分钟检查 GitHub main，有新提交才部署
+/volume2/docker/media-refiner/scripts/start-nas-updater-container.sh
+```
+
+如果 NAS 用户有 crontab 权限，也可以安装 cron 版本：
+
+```bash
+/volume2/docker/media-refiner/scripts/install-nas-auto-update.sh
+```
+
+部署脚本会保留 NAS 运行目录里的 `config/` 和 `data/`，只更新镜像与应用代码：
+
+```bash
+MEDIA_REFINER_RUNTIME_DIR=/volume2/docker/media-refiner \
+MEDIA_REFINER_SRC_DIR=/volume2/docker/media-refiner-src \
+/volume2/docker/media-refiner/scripts/deploy-from-github.sh
+```
+
+如果 NAS 已配置 GitHub self-hosted runner，并带有 `media-refiner-nas` label，可在 GitHub 仓库变量里设置
+`ENABLE_SELF_HOSTED_NAS_DEPLOY=true`，让 `.github/workflows/deploy-nas.yml` 在 `main` 分支 push 后立即部署。
+
 ## 配置说明
 
 | 环境变量 | 必填 | 说明 |
@@ -80,9 +108,12 @@ media-refiner/
 │   └── static/             # CSS/JS
 ├── config/
 │   └── .env.example        # 配置模板
+├── scripts/
+│   ├── deploy-from-github.sh      # NAS 从 GitHub 部署
+│   ├── install-nas-auto-update.sh # NAS 安装自动更新 cron
+│   └── start-nas-updater-container.sh # NAS 启动 updater 容器
 ├── Dockerfile
-├── docker-compose.yml
-└── deploy.sh               # 部署脚本
+└── docker-compose.yml
 ```
 
 ## License
