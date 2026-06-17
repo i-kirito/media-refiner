@@ -1131,7 +1131,7 @@ function escapeHtml(text) { if (!text) return ''; const div = document.createEle
 const MODULE_NAMES = { stats: '统计概览', charts: '质量分布', hdr: 'HDR 概览', score: '质量分数分布', libraries: '媒体库分布', poor: '低质量预览' };
 const MODULE_ICONS = { stats: 'fa-chart-simple', charts: 'fa-chart-bar', hdr: 'fa-sun', score: 'fa-chart-column', libraries: 'fa-folder-tree', poor: 'fa-triangle-exclamation' };
 const MODULE_COLORS = { stats: 'from-blue-500 to-cyan-500', charts: 'from-green-500 to-teal-500', hdr: 'from-indigo-500 to-purple-500', score: 'from-amber-500 to-orange-500', libraries: 'from-sky-500 to-blue-500', poor: 'from-rose-500 to-pink-500' };
-const MODULE_ORDER = Object.keys(MODULE_NAMES);
+const MODULE_ORDER = ['stats', 'score', 'charts', 'libraries', 'hdr', 'poor'];
 
 // ── DashboardState 持久化 ──
 const DashboardState = {
