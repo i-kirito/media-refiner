@@ -233,7 +233,7 @@ async def _scan_one_series(emby: EmbyClient, series: dict, lib: dict, ignored: s
     for ep in episodes:
         season_num = _safe_int(ep.get("ParentIndexNumber"), -1)
         episode_num = _safe_int(ep.get("IndexNumber"), -1)
-        if season_num <= 0 or episode_num <= 0:
+        if season_num < 0 or episode_num <= 0:
             continue
 
         slot = seasons[season_num].setdefault(
@@ -282,6 +282,11 @@ async def _scan_one_series(emby: EmbyClient, series: dict, lib: dict, ignored: s
                     "source": "emby",
                 }
             )
+
+        # S00 特别季编号常常不连续，只采信 Emby 明确标记的缺失项，
+        # 避免把不存在的番外/OVA 编号推断成缺集。
+        if season_num == 0:
+            continue
 
         if not present_nums:
             continue
@@ -596,7 +601,7 @@ async def gap_ignores(target: str = Query(default="")):
 
 @router.post("/ignore")
 async def ignore_gap_episode(payload: GapEpisodePayload):
-    if not payload.series_id or payload.season_number <= 0 or payload.episode_number <= 0:
+    if not payload.series_id or payload.season_number < 0 or payload.episode_number <= 0:
         return _error("缺少剧集或集数参数")
     await add_gap_ignore_episode(payload.series_id, payload.series_name, payload.season_number, payload.episode_number)
     return _success(message="已忽略该缺集")
@@ -693,7 +698,7 @@ def _episode_match_ratio(title: str, season: int, episodes: list[int]) -> tuple[
     season = _safe_int(season, 0)
     targets = sorted({_safe_int(ep, 0) for ep in episodes if _safe_int(ep, 0) > 0})
     target_set = set(targets)
-    if not season or not targets:
+    if season < 0 or not targets:
         return 0.0, []
 
     season_tokens = [
@@ -703,6 +708,8 @@ def _episode_match_ratio(title: str, season: int, episodes: list[int]) -> tuple[
         f"season.{season}",
         f"第{season}季",
     ]
+    if season == 0:
+        season_tokens.extend(["specials", "special", "特别篇", "特别", "番外", "ova"])
     explicit_seasons = {
         _safe_int(x, 0)
         for x in re.findall(r"(?<![a-z0-9])s0?(\d{1,2})(?!\d)", text)
@@ -717,6 +724,8 @@ def _episode_match_ratio(title: str, season: int, episodes: list[int]) -> tuple[
     )
     explicit_seasons = {x for x in explicit_seasons if x >= 0}
     has_target_season = season in explicit_seasons or any(token in text for token in season_tokens if token)
+    if season == 0 and re.search(r"(?<![a-z0-9])sp(?![a-z0-9])", text):
+        has_target_season = True
     if explicit_seasons and season not in explicit_seasons:
         return 0.0, []
 
@@ -792,10 +801,24 @@ def _search_keywords(series_name: str, season: int, episodes: list[int]) -> list
     episodes = sorted({_safe_int(x, 0) for x in episodes if _safe_int(x, 0) > 0})
     if len(episodes) == 1:
         ep = episodes[0]
+        if season == 0:
+            return [
+                f"{name} S00E{ep:02d}",
+                f"{name} S00",
+                f"{name} 特别篇",
+                f"{name} SP",
+            ]
         return [
             f"{name} S{season:02d}E{ep:02d}",
             f"{name} S{season:02d}",
             f"{name} 第{season}季 第{ep}集",
+        ]
+    if season == 0:
+        return [
+            f"{name} S00",
+            f"{name} 特别篇",
+            f"{name} Specials",
+            name,
         ]
     return [
         f"{name} S{season:02d}",
