@@ -8,6 +8,7 @@ import re
 from collections import defaultdict
 from datetime import datetime
 from typing import Any
+from urllib.parse import urlparse, urlunparse
 
 import httpx
 from fastapi import APIRouter, Query
@@ -20,6 +21,7 @@ from app.database import (
     add_gap_ignore_series,
     get_gap_config,
     get_gap_ignore_targets,
+    list_gap_transfer_marks,
     list_gap_ignores,
     load_gap_cache,
     make_gap_episode_target_id,
@@ -27,6 +29,7 @@ from app.database import (
     remove_gap_ignores,
     save_gap_cache,
     save_gap_config,
+    save_gap_transfer_mark,
 )
 from app.services.emby import EmbyClient
 from app.services.hdhive import HDHiveClient
@@ -51,6 +54,8 @@ _scan_status: dict[str, Any] = {
     "created_at": "",
     "skipped_libraries": [],
 }
+
+GAP_TRANSFER_SUCCESS_STATUSES = {"transferred", "already_owned", "submitted", "success", "ok"}
 
 
 class GapConfigPayload(BaseModel):
@@ -150,6 +155,51 @@ def _gap_result_title(result: dict) -> str:
     )
 
 
+def _normalize_gap_resource_key(value: Any) -> str:
+    text = str(value or "").strip()
+    if not text:
+        return ""
+    if text.startswith(("http://", "https://")):
+        parsed = urlparse(text)
+        path = parsed.path.rstrip("/") or "/"
+        return urlunparse((parsed.scheme.lower(), parsed.netloc.lower(), path, "", parsed.query, ""))
+    return text.strip("/")
+
+
+def _gap_resource_key_candidates(result: dict) -> list[str]:
+    keys: list[str] = []
+    for field in ("slug", "resource_url", "page_url", "url", "id", "hdhive_slug"):
+        value = result.get(field)
+        if isinstance(value, (dict, list, tuple, set)):
+            continue
+        key = _normalize_gap_resource_key(value)
+        if key and key not in keys:
+            keys.append(key)
+    return keys
+
+
+def _gap_transfer_status(resp: dict | None) -> str:
+    if not isinstance(resp, dict):
+        return ""
+    status = str(resp.get("status") or "").strip().lower()
+    if status:
+        return status
+    data = resp.get("data")
+    if isinstance(data, dict):
+        nested_status = str(data.get("status") or "").strip().lower()
+        if nested_status:
+            return nested_status
+        if data.get("success") is True:
+            return "success"
+    if resp.get("success") is True:
+        return "success"
+    return ""
+
+
+def _is_gap_transfer_success_status(status: str) -> bool:
+    return str(status or "").strip().lower() in GAP_TRANSFER_SUCCESS_STATUSES
+
+
 async def _notify_gap_hdhive_transfer(payload: GapDownloadPayload, resp: dict, ok: bool, message: str = ""):
     """发送缺集影巢解锁/转存结果；通知失败不影响业务接口。"""
     try:
@@ -158,11 +208,14 @@ async def _notify_gap_hdhive_transfer(payload: GapDownloadPayload, resp: dict, o
             await tg.close()
             return
 
-        status = (resp or {}).get("status", "")
+        status = _gap_transfer_status(resp)
         icon = "✅" if ok and status == "transferred" else ("ℹ️" if ok else "❌")
         status_label = {
             "transferred": "转存成功",
             "already_owned": "已在 115 中",
+            "submitted": "已提交转存",
+            "success": "转存成功",
+            "ok": "转存成功",
             "not_115": "非 115 资源",
             "password_error": "分享密码异常",
             "error": "转存失败",
@@ -889,6 +942,33 @@ def _annotate_gap_match(result: dict, season: int, episodes: list[int]) -> dict:
     return item
 
 
+async def _apply_gap_transfer_marks(results: list[dict]) -> list[dict]:
+    keys: list[str] = []
+    candidates_by_index: dict[int, list[str]] = {}
+    for idx, item in enumerate(results):
+        candidates = _gap_resource_key_candidates(item)
+        candidates_by_index[idx] = candidates
+        keys.extend(candidates)
+    marks = await list_gap_transfer_marks(keys)
+    if not marks:
+        return results
+
+    for idx, item in enumerate(results):
+        mark = next((marks[key] for key in candidates_by_index.get(idx, []) if key in marks), None)
+        if not mark:
+            continue
+        status = str(mark.get("status") or "").strip().lower()
+        if not _is_gap_transfer_success_status(status):
+            continue
+        item["is_unlocked"] = True
+        item["ui_unlocked"] = True
+        item["ui_transfer_marked"] = True
+        item["ui_transfer_status"] = status
+        item["ui_transfer_updated_at"] = mark.get("updated_at", "")
+        item["status"] = status
+    return results
+
+
 def _dedupe_results(results: list[dict]) -> list[dict]:
     seen: set[str] = set()
     unique: list[dict] = []
@@ -988,6 +1068,7 @@ async def search_gap_hdhive(payload: GapSearchPayload):
         )
         episodes = sorted({_safe_int(x, 0) for x in payload.episodes if _safe_int(x, 0) > 0})
         annotated = [_annotate_gap_match(item, payload.season, episodes) for item in _dedupe_results(results)]
+        annotated = await _apply_gap_transfer_marks(annotated)
         annotated.sort(
             key=lambda x: (
                 -float(x.get("ui_episode_match_ratio") or 0),
@@ -1037,12 +1118,31 @@ async def download_gap_hdhive(payload: GapDownloadPayload):
         if not resp:
             await _notify_gap_hdhive_transfer(payload, {}, False, "影巢 API 无响应")
             return _error("影巢 API 无响应")
-        status = resp.get("status", "")
+        status = _gap_transfer_status(resp)
         if status == "error":
             message = resp.get("message", "影巢转存失败")
             await _notify_gap_hdhive_transfer(payload, resp, False, message)
             return _error(message, resp)
-        await _notify_gap_hdhive_transfer(payload, resp, status in ("transferred", "already_owned"), resp.get("message", ""))
+        ok = _is_gap_transfer_success_status(status)
+        if not ok:
+            message = resp.get("message") or f"影巢转存未完成: {status or '未知状态'}"
+            await _notify_gap_hdhive_transfer(payload, resp, False, message)
+            return _error(message, resp)
+        if ok:
+            result_for_key = dict(result)
+            if slug:
+                result_for_key["slug"] = slug
+            resource_key = (_gap_resource_key_candidates(result_for_key) or [""])[0]
+            await save_gap_transfer_mark(
+                resource_key=resource_key,
+                resource_title=_gap_result_title(result),
+                series_name=payload.series_name,
+                season_number=_safe_int(payload.season, 0),
+                episodes=payload.episodes,
+                status=status,
+                response=resp,
+            )
+        await _notify_gap_hdhive_transfer(payload, resp, ok, resp.get("message", ""))
         return _success(resp, resp.get("message") or "影巢转存已提交")
     except Exception as e:
         await _notify_gap_hdhive_transfer(payload, {"status": "error"}, False, f"影巢转存异常: {e}")

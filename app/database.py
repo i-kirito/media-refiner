@@ -137,6 +137,18 @@ async def init_db():
                 ignored_at DATETIME DEFAULT CURRENT_TIMESTAMP
             );
             CREATE INDEX IF NOT EXISTS idx_gap_ignores_series ON gap_ignores(series_id);
+
+            CREATE TABLE IF NOT EXISTS gap_transfer_marks (
+                resource_key TEXT PRIMARY KEY,
+                resource_title TEXT NOT NULL DEFAULT '',
+                series_name TEXT NOT NULL DEFAULT '',
+                season_number INTEGER DEFAULT 0,
+                episode_numbers_json TEXT NOT NULL DEFAULT '[]',
+                status TEXT NOT NULL DEFAULT '',
+                response_json TEXT NOT NULL DEFAULT '{}',
+                updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+            );
+            CREATE INDEX IF NOT EXISTS idx_gap_transfer_marks_updated ON gap_transfer_marks(updated_at);
         """)
         await db.commit()
     finally:
@@ -859,6 +871,82 @@ async def load_gap_cache() -> tuple[list[dict], dict, str | None]:
         except json.JSONDecodeError:
             summary = {}
         return results if isinstance(results, list) else [], summary if isinstance(summary, dict) else {}, row["created_at"]
+    finally:
+        await db.close()
+
+
+async def save_gap_transfer_mark(
+    resource_key: str,
+    resource_title: str = "",
+    series_name: str = "",
+    season_number: int = 0,
+    episodes: list[int] | None = None,
+    status: str = "",
+    response: dict | None = None,
+):
+    """记录缺集资源已解锁/转存，供下次搜索时回显。"""
+    key = str(resource_key or "").strip()
+    if not key:
+        return
+    episode_numbers: list[int] = []
+    for episode in episodes or []:
+        try:
+            num = int(episode)
+        except (TypeError, ValueError):
+            continue
+        if num > 0:
+            episode_numbers.append(num)
+    db = await get_db()
+    try:
+        await db.execute(
+            """
+            INSERT OR REPLACE INTO gap_transfer_marks
+            (resource_key, resource_title, series_name, season_number, episode_numbers_json, status, response_json, updated_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, datetime('now','localtime'))
+            """,
+            (
+                key,
+                str(resource_title or ""),
+                str(series_name or ""),
+                int(season_number or 0),
+                json.dumps(sorted(set(episode_numbers)), ensure_ascii=False),
+                str(status or ""),
+                json.dumps(response or {}, ensure_ascii=False),
+            ),
+        )
+        await db.commit()
+    finally:
+        await db.close()
+
+
+async def list_gap_transfer_marks(resource_keys: list[str]) -> dict[str, dict]:
+    """按资源 key 批量读取缺集转存标记。"""
+    keys = [str(key).strip() for key in resource_keys if str(key or "").strip()]
+    keys = list(dict.fromkeys(keys))
+    if not keys:
+        return {}
+
+    db = await get_db()
+    try:
+        placeholders = ",".join("?" for _ in keys)
+        cursor = await db.execute(
+            f"SELECT * FROM gap_transfer_marks WHERE resource_key IN ({placeholders})",
+            keys,
+        )
+        rows = await cursor.fetchall()
+        marks: dict[str, dict] = {}
+        for row in rows:
+            item = dict(row)
+            try:
+                item["episodes"] = json.loads(item.get("episode_numbers_json") or "[]")
+            except json.JSONDecodeError:
+                item["episodes"] = []
+            try:
+                item["response"] = json.loads(item.get("response_json") or "{}")
+            except json.JSONDecodeError:
+                item["response"] = {}
+            marks[item["resource_key"]] = item
+        return marks
     finally:
         await db.close()
 

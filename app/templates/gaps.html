@@ -422,8 +422,28 @@ function formatBytes(value) {
     return `${size.toFixed(idx >= 3 ? 2 : 1)} ${units[idx]}`;
 }
 
+function gapTransferStatus(item) {
+    return String(item?.ui_transfer_status || item?.status || '').trim().toLowerCase();
+}
+
+function isGapTransferSuccess(status) {
+    return ['transferred', 'already_owned', 'submitted', 'success', 'ok'].includes(String(status || '').trim().toLowerCase());
+}
+
 function isUnlockedResource(item) {
-    return item?.is_unlocked === true || item?.ui_unlocked === true || item?.status === 'already_owned';
+    const status = gapTransferStatus(item);
+    return item?.is_unlocked === true
+        || item?.ui_unlocked === true
+        || status === 'transferred'
+        || status === 'already_owned'
+        || (item?.ui_transfer_marked === true && isGapTransferSuccess(status));
+}
+
+function unlockedResourceLabel(item) {
+    const status = gapTransferStatus(item);
+    if (status === 'already_owned') return '已在 115';
+    if (item?.ui_transfer_marked === true || status === 'transferred') return '已转存';
+    return '已解锁';
 }
 
 function episodeLabel(season, episode) {
@@ -840,9 +860,9 @@ function renderResolverItem(item, idx) {
         const validate = [item.validate_message || '', shortDateTime(item.last_validated_at)].filter(Boolean).join(' · ');
         const unlocked = isUnlockedResource(item);
         const unlockBadge = unlocked
-            ? '<span class="px-2 py-0.5 rounded-full bg-emerald-50 dark:bg-emerald-500/10 text-emerald-600 dark:text-emerald-300">已解锁</span>'
+            ? `<span class="px-2 py-0.5 rounded-full bg-emerald-50 dark:bg-emerald-500/10 text-emerald-600 dark:text-emerald-300">${escapeHtml(unlockedResourceLabel(item))}</span>`
             : (item.unlock_points !== undefined ? `<span>点数 ${escapeHtml(item.unlock_points)}</span>` : '');
-        const actionLabel = unlocked ? '转存' : '解锁转存';
+        const actionLabel = unlocked ? '再次转存' : '解锁转存';
         return `
             <div class="rounded-2xl border border-gray-200 dark:border-white/10 bg-gray-50/80 dark:bg-white/5 p-3">
                 <div class="flex flex-col sm:flex-row sm:items-start justify-between gap-3">
@@ -913,10 +933,12 @@ async function downloadResolverResult(idx) {
             }),
         });
         if (gapState.source === 'hdhive') {
-            const status = (data.data || {}).status || '';
-            if (['transferred', 'already_owned'].includes(status)) {
+            const status = gapTransferStatus(data.data || {});
+            if (isGapTransferSuccess(status)) {
                 result.is_unlocked = true;
                 result.ui_unlocked = true;
+                result.ui_transfer_marked = true;
+                result.ui_transfer_status = status || 'transferred';
                 result.status = status;
                 renderGapResolver();
             }
