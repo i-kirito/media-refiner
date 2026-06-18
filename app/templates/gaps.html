@@ -106,18 +106,29 @@
     }
     .gap-season-row {
         display: grid;
-        grid-template-columns: 74px 1fr 34px;
+        grid-template-columns: 74px minmax(0, 1fr) 34px;
         gap: 8px;
-        align-items: start;
+        align-items: center;
+        min-height: 44px;
+        overflow: hidden;
     }
     .gap-episode-grid {
         display: flex;
-        flex-wrap: wrap;
+        flex-wrap: nowrap;
         gap: 6px;
+        min-width: 0;
+        overflow-x: auto;
+        overflow-y: hidden;
+        padding-bottom: 1px;
+        scrollbar-width: thin;
     }
     .gap-episode-compact {
         min-height: 32px;
         max-width: 100%;
+        flex: 0 0 auto;
+    }
+    .gap-episode-chip {
+        flex: 0 0 auto;
     }
     @media (min-width: 1280px) {
         .gap-results-grid { --gap-column-count: 2; }
@@ -142,8 +153,7 @@
         .gap-card { --gap-card-height: 220px; }
     }
     @media (max-width: 1023px) {
-        .gap-season-row { grid-template-columns: 1fr; }
-        .gap-card { --gap-card-height: 244px; --gap-season-window-height: 96px; }
+        .gap-card { --gap-card-height: 220px; --gap-season-window-height: 54px; }
     }
     @media (max-width: 640px) {
         .gap-shell { padding-left: 12px; padding-right: 12px; }
@@ -648,7 +658,7 @@ function renderGapEpisodeButtons(series, group, episodeCsv) {
             ? 'bg-amber-50 dark:bg-amber-500/10 border-amber-200 dark:border-amber-500/20 text-amber-700 dark:text-amber-300'
             : 'bg-gray-50 dark:bg-white/5 border-gray-200 dark:border-white/10 text-gray-700 dark:text-gray-300';
         return `
-            <div class="inline-flex items-center rounded-lg border ${statusClass} overflow-hidden">
+            <div class="gap-episode-chip inline-flex items-center rounded-lg border ${statusClass} overflow-hidden">
                 <button class="gap-chip px-2 text-[11px] font-black hover:text-brand-500 hover:bg-white/60 dark:hover:bg-white/10 transition-colors" onclick='openGapSource(${jsString(series.series_id)}, ${Number(ep.season)}, "${Number(ep.episode)}")'>
                     E${String(ep.episode).padStart(2, '0')}
                 </button>
