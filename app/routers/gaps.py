@@ -754,6 +754,26 @@ def _chinese_num_to_int(text: str) -> int:
     return 0
 
 
+def _season_collection_count(text: str) -> int:
+    """识别“两季全 / 全2季 / 2季合集”这类整包资源覆盖的季数。"""
+    number = r"(\d{1,2}|[零〇一二两三四五六七八九十]{1,3})"
+    patterns = [
+        rf"(?<!第){number}\s*季\s*(?:全|全集|合集|完整|完结|完)",
+        rf"(?:全|全集|合集|完整)\s*{number}\s*季",
+    ]
+    for pattern in patterns:
+        match = re.search(pattern, text)
+        if not match:
+            continue
+        raw = match.group(1)
+        count = _safe_int(raw, 0) if raw.isdigit() else _chinese_num_to_int(raw)
+        if count > 0:
+            return count
+    if "双季" in text or "两季" in text:
+        return 2
+    return 0
+
+
 def _episode_range(start: int, end: int, targets: set[int]) -> list[int]:
     if start <= 0:
         return []
@@ -792,12 +812,30 @@ def _episode_match_ratio(title: str, season: int, episodes: list[int]) -> tuple[
         _safe_int(x, 0)
         for x in re.findall(r"第\s*(\d{1,2})\s*季", text)
     )
+    for left, right in re.findall(r"第\s*(\d{1,2})\s*(?:-|~|至|到)\s*(\d{1,2})\s*季", text):
+        start = _safe_int(left, 0)
+        end = _safe_int(right, 0)
+        if start > 0 and end > 0:
+            explicit_seasons.update(range(min(start, end), max(start, end) + 1))
     explicit_seasons.update(
         _chinese_num_to_int(x)
         for x in re.findall(r"第\s*([零〇一二两三四五六七八九十]{1,3})\s*季", text)
     )
+    for left, right in re.findall(
+        r"第\s*([零〇一二两三四五六七八九十]{1,3})\s*(?:-|~|至|到)\s*([零〇一二两三四五六七八九十]{1,3})\s*季",
+        text,
+    ):
+        start = _chinese_num_to_int(left)
+        end = _chinese_num_to_int(right)
+        if start > 0 and end > 0:
+            explicit_seasons.update(range(min(start, end), max(start, end) + 1))
     explicit_seasons = {x for x in explicit_seasons if x >= 0}
-    has_target_season = season in explicit_seasons or any(token in text for token in season_tokens if token)
+    collection_count = _season_collection_count(text)
+    has_target_season = (
+        season in explicit_seasons
+        or any(token in text for token in season_tokens if token)
+        or (season > 0 and collection_count >= season)
+    )
     if season == 0 and re.search(r"(?<![a-z0-9])sp(?![a-z0-9])", text):
         has_target_season = True
     if explicit_seasons and season not in explicit_seasons:
