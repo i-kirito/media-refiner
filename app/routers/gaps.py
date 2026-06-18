@@ -56,6 +56,7 @@ _scan_status: dict[str, Any] = {
 }
 
 GAP_TRANSFER_SUCCESS_STATUSES = {"transferred", "already_owned", "submitted", "success", "ok"}
+GAP_RESOURCE_MARK_STATUSES = GAP_TRANSFER_SUCCESS_STATUSES | {"unlocked"}
 
 
 class GapConfigPayload(BaseModel):
@@ -198,6 +199,10 @@ def _gap_transfer_status(resp: dict | None) -> str:
 
 def _is_gap_transfer_success_status(status: str) -> bool:
     return str(status or "").strip().lower() in GAP_TRANSFER_SUCCESS_STATUSES
+
+
+def _is_gap_resource_mark_status(status: str) -> bool:
+    return str(status or "").strip().lower() in GAP_RESOURCE_MARK_STATUSES
 
 
 async def _notify_gap_hdhive_transfer(payload: GapDownloadPayload, resp: dict, ok: bool, message: str = ""):
@@ -958,7 +963,7 @@ async def _apply_gap_transfer_marks(results: list[dict]) -> list[dict]:
         if not mark:
             continue
         status = str(mark.get("status") or "").strip().lower()
-        if not _is_gap_transfer_success_status(status):
+        if not _is_gap_resource_mark_status(status):
             continue
         item["is_unlocked"] = True
         item["ui_unlocked"] = True
