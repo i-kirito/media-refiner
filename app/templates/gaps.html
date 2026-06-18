@@ -451,6 +451,17 @@ function unlockedResourceLabel(item) {
     return '已解锁';
 }
 
+function unlockedResourceBadgeClass(item) {
+    const status = gapTransferStatus(item);
+    if (status === 'already_owned') {
+        return 'bg-sky-500 text-white shadow-sm shadow-sky-500/30 ring-1 ring-sky-300/50';
+    }
+    if (isGapTransferDone(item)) {
+        return 'bg-emerald-500 text-white shadow-sm shadow-emerald-500/30 ring-1 ring-emerald-300/50';
+    }
+    return 'bg-amber-400 text-gray-950 shadow-sm shadow-amber-400/30 ring-1 ring-amber-200/60';
+}
+
 function episodeLabel(season, episode) {
     return `S${String(season).padStart(2, '0')}E${String(episode).padStart(2, '0')}`;
 }
@@ -865,7 +876,7 @@ function renderResolverItem(item, idx) {
         const validate = [item.validate_message || '', shortDateTime(item.last_validated_at)].filter(Boolean).join(' · ');
         const unlocked = isUnlockedResource(item);
         const unlockBadge = unlocked
-            ? `<span class="px-2 py-0.5 rounded-full bg-emerald-50 dark:bg-emerald-500/10 text-emerald-600 dark:text-emerald-300">${escapeHtml(unlockedResourceLabel(item))}</span>`
+            ? `<span class="px-2.5 py-1 rounded-full ${unlockedResourceBadgeClass(item)}">${escapeHtml(unlockedResourceLabel(item))}</span>`
             : (item.unlock_points !== undefined ? `<span>点数 ${escapeHtml(item.unlock_points)}</span>` : '');
         const actionLabel = unlocked ? (isGapTransferDone(item) ? '再次转存' : '转存') : '解锁转存';
         return `
