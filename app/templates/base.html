@@ -23,6 +23,11 @@
     <script src="https://cdn.jsdelivr.net/npm/sortablejs@1.15.0/Sortable.min.js"></script>
 
     <script>
+        try {
+            if (window.innerWidth >= 768 && localStorage.getItem('desktopSidebarCollapsed') === '1') {
+                document.documentElement.classList.add('sidebar-collapsed');
+            }
+        } catch (_) {}
         tailwind.config = {
             darkMode: 'class',
             theme: {
@@ -78,6 +83,72 @@
         .ep-checkbox:checked { background-color: #007AFF; border-color: #007AFF; }
         .ep-checkbox:checked::before { transform: scale(1); }
         .ep-checkbox:disabled { opacity: 0.5; cursor: not-allowed; }
+
+        .desktop-sidebar {
+            width: 240px;
+            transition: width 220ms ease, background-color 220ms ease, border-color 220ms ease, box-shadow 220ms ease;
+        }
+        .desktop-sidebar .sidebar-fade {
+            transition: opacity 180ms ease, max-width 180ms ease, width 180ms ease, margin 180ms ease, transform 180ms ease;
+        }
+        .desktop-sidebar .sidebar-brand-copy,
+        .desktop-sidebar .sidebar-brand-badge,
+        .desktop-sidebar .sidebar-search-copy,
+        .desktop-sidebar .sidebar-search-kbd,
+        .desktop-sidebar .sidebar-section-title,
+        .desktop-sidebar .sidebar-item-label,
+        .desktop-sidebar .sidebar-footer-copy {
+            white-space: nowrap;
+        }
+        .desktop-sidebar .sidebar-toggle-btn {
+            transition: background-color 180ms ease, color 180ms ease, transform 220ms ease;
+        }
+        html.sidebar-collapsed .desktop-sidebar {
+            width: 88px;
+        }
+        html.sidebar-collapsed .desktop-sidebar .sidebar-brand-copy,
+        html.sidebar-collapsed .desktop-sidebar .sidebar-brand-badge,
+        html.sidebar-collapsed .desktop-sidebar .sidebar-search-copy,
+        html.sidebar-collapsed .desktop-sidebar .sidebar-search-kbd,
+        html.sidebar-collapsed .desktop-sidebar .sidebar-section-title,
+        html.sidebar-collapsed .desktop-sidebar .sidebar-item-label,
+        html.sidebar-collapsed .desktop-sidebar .sidebar-footer-copy {
+            opacity: 0;
+            width: 0;
+            max-width: 0;
+            margin: 0 !important;
+            overflow: hidden;
+            pointer-events: none;
+            transform: translateX(-4px);
+        }
+        html.sidebar-collapsed .desktop-sidebar .sidebar-top {
+            padding-top: 1.5rem;
+        }
+        html.sidebar-collapsed .desktop-sidebar .sidebar-search-button,
+        html.sidebar-collapsed .desktop-sidebar .nav-item,
+        html.sidebar-collapsed .desktop-sidebar .sidebar-footer-card {
+            justify-content: center;
+        }
+        html.sidebar-collapsed .desktop-sidebar .sidebar-search-button,
+        html.sidebar-collapsed .desktop-sidebar .sidebar-footer-card {
+            gap: 0;
+        }
+        html.sidebar-collapsed .desktop-sidebar .sidebar-search-button,
+        html.sidebar-collapsed .desktop-sidebar .nav-item {
+            padding-left: 0.75rem;
+            padding-right: 0.75rem;
+        }
+        html.sidebar-collapsed .desktop-sidebar nav {
+            padding-left: 0.75rem;
+            padding-right: 0.75rem;
+        }
+        html.sidebar-collapsed .desktop-sidebar .sidebar-section {
+            align-items: center;
+        }
+        html.sidebar-collapsed .desktop-sidebar .sidebar-footer-card {
+            padding-left: 0;
+            padding-right: 0;
+        }
     </style>
     <link rel="stylesheet" href="/static/dashboard.css">
     {% block head %}{% endblock %}
@@ -149,18 +220,29 @@
     </script>
 
     <!-- ===== 侧边栏 (Desktop) ===== -->
-    <aside class="w-[240px] h-screen sticky top-0 bg-apple-cardLight dark:bg-apple-cardDark border-r border-apple-borderLight dark:border-apple-borderDark hidden md:flex flex-col shrink-0 z-50 shadow-[4px_0_24px_rgba(0,0,0,0.02)] dark:shadow-none">
+    <aside id="desktopSidebar" class="desktop-sidebar relative h-screen sticky top-0 bg-apple-cardLight dark:bg-apple-cardDark border-r border-apple-borderLight dark:border-apple-borderDark hidden md:flex flex-col shrink-0 z-50 shadow-[4px_0_24px_rgba(0,0,0,0.02)] dark:shadow-none">
 
-        <div class="pt-8 pb-4 flex flex-col items-center gap-3 shrink-0">
+        <button
+            id="desktopSidebarToggle"
+            onclick="toggleDesktopSidebar()"
+            class="sidebar-toggle-btn absolute top-5 right-4 w-8 h-8 rounded-full border border-gray-200 dark:border-white/10 bg-white/80 dark:bg-white/5 text-gray-500 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-white/10 flex items-center justify-center z-10"
+            title="收起侧边栏"
+            aria-label="切换侧边栏"
+            aria-pressed="false"
+        >
+            <i id="desktopSidebarToggleIcon" class="fa-solid fa-chevron-left text-[11px]"></i>
+        </button>
+
+        <div class="sidebar-top pt-8 pb-4 flex flex-col items-center gap-3 shrink-0">
             <div class="w-14 h-14 rounded-2xl bg-gradient-to-br from-brand-500 to-indigo-600 flex items-center justify-center text-white shadow-lg shadow-brand-500/25 ring-2 ring-white/20 dark:ring-white/10">
                 <i class="fa-solid fa-tag text-2xl"></i>
             </div>
-            <div class="flex flex-col items-center text-center">
-                <div class="flex items-end leading-none gap-0.5">
+            <div class="sidebar-brand-block flex flex-col items-center text-center">
+                <div class="sidebar-brand-copy sidebar-fade flex items-end leading-none gap-0.5">
                     <span class="font-black text-[20px] tracking-tight text-gray-900 dark:text-white leading-none">MEDIA</span>
                     <span class="font-black text-[20px] tracking-tighter bg-clip-text text-transparent bg-gradient-to-r from-brand-500 to-indigo-500 italic leading-none ml-0.5">REFINER</span>
                 </div>
-                <div class="flex items-center gap-2 mt-1">
+                <div class="sidebar-brand-badge sidebar-fade flex items-center gap-2 mt-1">
                     <span class="inline-flex items-center gap-1 text-[9px] font-bold bg-gradient-to-r from-brand-500/10 to-indigo-500/10 dark:from-brand-500/15 dark:to-indigo-500/15 text-brand-600 dark:text-brand-400 px-2 py-0.5 rounded-full border border-brand-200/50 dark:border-brand-500/20 tracking-wide leading-none w-fit">
                         v1.1 <span class="text-[6px] opacity-40">●</span> <span class="font-normal text-[7px] opacity-50">media-refiner</span>
                     </span>
@@ -169,36 +251,38 @@
         </div>
 
         <div class="px-4 pb-4 shrink-0">
-            <button onclick="openGlobalSearch()" class="w-full flex items-center gap-3 px-3 py-2.5 bg-gray-100 hover:bg-gray-200 dark:bg-apple-hoverDark dark:hover:bg-[#3A3A3C] rounded-xl text-[14px] font-bold text-gray-500 dark:text-gray-400 transition-colors shadow-sm border border-gray-200/50 dark:border-white/5">
-                <i class="fa-solid fa-magnifying-glass"></i> <span class="flex-1 text-left">搜索影视名称...</span>
-                <kbd class="text-[10px] font-mono font-black bg-white dark:bg-black/50 px-1.5 py-0.5 rounded shadow-sm border border-gray-100 dark:border-white/5">Cmd+K</kbd>
+            <button onclick="openGlobalSearch()" title="搜索影视名称" class="sidebar-search-button w-full flex items-center gap-3 px-3 py-2.5 bg-gray-100 hover:bg-gray-200 dark:bg-apple-hoverDark dark:hover:bg-[#3A3A3C] rounded-xl text-[14px] font-bold text-gray-500 dark:text-gray-400 transition-colors shadow-sm border border-gray-200/50 dark:border-white/5">
+                <i class="fa-solid fa-magnifying-glass shrink-0"></i>
+                <span class="sidebar-search-copy sidebar-fade flex-1 text-left overflow-hidden">搜索影视名称...</span>
+                <kbd class="sidebar-search-kbd sidebar-fade text-[10px] font-mono font-black bg-white dark:bg-black/50 px-1.5 py-0.5 rounded shadow-sm border border-gray-100 dark:border-white/5">Cmd+K</kbd>
             </button>
         </div>
 
         <nav class="flex-1 overflow-y-auto mac-scrollbar px-3 pb-6 space-y-5">
-            <div>
-                <p class="px-3 text-[11px] font-black text-gray-400 dark:text-gray-500 mb-2 uppercase tracking-[0.1em] opacity-80">数据与分析</p>
+            <div class="sidebar-section">
+                <p class="sidebar-section-title sidebar-fade px-3 text-[11px] font-black text-gray-400 dark:text-gray-500 mb-2 uppercase tracking-[0.1em] opacity-80">数据与分析</p>
                 <div class="space-y-1">
-                    <a href="/" class="nav-item flex items-center px-3 py-2 rounded-xl text-[14px] font-bold transition-colors {% if active_page == 'dashboard' %}bg-brand-50 dark:bg-apple-hoverDark text-brand-500{% else %}text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-apple-hoverDark/50{% endif %}"><i class="fa-solid fa-chart-line w-7 text-center text-[16px]"></i> 仪表盘</a>
-                    <a href="/items" class="nav-item flex items-center px-3 py-2 rounded-xl text-[14px] font-bold transition-colors {% if active_page == 'items' %}bg-brand-50 dark:bg-apple-hoverDark text-brand-500{% else %}text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-apple-hoverDark/50{% endif %}"><i class="fa-solid fa-microchip w-7 text-center text-[16px]"></i> 质量盘点</a>
-                    <a href="/plans" class="nav-item flex items-center px-3 py-2 rounded-xl text-[14px] font-bold transition-colors {% if active_page == 'plans' %}bg-brand-50 dark:bg-apple-hoverDark text-brand-500{% else %}text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-apple-hoverDark/50{% endif %}"><i class="fa-solid fa-bell w-7 text-center text-[16px]"></i> 订阅洗版</a>
-                    <a href="/history" class="nav-item flex items-center px-3 py-2 rounded-xl text-[14px] font-bold transition-colors {% if active_page == 'history' %}bg-brand-50 dark:bg-apple-hoverDark text-brand-500{% else %}text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-apple-hoverDark/50{% endif %}"><i class="fa-solid fa-clock-rotate-left w-7 text-center text-[16px]"></i> 历史记录</a>
+                    <a href="/" title="仪表盘" class="nav-item flex items-center px-3 py-2 rounded-xl text-[14px] font-bold transition-colors {% if active_page == 'dashboard' %}bg-brand-50 dark:bg-apple-hoverDark text-brand-500{% else %}text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-apple-hoverDark/50{% endif %}"><i class="fa-solid fa-chart-line w-7 text-center text-[16px] shrink-0"></i><span class="sidebar-item-label sidebar-fade">仪表盘</span></a>
+                    <a href="/items" title="质量盘点" class="nav-item flex items-center px-3 py-2 rounded-xl text-[14px] font-bold transition-colors {% if active_page == 'items' %}bg-brand-50 dark:bg-apple-hoverDark text-brand-500{% else %}text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-apple-hoverDark/50{% endif %}"><i class="fa-solid fa-microchip w-7 text-center text-[16px] shrink-0"></i><span class="sidebar-item-label sidebar-fade">质量盘点</span></a>
+                    <a href="/plans" title="订阅洗版" class="nav-item flex items-center px-3 py-2 rounded-xl text-[14px] font-bold transition-colors {% if active_page == 'plans' %}bg-brand-50 dark:bg-apple-hoverDark text-brand-500{% else %}text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-apple-hoverDark/50{% endif %}"><i class="fa-solid fa-bell w-7 text-center text-[16px] shrink-0"></i><span class="sidebar-item-label sidebar-fade">订阅洗版</span></a>
+                    <a href="/gaps" title="缺集管理" class="nav-item flex items-center px-3 py-2 rounded-xl text-[14px] font-bold transition-colors {% if active_page == 'gaps' %}bg-brand-50 dark:bg-apple-hoverDark text-brand-500{% else %}text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-apple-hoverDark/50{% endif %}"><i class="fa-solid fa-layer-group w-7 text-center text-[16px] shrink-0"></i><span class="sidebar-item-label sidebar-fade">缺集管理</span></a>
+                    <a href="/history" title="历史记录" class="nav-item flex items-center px-3 py-2 rounded-xl text-[14px] font-bold transition-colors {% if active_page == 'history' %}bg-brand-50 dark:bg-apple-hoverDark text-brand-500{% else %}text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-apple-hoverDark/50{% endif %}"><i class="fa-solid fa-clock-rotate-left w-7 text-center text-[16px] shrink-0"></i><span class="sidebar-item-label sidebar-fade">历史记录</span></a>
                 </div>
             </div>
-            <div>
-                <p class="px-3 text-[11px] font-black text-gray-400 dark:text-gray-500 mb-2 uppercase tracking-[0.1em] opacity-80">系统</p>
+            <div class="sidebar-section">
+                <p class="sidebar-section-title sidebar-fade px-3 text-[11px] font-black text-gray-400 dark:text-gray-500 mb-2 uppercase tracking-[0.1em] opacity-80">系统</p>
                 <div class="space-y-1">
-                    <a href="/config" class="nav-item flex items-center px-3 py-2 rounded-xl text-[14px] font-bold transition-colors {% if active_page == 'config' %}bg-brand-50 dark:bg-apple-hoverDark text-brand-500{% else %}text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-apple-hoverDark/50{% endif %}"><i class="fa-solid fa-gear w-7 text-center text-[16px]"></i> 系统配置</a>
+                    <a href="/config" title="系统配置" class="nav-item flex items-center px-3 py-2 rounded-xl text-[14px] font-bold transition-colors {% if active_page == 'config' %}bg-brand-50 dark:bg-apple-hoverDark text-brand-500{% else %}text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-apple-hoverDark/50{% endif %}"><i class="fa-solid fa-gear w-7 text-center text-[16px] shrink-0"></i><span class="sidebar-item-label sidebar-fade">系统配置</span></a>
                 </div>
             </div>
         </nav>
 
         <div class="p-4 border-t border-gray-100 dark:border-white/5 shrink-0 bg-white/50 dark:bg-apple-cardDark/50 backdrop-blur-sm">
-            <div class="flex items-center gap-3 bg-gray-50 dark:bg-white/5 rounded-2xl p-3 border border-gray-100 dark:border-white/5">
+            <div class="sidebar-footer-card flex items-center gap-3 bg-gray-50 dark:bg-white/5 rounded-2xl p-3 border border-gray-100 dark:border-white/5">
                 <div class="w-11 h-11 rounded-full bg-brand-50 dark:bg-brand-500/20 flex items-center justify-center text-brand-500 shrink-0">
                     <i class="fa-solid fa-server text-base"></i>
                 </div>
-                <div class="flex-1 min-w-0">
+                <div class="sidebar-footer-copy sidebar-fade flex-1 min-w-0">
                     <div class="text-[13px] font-bold text-gray-800 dark:text-white truncate">Media Refiner</div>
                     <div class="text-[10px] text-gray-400">端口 10308</div>
                 </div>
@@ -248,6 +332,7 @@
             <a href="/" class="flex flex-col items-center justify-center flex-1 py-2 transition-colors active:scale-95 tap-highlight-none {% if active_page == 'dashboard' %}text-brand-500{% else %}text-gray-500 dark:text-gray-400{% endif %}"><i class="fa-solid fa-chart-line text-[18px] mb-0.5"></i><span class="text-[9px] font-medium leading-tight">数据</span></a>
             <a href="/items" class="flex flex-col items-center justify-center flex-1 py-2 transition-colors active:scale-95 tap-highlight-none {% if active_page == 'items' %}text-brand-500{% else %}text-gray-500 dark:text-gray-400{% endif %}"><i class="fa-solid fa-microchip text-[18px] mb-0.5"></i><span class="text-[9px] font-medium leading-tight">质量</span></a>
             <a href="/plans" class="flex flex-col items-center justify-center flex-1 py-2 transition-colors active:scale-95 tap-highlight-none {% if active_page == 'plans' %}text-brand-500{% else %}text-gray-500 dark:text-gray-400{% endif %}"><i class="fa-solid fa-bell text-[18px] mb-0.5"></i><span class="text-[9px] font-medium leading-tight">订阅</span></a>
+            <a href="/gaps" class="flex flex-col items-center justify-center flex-1 py-2 transition-colors active:scale-95 tap-highlight-none {% if active_page == 'gaps' %}text-brand-500{% else %}text-gray-500 dark:text-gray-400{% endif %}"><i class="fa-solid fa-layer-group text-[18px] mb-0.5"></i><span class="text-[9px] font-medium leading-tight">缺集</span></a>
             <button onclick="toggleBottomSheet()" class="flex flex-col items-center justify-center flex-1 py-2 text-gray-500 dark:text-gray-400 transition-colors active:scale-95 tap-highlight-none"><i class="fa-solid fa-bars text-[18px] mb-0.5"></i><span class="text-[9px] font-medium leading-tight">菜单</span></button>
         </div>
     </div>
@@ -262,6 +347,7 @@
                 <a href="/" class="nav-item flex items-center justify-between p-3.5 active:bg-gray-50/50 dark:active:bg-apple-hoverDark/50 border-b border-gray-200/50 dark:border-white/5"><div class="flex items-center gap-3"><div class="w-7 h-7 rounded-[8px] bg-brand-500 text-white flex justify-center items-center"><i class="fa-solid fa-chart-line"></i></div><span class="text-[15px] font-medium">仪表盘</span></div><i class="fa-solid fa-chevron-right text-[12px] text-gray-400 dark:text-gray-500"></i></a>
                 <a href="/items" class="nav-item flex items-center justify-between p-3.5 active:bg-gray-50/50 dark:active:bg-apple-hoverDark/50 border-b border-gray-200/50 dark:border-white/5"><div class="flex items-center gap-3"><div class="w-7 h-7 rounded-[8px] bg-purple-500 text-white flex justify-center items-center"><i class="fa-solid fa-microchip"></i></div><span class="text-[15px] font-medium">质量盘点</span></div><i class="fa-solid fa-chevron-right text-[12px] text-gray-400 dark:text-gray-500"></i></a>
                 <a href="/plans" class="nav-item flex items-center justify-between p-3.5 active:bg-gray-50/50 dark:active:bg-apple-hoverDark/50 border-b border-gray-200/50 dark:border-white/5"><div class="flex items-center gap-3"><div class="w-7 h-7 rounded-[8px] bg-emerald-500 text-white flex justify-center items-center"><i class="fa-solid fa-bell"></i></div><span class="text-[15px] font-medium">订阅洗版</span></div><i class="fa-solid fa-chevron-right text-[12px] text-gray-400 dark:text-gray-500"></i></a>
+                <a href="/gaps" class="nav-item flex items-center justify-between p-3.5 active:bg-gray-50/50 dark:active:bg-apple-hoverDark/50"><div class="flex items-center gap-3"><div class="w-7 h-7 rounded-[8px] bg-cyan-500 text-white flex justify-center items-center"><i class="fa-solid fa-layer-group"></i></div><span class="text-[15px] font-medium">缺集管理</span></div><i class="fa-solid fa-chevron-right text-[12px] text-gray-400 dark:text-gray-500"></i></a>
             </div>
             <div class="bg-white/60 dark:bg-apple-cardDark/60 backdrop-blur-md rounded-2xl overflow-hidden shadow-sm border border-white/50 dark:border-white/5">
                 <a href="/history" class="nav-item flex items-center justify-between p-3.5 active:bg-gray-50/50 dark:active:bg-apple-hoverDark/50 border-b border-gray-200/50 dark:border-white/5"><div class="flex items-center gap-3"><div class="w-7 h-7 rounded-[8px] bg-gray-500 text-white flex justify-center items-center"><i class="fa-solid fa-clock-rotate-left"></i></div><span class="text-[15px] font-medium">历史记录</span></div><i class="fa-solid fa-chevron-right text-[12px] text-gray-400 dark:text-gray-500"></i></a>
@@ -357,7 +443,51 @@
         }
     }
 
-    document.addEventListener('DOMContentLoaded', initDarkMode);
+    const desktopSidebarStorageKey = 'desktopSidebarCollapsed';
+
+    function applyDesktopSidebarState(collapsed) {
+        document.documentElement.classList.toggle('sidebar-collapsed', !!collapsed);
+        const toggle = document.getElementById('desktopSidebarToggle');
+        const icon = document.getElementById('desktopSidebarToggleIcon');
+        if (toggle) {
+            toggle.setAttribute('aria-pressed', collapsed ? 'true' : 'false');
+            toggle.setAttribute('title', collapsed ? '展开侧边栏' : '收起侧边栏');
+        }
+        if (icon) {
+            icon.className = collapsed
+                ? 'fa-solid fa-chevron-right text-[11px]'
+                : 'fa-solid fa-chevron-left text-[11px]';
+        }
+    }
+
+    function initDesktopSidebar() {
+        if (window.innerWidth < 768) {
+            document.documentElement.classList.remove('sidebar-collapsed');
+            return;
+        }
+        let collapsed = false;
+        try {
+            collapsed = localStorage.getItem(desktopSidebarStorageKey) === '1';
+        } catch (_) {}
+        applyDesktopSidebarState(collapsed);
+    }
+
+    function toggleDesktopSidebar() {
+        const collapsed = !document.documentElement.classList.contains('sidebar-collapsed');
+        applyDesktopSidebarState(collapsed);
+        try {
+            localStorage.setItem(desktopSidebarStorageKey, collapsed ? '1' : '0');
+        } catch (_) {}
+    }
+
+    document.addEventListener('DOMContentLoaded', () => {
+        initDarkMode();
+        initDesktopSidebar();
+    });
+
+    window.addEventListener('resize', () => {
+        initDesktopSidebar();
+    });
 
     // ========== 深色模式切换 ==========
     function toggleDarkMode() {
