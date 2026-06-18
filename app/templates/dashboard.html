@@ -730,6 +730,7 @@ let _allItems = [];
 let _libData = [];
 
 document.addEventListener('DOMContentLoaded', () => {
+    ScanManager.init('btn-start-scan');
     loadScheduleConfig();
     loadDashboard();
     window.addEventListener('scan-complete', () => setTimeout(loadDashboard, 1000));

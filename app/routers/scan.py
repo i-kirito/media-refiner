@@ -96,9 +96,25 @@ def stop_scheduler():
 async def scan_status():
     """获取扫描状态（含缓存年龄、定时计划）"""
     scanner = get_scanner()
-    from app.database import get_quality_cache_age
+    from app.database import get_quality_cache_age, load_quality_cache
     from app.config import settings
     cache_info = await get_quality_cache_age()
+    progress = dict(scanner.progress)
+    cache_summary = {}
+
+    if not progress.get("is_scanning"):
+        _, cache_summary, _ = await load_quality_cache()
+        if cache_summary:
+            total_count = int(cache_summary.get("total_count") or 0)
+            progress.update(
+                {
+                    "progress": 100 if total_count else progress.get("progress", 0),
+                    "current_item": "已加载缓存" if total_count else progress.get("current_item", ""),
+                    "total_count": total_count,
+                    "scanned_count": total_count,
+                    "scan_time": cache_summary.get("scan_time", ""),
+                }
+            )
 
     # 计算下次扫描时间
     next_scan = None
@@ -115,8 +131,9 @@ async def scan_status():
     return {
         "status": "success",
         "data": {
-            **scanner.progress,
+            **progress,
             "cache": cache_info,
+            "summary": cache_summary,
             "schedule": {
                 "enabled": schedule_hours > 0,
                 "interval_hours": schedule_hours,

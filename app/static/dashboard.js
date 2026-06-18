@@ -101,16 +101,16 @@ const ScanManager = {
     /**
      * 初始化：绑定按钮，恢复扫描状态（页面加载时检查是否已有扫描在跑）
      */
-    init(buttonId = 'btnStartScan') {
+    init(buttonId = 'btnStartScan', options = {}) {
         this._scanButton = document.getElementById(buttonId);
         if (this._scanButton) {
             this._scanButtonText = this._scanButton.innerHTML;
         }
         // 页面加载时检查扫描状态
-        this._checkStatusOnLoad();
+        this._checkStatusOnLoad(options);
     },
 
-    async _checkStatusOnLoad() {
+    async _checkStatusOnLoad(options = {}) {
         try {
             const resp = await fetch('/api/scan/status');
             const json = await resp.json();
@@ -122,7 +122,7 @@ const ScanManager = {
                 this._startPolling();
             }
             // 显示已有扫描结果
-            if (!json.data.is_scanning && json.data.total_count > 0) {
+            if (options.showCachedComplete === true && !json.data.is_scanning && json.data.total_count > 0) {
                 this._showCompleted(json.data);
             }
         } catch (e) {
