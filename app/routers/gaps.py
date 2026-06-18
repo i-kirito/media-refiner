@@ -895,7 +895,12 @@ def _episode_range(start: int, end: int, targets: set[int]) -> list[int]:
     return [ep for ep in range(start, end + 1) if ep in targets]
 
 
-def _episode_match_ratio(title: str, season: int, episodes: list[int]) -> tuple[float, list[int]]:
+def _episode_match_ratio(
+    title: str,
+    season: int,
+    episodes: list[int],
+    assume_first_season_when_ambiguous: bool = False,
+) -> tuple[float, list[int]]:
     text = _normalise_title(title)
     if not text or not episodes:
         return 0.0, []
@@ -942,11 +947,27 @@ def _episode_match_ratio(title: str, season: int, episodes: list[int]) -> tuple[
             explicit_seasons.update(range(min(start, end), max(start, end) + 1))
     explicit_seasons = {x for x in explicit_seasons if x >= 0}
     collection_count = _season_collection_count(text)
+    has_episode_markers = bool(
+        re.search(
+            r"(?<![a-z0-9])e\d{1,3}(?!\d)"
+            r"|第\s*\d{1,3}\s*[集话話]"
+            r"|(?:更新到|更新至|更到|更至|至|到)\s*\d{1,3}\s*[集话話]",
+            text,
+        )
+    )
     has_target_season = (
         season in explicit_seasons
         or any(token in text for token in season_tokens if token)
         or (season > 0 and collection_count >= season)
     )
+    if (
+        assume_first_season_when_ambiguous
+        and season == 1
+        and not explicit_seasons
+        and collection_count == 0
+        and not has_episode_markers
+    ):
+        has_target_season = True
     if season == 0 and re.search(r"(?<![a-z0-9])sp(?![a-z0-9])", text):
         has_target_season = True
     if explicit_seasons and season not in explicit_seasons:
@@ -991,9 +1012,19 @@ def _result_match_text(item: dict) -> str:
     return " ".join(parts)
 
 
-def _annotate_gap_match(result: dict, season: int, episodes: list[int]) -> dict:
+def _annotate_gap_match(
+    result: dict,
+    season: int,
+    episodes: list[int],
+    assume_first_season_when_ambiguous: bool = False,
+) -> dict:
     item = dict(result)
-    ratio, matched = _episode_match_ratio(_result_match_text(item), season, episodes)
+    ratio, matched = _episode_match_ratio(
+        _result_match_text(item),
+        season,
+        episodes,
+        assume_first_season_when_ambiguous=assume_first_season_when_ambiguous,
+    )
     item["ui_episode_match_ratio"] = ratio
     item["ui_episode_match_text"] = f"{len(matched)}/{len(episodes)}" if episodes else "0/0"
     item["ui_matched_episodes"] = matched
@@ -1125,7 +1156,15 @@ async def search_gap_hdhive(payload: GapSearchPayload):
             media_type="tv",
         )
         episodes = sorted({_safe_int(x, 0) for x in payload.episodes if _safe_int(x, 0) > 0})
-        annotated = [_annotate_gap_match(item, payload.season, episodes) for item in _dedupe_results(results)]
+        annotated = [
+            _annotate_gap_match(
+                item,
+                payload.season,
+                episodes,
+                assume_first_season_when_ambiguous=bool(tmdb_id or payload.series_id),
+            )
+            for item in _dedupe_results(results)
+        ]
         annotated = await _apply_gap_transfer_marks(annotated)
         for item in annotated:
             item["ui_size_bytes"] = _gap_result_size_bytes(item)
