@@ -48,6 +48,7 @@ _scan_status: dict[str, Any] = {
     "started_at": "",
     "finished_at": "",
     "created_at": "",
+    "skipped_libraries": [],
 }
 
 
@@ -120,6 +121,10 @@ def _safe_int(value: Any, default: int = 0) -> int:
 
 def _episode_target_id(series_id: str, season: int, episode: int) -> str:
     return make_gap_episode_target_id(series_id, season, episode)
+
+
+def _gap_library_label(lib: dict) -> str:
+    return lib.get("Name") or str(lib.get("ItemId") or "") or "剧集库"
 
 
 def _is_missing_emby_episode(item: dict) -> bool:
@@ -358,6 +363,7 @@ async def _scan_gaps_task():
             "error": "",
             "started_at": started_at,
             "finished_at": "",
+            "skipped_libraries": [],
         }
     )
     try:
@@ -373,23 +379,46 @@ async def _scan_gaps_task():
         ]
 
         total = 0
+        skipped_libraries: list[dict] = []
+        scannable_libraries: list[tuple[dict, int]] = []
         for lib in tv_libraries:
-            total += await _estimate_series_total(emby, str(lib.get("ItemId") or ""))
+            lib_id = str(lib.get("ItemId") or "")
+            lib_name = _gap_library_label(lib)
+            try:
+                series_total = await _estimate_series_total(emby, lib_id)
+                scannable_libraries.append((lib, series_total))
+                total += series_total
+            except Exception as e:
+                logger.warning("[Gaps] 跳过剧集库 %s(%s): %s", lib_name, lib_id, e)
+                skipped_libraries.append({"id": lib_id, "name": lib_name, "error": str(e)})
+                _scan_status["skipped_libraries"] = skipped_libraries
+                _scan_status["current_item"] = f"跳过 {lib_name}: {e}"
         _scan_status["total"] = total
 
         results: list[dict] = []
         processed = 0
-        for lib in tv_libraries:
+        for lib, estimated_total in scannable_libraries:
             lib_id = str(lib.get("ItemId") or "")
-            lib_name = lib.get("Name") or "剧集库"
+            lib_name = _gap_library_label(lib)
             _scan_status["current_item"] = f"{lib_name} / 读取剧集"
-            series_items = await _fetch_all_items(
-                emby,
-                lib_id,
-                "Series",
-                "ProviderIds,Overview,ImageTags,ProductionYear,PremiereDate,ChildCount,RecursiveItemCount,Path",
-                limit=200,
-            )
+            try:
+                series_items = await _fetch_all_items(
+                    emby,
+                    lib_id,
+                    "Series",
+                    "ProviderIds,Overview,ImageTags,ProductionYear,PremiereDate,ChildCount,RecursiveItemCount,Path",
+                    limit=200,
+                )
+            except Exception as e:
+                logger.warning("[Gaps] 跳过剧集库 %s(%s): %s", lib_name, lib_id, e)
+                skipped_libraries.append({"id": lib_id, "name": lib_name, "error": str(e)})
+                processed += estimated_total
+                _scan_status["processed"] = processed
+                _scan_status["progress"] = min(99, int(processed / total * 100) if total else 0)
+                _scan_status["skipped_libraries"] = skipped_libraries
+                _scan_status["current_item"] = f"跳过 {lib_name}: {e}"
+                await asyncio.sleep(0.4)
+                continue
 
             semaphore = asyncio.Semaphore(1)
             failed_count = 0
@@ -419,10 +448,15 @@ async def _scan_gaps_task():
                 await asyncio.sleep(0.4)
 
         results.sort(key=lambda x: (-_safe_int(x.get("gap_count"), 0), x.get("series_name", "")))
+        skipped_ids = {str(item.get("id") or "") for item in skipped_libraries}
+        scannable_ids = {str(lib.get("ItemId") or "") for lib, _ in scannable_libraries}
         summary = {
             "series_count": len(results),
             "gap_count": sum(_safe_int(item.get("gap_count"), 0) for item in results),
             "library_count": len(tv_libraries),
+            "scanned_library_count": len(scannable_ids - skipped_ids),
+            "skipped_library_count": len(skipped_libraries),
+            "skipped_libraries": skipped_libraries,
             "processed": processed,
         }
         await save_gap_cache(results, summary)
@@ -431,12 +465,13 @@ async def _scan_gaps_task():
             {
                 "is_scanning": False,
                 "progress": 100,
-                "current_item": "扫描完成",
+                "current_item": f"扫描完成（跳过 {len(skipped_libraries)} 个库）" if skipped_libraries else "扫描完成",
                 "results": results,
                 "summary": summary,
                 "error": "",
                 "finished_at": finished_at,
                 "created_at": finished_at,
+                "skipped_libraries": skipped_libraries,
             }
         )
         logger.info("[Gaps] 缺集扫描完成: %s 部剧集 / %s 个缺口", summary["series_count"], summary["gap_count"])
