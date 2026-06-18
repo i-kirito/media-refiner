@@ -31,6 +31,7 @@ from app.database import (
 from app.services.emby import EmbyClient
 from app.services.hdhive import HDHiveClient
 from app.services.moviepilot import MoviePilotClient
+from app.services.telegram import TelegramNotifier
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/gaps", tags=["缺集管理"])
@@ -97,6 +98,9 @@ class GapDownloadPayload(BaseModel):
     tmdb_id: int | str = 0
     folder_id: str = ""
     slug: str = ""
+    series_name: str = ""
+    season: int = 0
+    episodes: list[int] = Field(default_factory=list)
 
 
 def _success(data: Any = None, message: str = "") -> dict:
@@ -117,6 +121,76 @@ def _safe_int(value: Any, default: int = 0) -> int:
         return int(value)
     except (TypeError, ValueError):
         return default
+
+
+def _telegram_code(value: Any, limit: int = 120) -> str:
+    text = str(value or "").replace("`", "'").strip()
+    if len(text) > limit:
+        text = f"{text[:limit - 1]}…"
+    return f"`{text}`" if text else ""
+
+
+def _gap_episode_summary(season: int, episodes: list[int]) -> str:
+    nums = sorted({_safe_int(ep, 0) for ep in episodes if _safe_int(ep, 0) > 0})
+    if not nums:
+        return f"S{season:02d}"
+    if len(nums) > 1 and nums == list(range(nums[0], nums[-1] + 1)):
+        return f"S{season:02d} E{nums[0]:02d}-E{nums[-1]:02d}"
+    return f"S{season:02d} " + ", ".join(f"E{num:02d}" for num in nums[:12])
+
+
+def _gap_result_title(result: dict) -> str:
+    return (
+        result.get("title")
+        or result.get("name")
+        or result.get("resource_name")
+        or result.get("resource_title")
+        or result.get("share_name")
+        or ""
+    )
+
+
+async def _notify_gap_hdhive_transfer(payload: GapDownloadPayload, resp: dict, ok: bool, message: str = ""):
+    """发送缺集影巢解锁/转存结果；通知失败不影响业务接口。"""
+    try:
+        tg = TelegramNotifier()
+        if not tg.is_configured:
+            await tg.close()
+            return
+
+        status = (resp or {}).get("status", "")
+        icon = "✅" if ok and status == "transferred" else ("ℹ️" if ok else "❌")
+        status_label = {
+            "transferred": "转存成功",
+            "already_owned": "已在 115 中",
+            "not_115": "非 115 资源",
+            "password_error": "分享密码异常",
+            "error": "转存失败",
+        }.get(status, message or status or "转存完成")
+
+        result = payload.result or {}
+        lines = [f"{icon} *缺集影巢解锁结果*", f"状态: *{status_label}*"]
+        if payload.series_name:
+            lines.append(f"剧集: {_telegram_code(payload.series_name)}")
+        episode_text = _gap_episode_summary(_safe_int(payload.season, 0), payload.episodes)
+        if episode_text:
+            lines.append(f"缺集: `{episode_text}`")
+        title = _gap_result_title(result)
+        if title:
+            lines.append(f"资源: {_telegram_code(title)}")
+        size = result.get("share_size") or result.get("size") or ""
+        if size:
+            lines.append(f"大小: `{size}`")
+        points = result.get("unlock_points")
+        if points not in (None, ""):
+            lines.append(f"积分: `{points}`")
+        if message and not ok:
+            lines.append(f"详情: {_telegram_code(message, 180)}")
+
+        await tg.send_message("\n".join(lines))
+        await tg.close()
+    except Exception as e:
+        logger.warning("[Gaps] Telegram 缺集转存通知失败: %s", e)
 
 
 def _episode_target_id(series_id: str, season: int, episode: int) -> str:
@@ -923,12 +997,17 @@ async def download_gap_hdhive(payload: GapDownloadPayload):
         folder_id = payload.folder_id or settings.cloud115_folder_id or "0"
         resp = await hd.unlock_and_transfer(slug, folder_id)
         if not resp:
+            await _notify_gap_hdhive_transfer(payload, {}, False, "影巢 API 无响应")
             return _error("影巢 API 无响应")
         status = resp.get("status", "")
         if status == "error":
-            return _error(resp.get("message", "影巢转存失败"), resp)
+            message = resp.get("message", "影巢转存失败")
+            await _notify_gap_hdhive_transfer(payload, resp, False, message)
+            return _error(message, resp)
+        await _notify_gap_hdhive_transfer(payload, resp, status in ("transferred", "already_owned"), resp.get("message", ""))
         return _success(resp, resp.get("message") or "影巢转存已提交")
     except Exception as e:
+        await _notify_gap_hdhive_transfer(payload, {"status": "error"}, False, f"影巢转存异常: {e}")
         return _error(f"影巢转存异常: {e}")
     finally:
         await hd.close()
