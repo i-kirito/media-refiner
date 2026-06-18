@@ -91,6 +91,48 @@ def parse_filename_resolution(path: str) -> tuple[int,int] | None:
     return None
 
 
+def is_strm_path(path: str) -> bool:
+    """判断是否为 STRM 占位文件。"""
+    if not path:
+        return False
+    clean_path = path.split("?", 1)[0].split("#", 1)[0].lower()
+    return clean_path.endswith(".strm")
+
+
+def parse_filename_codec(path: str) -> str:
+    """从文件名解析视频编码，作为 STRM/媒体流缺失时的回退。"""
+    if not path:
+        return ""
+    name = path.replace("\\", "/").rsplit("/", 1)[-1].lower()
+    if re.search(r"\bav1\b", name):
+        return "av1"
+    if re.search(r"\b(?:h[ ._-]?265|x265|hevc)\b", name):
+        return "hevc"
+    if re.search(r"\b(?:h[ ._-]?264|x264|avc)\b", name):
+        return "h264"
+    if re.search(r"\bmpeg[ ._-]?2\b", name):
+        return "mpeg2"
+    if re.search(r"\bmpeg[ ._-]?4\b", name):
+        return "mpeg4"
+    if re.search(r"\bvc[ ._-]?1\b", name):
+        return "vc1"
+    return ""
+
+
+def parse_filename_video_range(path: str) -> str:
+    """从文件名解析 HDR/SDR 标记。"""
+    if not path:
+        return ""
+    name = path.replace("\\", "/").rsplit("/", 1)[-1].lower()
+    if re.search(r"\b(?:dovi|dolby[ ._-]?vision|dv)\b", name):
+        return "DolbyVision"
+    if re.search(r"\bhdr10\+?\b|\bhdr\b|\bhlg\b", name):
+        return "HDR10"
+    if re.search(r"\bsdr\b", name):
+        return "SDR"
+    return ""
+
+
 def parse_filename_year(path: str) -> int | None:
     """从路径中解析 1900-2099 年份，作为 Emby 列表缺年份时的回退。"""
     if not path:
@@ -100,14 +142,19 @@ def parse_filename_year(path: str) -> int | None:
 
 
 def get_effective_resolution(item: dict, video_stream: dict) -> tuple[int,int]:
-    """获取分辨率：Emby 数据优先，文件名回退"""
+    """获取分辨率：普通媒体优先 Emby 数据，STRM 优先文件名标记。"""
+    path = item.get("Path", "")
+    parsed = parse_filename_resolution(path)
     width = video_stream.get("Width", 0) or 0
     height = video_stream.get("Height", 0) or 0
+    # STRM 文件常见情况是 Emby 返回远端探测/封面流的 1080p，
+    # 但本地占位文件名才是实际资源版本标记。
+    if parsed and is_strm_path(path):
+        return parsed
     # 如果 Emby 返回的分辨率有效（≥480），直接使用
     if height >= 480 and width > 0:
         return (width, height)
     # 文件名回退（Emby 无有效分辨率时）
-    parsed = parse_filename_resolution(item.get("Path", ""))
     if parsed:
         return parsed
     # 兜底
@@ -155,6 +202,7 @@ def detect_resolution_anomaly(item: dict, video_stream: dict) -> bool:
 def calculate_quality_score(item: dict) -> int:
     """计算单条媒体的质量评分 (0-100)，分数尽量分散以覆盖全范围"""
     score = 0
+    path = item.get("Path", "")
     sources = item.get("MediaSources") or []
     media_source = sources[0] if sources else {}
     streams = media_source.get("MediaStreams") or []
@@ -167,7 +215,18 @@ def calculate_quality_score(item: dict) -> int:
             break
 
     if not video_stream:
-        return 30  # 默认中等
+        parsed_res = parse_filename_resolution(path)
+        parsed_codec = parse_filename_codec(path)
+        parsed_range = parse_filename_video_range(path)
+        if not parsed_res and not parsed_codec and not parsed_range:
+            return 30  # 默认中等
+        video_stream = {
+            "Type": "Video",
+            "Width": parsed_res[0] if parsed_res else 0,
+            "Height": parsed_res[1] if parsed_res else 0,
+            "Codec": parsed_codec,
+            "VideoRange": parsed_range,
+        }
 
     # 1. 分辨率评分 (权重 35%, 满分约 35)
     eff_w, eff_h = get_effective_resolution(item, video_stream)
@@ -188,7 +247,7 @@ def calculate_quality_score(item: dict) -> int:
     score += res_score * 0.35  # 分辨率权重 35%
 
     # 2. 编码格式评分 (权重 30%, 满分约 27)
-    codec = (video_stream.get("Codec") or "").lower()
+    codec = (video_stream.get("Codec") or parse_filename_codec(path) or "").lower()
     codec_score = 0
     for k, v in CODEC_WEIGHTS.items():
         if k in codec:
@@ -197,7 +256,7 @@ def calculate_quality_score(item: dict) -> int:
     score += codec_score * 0.30  # 编码权重 30%
 
     # 3. HDR 评分 (权重 20%, 满分约 19)
-    video_range = (video_stream.get("VideoRange") or "").lower()
+    video_range = (video_stream.get("VideoRange") or parse_filename_video_range(path) or "").lower()
     hdr_score = 0
     if "dolby" in video_range or "dovision" in video_range:
         hdr_score = 95
@@ -502,6 +561,9 @@ class QualityScanner:
                 if video_stream:
                     eff_w, eff_h = get_effective_resolution(item, video_stream)
                     is_anomaly = detect_resolution_anomaly(item, video_stream)
+                    path = item.get("Path", "")
+                    video_codec = video_stream.get("Codec", "") or parse_filename_codec(path)
+                    video_range = video_stream.get("VideoRange", "") or parse_filename_video_range(path)
                     quality_item = {
                         "emby_id": emby_id,
                         "name": item.get("Name", ""),
@@ -511,9 +573,9 @@ class QualityScanner:
                         "tmdb_id": provider_ids.get("Tmdb", ""),
                         "imdb_id": provider_ids.get("Imdb", ""),
                         "resolution": f"{eff_w}x{eff_h}",
-                        "video_codec": video_stream.get("Codec", ""),
-                        "video_range": video_stream.get("VideoRange", ""),
-                        "path": item.get("Path", ""),
+                        "video_codec": video_codec,
+                        "video_range": video_range,
+                        "path": path,
                         "library_id": lib_id,
                         "library_name": lib_name,
                         "quality_score": calculate_quality_score(item),
@@ -523,7 +585,10 @@ class QualityScanner:
                         "representative_episode": item.get("_representative_episode", {}),
                     }
                 else:
-                    eff_w, eff_h = parse_filename_resolution(item.get("Path", "")) or (0, 0)
+                    path = item.get("Path", "")
+                    eff_w, eff_h = parse_filename_resolution(path) or (0, 0)
+                    video_codec = parse_filename_codec(path)
+                    video_range = parse_filename_video_range(path)
                     quality_item = {
                         "emby_id": emby_id,
                         "name": item.get("Name", ""),
@@ -533,12 +598,12 @@ class QualityScanner:
                         "tmdb_id": provider_ids.get("Tmdb", ""),
                         "imdb_id": provider_ids.get("Imdb", ""),
                         "resolution": f"{eff_w}x{eff_h}",
-                        "video_codec": "",
-                        "video_range": "",
-                        "path": item.get("Path", ""),
+                        "video_codec": video_codec,
+                        "video_range": video_range,
+                        "path": path,
                         "library_id": lib_id,
                         "library_name": lib_name,
-                        "quality_score": 30 if eff_h == 0 else calculate_quality_score(item),
+                        "quality_score": calculate_quality_score(item),
                         "size_bytes": ms.get("Size", 0),
                         "is_anomaly": False,
                         "episode_count": item.get("_episode_count", 0),
@@ -555,8 +620,8 @@ class QualityScanner:
                     if eff_h >= 2160: res_cat = "4k"
                     elif eff_h >= 1080: res_cat = "1080p"
                     elif eff_h >= 720: res_cat = "720p"
-                    codec_cat = "other_codec"
-                    hdr_cat = "sdr"
+                    codec_cat = classify_codec({"Codec": video_codec}) if video_codec else "other_codec"
+                    hdr_cat = classify_hdr({"VideoRange": video_range}) if video_range else "sdr"
                 resolution_dist[res_cat] = resolution_dist.get(res_cat, 0) + 1
                 codec_dist[codec_cat] = codec_dist.get(codec_cat, 0) + 1
                 hdr_dist[hdr_cat] = hdr_dist.get(hdr_cat, 0) + 1

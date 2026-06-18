@@ -12,7 +12,7 @@ from app.log_buffer import init_logging
 init_logging()
 
 from app.database import init_db
-from app.routers import scan, items, search, download, config as config_router, views, logs, subscribe, telegram
+from app.routers import scan, items, search, download, config as config_router, views, logs, subscribe, telegram, gaps
 
 logger = logging.getLogger(__name__)
 
@@ -115,4 +115,5 @@ app.include_router(config_router.router)
 app.include_router(logs.router)
 app.include_router(subscribe.router)
 app.include_router(telegram.router)
+app.include_router(gaps.router)
 app.include_router(views.router)

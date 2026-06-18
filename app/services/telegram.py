@@ -1,8 +1,10 @@
 """Telegram 通知服务 + 审核操作交互"""
 
+import asyncio
 import httpx
 import json
 import logging
+import time
 from app.config import settings
 
 logger = logging.getLogger(__name__)
@@ -132,6 +134,8 @@ def _build_review_card_text(review: dict) -> tuple[str, str]:
 
     # 目标文件
     target_title = target.get("title") or target.get("name", "")
+    t_site = ""
+    t_seeders = None
     if src == "hdhive":
         t_res_list = target.get("video_resolution") or []
         t_res = t_res_list[0] if t_res_list else "未知"
@@ -144,9 +148,10 @@ def _build_review_card_text(review: dict) -> tuple[str, str]:
         sub_type = target.get("subtitle_type", "")
         sub_str = ""
         if sub_lang:
-            sub_str = f"{sub_lang}"
+            sub_str = " / ".join(sub_lang) if isinstance(sub_lang, list) else str(sub_lang)
             if sub_type:
-                sub_str += f" ({sub_type})"
+                sub_type_str = " / ".join(sub_type) if isinstance(sub_type, list) else str(sub_type)
+                sub_str += f" ({sub_type_str})"
     else:
         # MP
         t_res = _fmt_quality(target)
@@ -175,7 +180,9 @@ def _build_review_card_text(review: dict) -> tuple[str, str]:
     # HDHive 额外信息
     if src == "hdhive":
         unlock_pts = target.get("unlock_points", "")
-        uploader = target.get("user", {}).get("nickname", "") if isinstance(target.get("user"), dict) else ""
+        uploader = target.get("sharer", "")
+        if not uploader and isinstance(target.get("user"), dict):
+            uploader = target.get("user", {}).get("nickname", "")
         if unlock_pts:
             lines.append(f"🔓 解锁积分: `{unlock_pts}`")
         if uploader:
@@ -195,6 +202,11 @@ class TelegramNotifier:
     _last_update_id = 0
     _last_poll_count = 0
     _review_cache: list[dict] = []  # 审核列表缓存，供选择+操作使用
+    _processing_review_ids: set[int] = set()
+    _updates_lock: asyncio.Lock | None = None
+    _getupdates_conflict_until = 0.0
+    _getupdates_conflict_log_at = 0.0
+    _getupdates_conflict_count = 0
 
     def __init__(self):
         self.token = settings.tg_bot_token
@@ -208,6 +220,43 @@ class TelegramNotifier:
     @property
     def is_configured(self) -> bool:
         return bool(self.token and self.chat_id)
+
+    @classmethod
+    def _get_updates_lock(cls) -> asyncio.Lock:
+        if cls._updates_lock is None:
+            cls._updates_lock = asyncio.Lock()
+        return cls._updates_lock
+
+    @classmethod
+    def _getupdates_backoff_active(cls) -> bool:
+        return time.monotonic() < cls._getupdates_conflict_until
+
+    @classmethod
+    def _handle_getupdates_failure(cls, description: str) -> bool:
+        """处理 Telegram getUpdates 失败；Conflict 单独退避，避免日志刷屏。"""
+        desc = description or "unknown error"
+        is_conflict = "conflict" in desc.lower() and "getupdates" in desc.lower()
+        if not is_conflict:
+            logger.warning(f"[Telegram] getUpdates 返回失败: {desc}")
+            return False
+
+        now = time.monotonic()
+        cls._getupdates_conflict_count += 1
+        backoff = min(300, 30 * cls._getupdates_conflict_count)
+        cls._getupdates_conflict_until = now + backoff
+        if now >= cls._getupdates_conflict_log_at:
+            logger.warning(
+                "[Telegram] getUpdates 冲突：检测到同一个 Bot Token 正被其他实例轮询，"
+                f"本实例暂停 TG 轮询 {backoff} 秒。请只保留一个 Media Refiner 实例启用 TG 轮询。"
+            )
+            cls._getupdates_conflict_log_at = now + backoff
+        return True
+
+    @classmethod
+    def _reset_getupdates_backoff(cls):
+        cls._getupdates_conflict_until = 0.0
+        cls._getupdates_conflict_log_at = 0.0
+        cls._getupdates_conflict_count = 0
 
     # ─── 基础 API ───
 
@@ -276,15 +325,21 @@ class TelegramNotifier:
         """获取最近的更新（用于获取 Chat ID）"""
         if not self.token:
             return []
+        if TelegramNotifier._getupdates_backoff_active():
+            return []
         try:
-            resp = await self._client.get(
-                f"https://api.telegram.org/bot{self.token}/getUpdates",
-                params={"timeout": 5, "limit": 10}
-            )
+            async with TelegramNotifier._get_updates_lock():
+                if TelegramNotifier._getupdates_backoff_active():
+                    return []
+                resp = await self._client.get(
+                    f"https://api.telegram.org/bot{self.token}/getUpdates",
+                    params={"timeout": 0, "limit": 10}
+                )
             data = resp.json()
             if data.get("ok"):
+                TelegramNotifier._reset_getupdates_backoff()
                 return data.get("result", [])
-            logger.warning(f"[Telegram] 获取更新失败: {data.get('description', 'unknown error')}")
+            TelegramNotifier._handle_getupdates_failure(data.get("description", "unknown error"))
             return []
         except Exception as e:
             logger.warning(f"[Telegram] 获取更新失败: {e}")
@@ -414,20 +469,26 @@ class TelegramNotifier:
         """
         if not self.token:
             return
+        if TelegramNotifier._getupdates_backoff_active():
+            return
         try:
-            offset = TelegramNotifier._last_update_id + 1
-            resp = await self._client.get(
-                f"https://api.telegram.org/bot{self.token}/getUpdates",
-                params={
-                    "offset": offset,
-                    "timeout": 5,
-                    "limit": 10,
-                }
-            )
+            async with TelegramNotifier._get_updates_lock():
+                if TelegramNotifier._getupdates_backoff_active():
+                    return
+                offset = TelegramNotifier._last_update_id + 1
+                resp = await self._client.get(
+                    f"https://api.telegram.org/bot{self.token}/getUpdates",
+                    params={
+                        "offset": offset,
+                        "timeout": 5,
+                        "limit": 10,
+                    }
+                )
             data = resp.json()
             if not data.get("ok"):
-                logger.warning(f"[Telegram] getUpdates 返回失败: {data.get('description', 'unknown error')}")
+                TelegramNotifier._handle_getupdates_failure(data.get("description", "unknown error"))
                 return
+            TelegramNotifier._reset_getupdates_backoff()
 
             results = data.get("result", [])
             if results:
@@ -481,6 +542,7 @@ class TelegramNotifier:
                 "batch_clear_all": self._handle_batch_clear_all,
                 "rule_run_all": self._handle_rule_run_all,
                 "rule_refresh": self._handle_rule_refresh,
+                "done": self._handle_done_callback,
             }.get(data_str)
             if handler:
                 await handler(cb_id, message_id)
@@ -820,19 +882,15 @@ class TelegramNotifier:
 
     async def _handle_approve(self, cb_id: str, review_id: int, message_id: int):
         """处理通过操作（来自 callback_query 按钮）"""
-        from app.database import list_subscribe_reviews, update_subscribe_review, add_subscribe_log
+        from app.database import update_subscribe_review, add_subscribe_log
         from app.services.moviepilot import MoviePilotClient
         from app.services.hdhive import HDHiveClient
 
-        reviews = await list_subscribe_reviews("pending")
-        review = next((r for r in reviews if r["id"] == review_id), None)
+        review = await self._load_pending_review(cb_id, review_id, message_id)
         if not review:
-            await self.answer_callback_query(cb_id, "❌ 审核项不存在或已处理", show_alert=True)
-            await self.edit_message_reply_markup(message_id, {
-                "inline_keyboard": [[{"text": "⏳ 已处理", "callback_data": "done"}]]
-            })
             return
 
+        TelegramNotifier._processing_review_ids.add(review_id)
         item_name = review.get("item_name", "")
         result = review.get("search_result", {})
         action_type = review.get("action_type", "")
@@ -862,7 +920,14 @@ class TelegramNotifier:
                     if not resp or not resp.get("success"):
                         raise ValueError(f"下载提交失败: {resp.get('message', 'MP API 未返回成功') if resp else 'API 无响应'}")
                     await update_subscribe_review(review_id, "approved", "✅ TG 批准 - 下载已推送")
-                    await add_subscribe_log(review.get("rule_id", ""), review.get("rule_name", ""), "download", item_name, review.get("item_id", ""), "TG 审核通过")
+                    await add_subscribe_log(
+                        review.get("rule_id", ""),
+                        review.get("rule_name", ""),
+                        "download",
+                        item_name,
+                        review.get("item_id", ""),
+                        "TG 审核通过",
+                    )
                     await self.answer_callback_query(cb_id, f"✅ {item_name} 下载已推送", show_alert=False)
                 finally:
                     await mp.close()
@@ -879,11 +944,25 @@ class TelegramNotifier:
                     status = resp.get("status", "")
                     if status == "transferred":
                         await update_subscribe_review(review_id, "approved", "✅ TG 批准 - 转存成功")
-                        await add_subscribe_log(review.get("rule_id", ""), review.get("rule_name", ""), "transfer", item_name, review.get("item_id", ""), "TG 审核通过 - 转存成功")
+                        await add_subscribe_log(
+                            review.get("rule_id", ""),
+                            review.get("rule_name", ""),
+                            "transfer",
+                            item_name,
+                            review.get("item_id", ""),
+                            "TG 审核通过 - 转存成功",
+                        )
                         await self.answer_callback_query(cb_id, f"✅ {item_name} 转存成功", show_alert=False)
                     elif status == "already_owned":
                         await update_subscribe_review(review_id, "approved", "✅ TG 批准 - 已在 115 中")
-                        await add_subscribe_log(review.get("rule_id", ""), review.get("rule_name", ""), "transfer", item_name, review.get("item_id", ""), "TG 审核通过 - 资源已在 115 中")
+                        await add_subscribe_log(
+                            review.get("rule_id", ""),
+                            review.get("rule_name", ""),
+                            "transfer",
+                            item_name,
+                            review.get("item_id", ""),
+                            "TG 审核通过 - 资源已在 115 中",
+                        )
                         await self.answer_callback_query(cb_id, f"ℹ️ {item_name} 已在 115 中", show_alert=False)
                     elif status == "not_115":
                         await update_subscribe_review(review_id, "failed", "非 115 网盘资源")
@@ -900,19 +979,20 @@ class TelegramNotifier:
             })
 
         except Exception as e:
-            await update_subscribe_review(review_id, "failed", str(e))
-            await self.answer_callback_query(cb_id, f"❌ 执行失败: {str(e)[:50]}", show_alert=True)
+            err = self._error_message(e)
+            await update_subscribe_review(review_id, "failed", err)
+            await self.answer_callback_query(cb_id, f"❌ 执行失败: {err[:50]}", show_alert=True)
             await self.edit_message_reply_markup(message_id, {
                 "inline_keyboard": [[{"text": "❌ 执行失败", "callback_data": "done"}]]
             })
+        finally:
+            TelegramNotifier._processing_review_ids.discard(review_id)
 
     async def _handle_reject(self, cb_id: str, review_id: int, message_id: int):
         """处理拒绝操作（来自 callback_query 按钮）"""
-        from app.database import list_subscribe_reviews, update_subscribe_review, add_rejected_result
-        reviews = await list_subscribe_reviews("pending")
-        review = next((r for r in reviews if r["id"] == review_id), None)
+        from app.database import update_subscribe_review, add_rejected_result
+        review = await self._load_pending_review(cb_id, review_id, message_id)
         if not review:
-            await self.answer_callback_query(cb_id, "❌ 审核项不存在或已处理", show_alert=True)
             return
         item_name = review.get("item_name", "")
         await update_subscribe_review(review_id, "rejected", "❌ TG 拒绝")
@@ -932,11 +1012,9 @@ class TelegramNotifier:
 
     async def _handle_ignore(self, cb_id: str, review_id: int, message_id: int):
         """处理忽略操作（来自 callback_query 按钮）"""
-        from app.database import list_subscribe_reviews, update_subscribe_review, add_subscribe_ignore
-        reviews = await list_subscribe_reviews("pending")
-        review = next((r for r in reviews if r["id"] == review_id), None)
+        from app.database import update_subscribe_review, add_subscribe_ignore
+        review = await self._load_pending_review(cb_id, review_id, message_id)
         if not review:
-            await self.answer_callback_query(cb_id, "❌ 审核项不存在或已处理", show_alert=True)
             return
         item_name = review.get("item_name", "")
         rule_id = review.get("rule_id", "")
@@ -1019,6 +1097,66 @@ class TelegramNotifier:
         """更新审核状态（辅助方法）"""
         from app.database import update_subscribe_review, add_subscribe_log
         await update_subscribe_review(review_id, status, message)
+
+    async def _handle_done_callback(self, cb_id: str, message_id: int):
+        """已处理按钮的占位回调。"""
+        await self.answer_callback_query(cb_id, "这条审核已经处理过了", show_alert=False)
+
+    @staticmethod
+    def _review_status_button(status: str) -> str:
+        return {
+            "approved": "✅ 已通过",
+            "rejected": "❌ 已拒绝",
+            "ignored": "⏭ 已忽略",
+            "failed": "❌ 已失败",
+            "processing": "⏳ 处理中",
+        }.get(status or "", "⏳ 已处理")
+
+    @staticmethod
+    def _review_status_message(status: str, message: str = "") -> str:
+        base = {
+            "approved": "这条审核已经通过",
+            "rejected": "这条审核已经被拒绝",
+            "ignored": "这条审核已经被忽略",
+            "failed": "这条审核已经失败",
+            "processing": "这条审核正在处理，请稍候",
+        }.get(status or "", "这条审核已经处理过了")
+        return f"{base}: {message[:80]}" if message else base
+
+    @staticmethod
+    def _error_message(exc: Exception) -> str:
+        return str(exc) or exc.__class__.__name__
+
+    async def _load_pending_review(self, cb_id: str, review_id: int, message_id: int) -> dict | None:
+        """按 ID 精确加载待审核项；已处理时给出真实状态，避免误报“不存在”。"""
+        from app.database import get_subscribe_review
+
+        review = await get_subscribe_review(review_id)
+        if not review:
+            await self.answer_callback_query(cb_id, "审核项不存在或已被清空", show_alert=True)
+            await self.edit_message_reply_markup(message_id, {
+                "inline_keyboard": [[{"text": "⏳ 已失效", "callback_data": "done"}]]
+            })
+            return None
+
+        status = review.get("status", "")
+        if status != "pending":
+            message = review.get("message", "")
+            await self.answer_callback_query(
+                cb_id,
+                self._review_status_message(status, message),
+                show_alert=True,
+            )
+            await self.edit_message_reply_markup(message_id, {
+                "inline_keyboard": [[{"text": self._review_status_button(status), "callback_data": "done"}]]
+            })
+            return None
+
+        if review_id in TelegramNotifier._processing_review_ids:
+            await self.answer_callback_query(cb_id, "这条审核正在处理，请稍候", show_alert=True)
+            return None
+
+        return review
 
     async def _handle_batch_smart_approve(self, cb_id: str, message_id: int):
         """智能通过：只批准同时满足 4K + Remux + 字幕 的审核项"""

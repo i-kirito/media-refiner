@@ -39,6 +39,12 @@ async def plans_page(request: Request):
     return HTMLResponse(_render("plans.html", active_page="plans"))
 
 
+@router.get("/gaps", response_class=HTMLResponse)
+async def gaps_page(request: Request):
+    """缺集管理"""
+    return HTMLResponse(_render("gaps.html", active_page="gaps"))
+
+
 @router.get("/config", response_class=HTMLResponse)
 async def config_page(request: Request):
     """配置页面"""

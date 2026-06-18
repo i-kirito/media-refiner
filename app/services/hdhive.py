@@ -1,7 +1,12 @@
 """影巢 HDHive API 服务 - 搜索 + 转存"""
 
 from __future__ import annotations
+
+import asyncio
+from urllib.parse import urlparse
+
 import httpx
+
 from app.config import settings
 
 
@@ -60,6 +65,25 @@ class HDHiveClient:
         if not base.endswith("/api/v1"):
             base = f"{base}/api/v1"
         return f"{base}{path if path.startswith('/') else '/' + path}"
+
+    async def _symedia_search_request(self, payload: dict) -> httpx.Response:
+        """搜索请求是只读操作，允许短重试来兜住代理/上游偶发断连。"""
+        last_error: Exception | None = None
+        url = self._symedia_api_url("/discover/search_resources")
+        for attempt in range(1, 4):
+            try:
+                return await self._client.post(
+                    url,
+                    json=payload,
+                    headers=self._symedia_headers(),
+                )
+            except httpx.TransportError as e:
+                last_error = e
+                print(f"[HDHive] Symedia 搜索连接失败 {attempt}/3: {type(e).__name__}: {e}")
+                if attempt < 3:
+                    await asyncio.sleep(0.6 * attempt)
+        detail = f"{type(last_error).__name__}: {last_error}" if last_error else "未知网络错误"
+        raise RuntimeError(f"Symedia 搜索连接中断，请稍后重试（{detail}）")
 
     async def _get(self, path: str, params: dict = None) -> dict | list | None:
         """GET 请求"""
@@ -197,6 +221,7 @@ class HDHiveClient:
         """解锁资源 - /resources/unlock"""
         if self.mode == "symedia":
             return await self._symedia_transfer(slug)
+        slug = self._normalize_openapi_slug(slug)
         return await self._post("/resources/unlock", {"slug": slug})
 
     async def transfer(self, slug: str, folder_id: str = "") -> dict | None:
@@ -204,6 +229,8 @@ class HDHiveClient:
         转存到 115 - /transfer
         folder_id: 目标文件夹 ID，空则用默认
         """
+        if self.mode != "symedia":
+            slug = self._normalize_openapi_slug(slug)
         data = {"slug": slug}
         if folder_id:
             data["folder_id"] = folder_id
@@ -217,6 +244,7 @@ class HDHiveClient:
         if self.mode == "symedia":
             return await self._symedia_transfer(slug, folder_id)
 
+        slug = self._normalize_openapi_slug(slug)
         unlock_result = await self.unlock(slug)
         if not unlock_result:
             return {"status": "error", "message": "HDHive unlock 返回空", "data": None}
@@ -319,6 +347,18 @@ class HDHiveClient:
     async def close(self):
         await self._client.aclose()
 
+    @staticmethod
+    def _normalize_openapi_slug(value: str) -> str:
+        """OpenAPI 只接受资源 slug；Symedia 搜索结果可能把完整 URL 放在 slug 字段。"""
+        text = (value or "").strip()
+        if not text:
+            return ""
+        if text.startswith("http://") or text.startswith("https://"):
+            path = urlparse(text).path.rstrip("/")
+            if path:
+                return path.rsplit("/", 1)[-1]
+        return text
+
     async def _symedia_search(
         self,
         keyword: str = "",
@@ -340,11 +380,7 @@ class HDHiveClient:
             "tmdb_id": tmdb_id or None,
             "target": "hdhive",
         }
-        resp = await self._client.post(
-            self._symedia_api_url("/discover/search_resources"),
-            json=payload,
-            headers=self._symedia_headers(),
-        )
+        resp = await self._symedia_search_request(payload)
         if resp.status_code in (401, 403):
             raise RuntimeError("Symedia 认证失败：请检查 Token/Cookie")
         resp.raise_for_status()

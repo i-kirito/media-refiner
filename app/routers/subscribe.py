@@ -13,13 +13,15 @@ from app.database import (
     delete_subscribe_rule, add_subscribe_log, list_subscribe_logs,
     get_subscribe_logs_for_item, load_quality_cache,
     add_subscribe_review, list_subscribe_reviews, update_subscribe_review, count_pending_reviews,
-    clear_subscribe_reviews,
+    clear_subscribe_reviews, get_subscribe_review,
     add_subscribe_ignore, remove_subscribe_ignore, list_subscribe_ignores, get_subscribe_ignore_ids,
     has_processed_item, delete_subscribe_history,
 )
+from app.services.emby import EmbyClient
 from app.services.moviepilot import MoviePilotClient
 from app.services.hdhive import HDHiveClient
 from app.services.telegram import TelegramNotifier, _fmt_bytes, _fmt_resolution, _fmt_codec, _fmt_hdr, _fmt_quality
+from app.services.quality_scanner import parse_filename_resolution, parse_filename_codec, parse_filename_video_range
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/subscribe", tags=["订阅洗版"])
@@ -27,51 +29,81 @@ router = APIRouter(prefix="/api/subscribe", tags=["订阅洗版"])
 _run_status = {"running": False, "progress": 0, "current": "", "total": 0, "processed": 0}
 
 
+def _review_already_handled_response(review: dict) -> dict:
+    """审核项已不在 pending 时返回幂等响应，避免前端/旧按钮弹错误。"""
+    status = review.get("status", "")
+    label = {
+        "approved": "已通过",
+        "rejected": "已拒绝",
+        "ignored": "已忽略",
+        "failed": "已失败",
+    }.get(status, "已处理")
+    message = review.get("message") or ""
+    text = f"审核项{label}: {message}" if message else f"审核项{label}"
+    return {
+        "status": "success",
+        "message": text,
+        "data": {"already_handled": True, "review_status": status},
+    }
+
+
+def _normalise_codec(value: str) -> str:
+    """统一编码命名，便于当前文件和搜索结果比较。"""
+    text = (value or "").lower()
+    if re.search(r"\bav1\b", text):
+        return "av1"
+    if re.search(r"\b(?:h[ ._-]?265|x265|hevc)\b", text):
+        return "hevc"
+    if re.search(r"\b(?:h[ ._-]?264|x264|avc)\b", text):
+        return "h264"
+    if re.search(r"\bmpeg[ ._-]?4\b", text):
+        return "mpeg4"
+    if re.search(r"\bmpeg[ ._-]?2\b", text):
+        return "mpeg2"
+    if re.search(r"\bvc[ ._-]?1\b", text):
+        return "vc1"
+    return ""
+
+
+def _normalise_video_range(value: str) -> str:
+    """统一 HDR/SDR 命名。"""
+    text = (value or "").lower()
+    if re.search(r"\b(?:dovi|dolby[ ._-]?vision|dv)\b", text):
+        return "dolby_vision"
+    if re.search(r"\bhdr10\+?\b|\bhdr\b|\bhlg\b", text):
+        return "hdr"
+    if re.search(r"\bsdr\b", text):
+        return "sdr"
+    return ""
+
+
 def _get_video_codec(res: dict) -> str:
     """从搜索结果提取编码信息（hevc / h264 / av1 / etc）"""
     # MP: video_encode (mapped from meta.video_encode)
-    codec = res.get("video_encode") or res.get("video_codec") or ""
+    codec = _normalise_codec(res.get("video_encode") or res.get("video_codec") or "")
     if codec:
-        c = codec.lower()
-        if "h265" in c or "hevc" in c:
-            return "hevc"
-        if "h264" in c or "avc" in c:
-            return "h264"
-        if "av1" in c:
-            return "av1"
-    # HDHive: 从 remark 解析
-    remark = (res.get("remark") or "").lower()
-    if "hevc" in remark or "h265" in remark:
-        return "hevc"
-    if "h264" in remark or "avc" in remark:
-        return "h264"
-    if "av1" in remark:
-        return "av1"
-    return ""
+        return codec
+    # 标题/简介兜底，覆盖 MP 与 HDHive
+    return _normalise_codec(" ".join([
+        str(res.get("title") or ""),
+        str(res.get("name") or ""),
+        str(res.get("description") or ""),
+        str(res.get("remark") or ""),
+    ]))
 
 
 def _get_video_range(res: dict) -> str:
     """从搜索结果提取 HDR 信息（hdr / dolby_vision / sdr）"""
     # 直接字段
-    vr = res.get("video_range") or ""
+    vr = _normalise_video_range(res.get("video_range") or "")
     if vr:
-        r = vr.lower()
-        if "dolby" in r or "dv" in r:
-            return "dolby_vision"
-        if "hdr10" in r or "hdr" in r:
-            return "hdr"
-        if "sdr" in r:
-            return "sdr"
-        return r
-    # HDHive remark 解析
-    remark = (res.get("remark") or "").lower()
-    if "dolby" in remark or "dv" in remark:
-        return "dolby_vision"
-    if "hdr10" in remark or "hdr" in remark:
-        return "hdr"
-    if "sdr" in remark:
-        return "sdr"
-    return ""
+        return vr
+    return _normalise_video_range(" ".join([
+        str(res.get("title") or ""),
+        str(res.get("name") or ""),
+        str(res.get("description") or ""),
+        str(res.get("remark") or ""),
+    ]))
 
 
 def _extract_quality(res: dict) -> str:
@@ -109,6 +141,265 @@ def _extract_height(quality_str: str) -> int:
     if "360" in q:
         return 360
     return 0
+
+
+def _height_from_resolution(resolution: str) -> int:
+    """从 3840x2160 / 2160p / 4K 等字符串提取高度。"""
+    text = (resolution or "").lower()
+    if "x" in text:
+        try:
+            return int(text.rsplit("x", 1)[-1])
+        except ValueError:
+            pass
+    return _extract_height(text)
+
+
+def _resolution_label(width: int, height: int) -> str:
+    if width > 0 and height > 0:
+        return f"{width}x{height}"
+    return ""
+
+
+def _pick_video_stream(sources: list[dict]) -> tuple[dict, dict]:
+    """从 MediaSources 中挑出首个可用视频流。"""
+    for source in sources or []:
+        for stream in (source.get("MediaStreams") or []):
+            if stream.get("Type") == "Video":
+                return source, stream
+    return {}, {}
+
+
+def _is_strm_file(path: str) -> bool:
+    if not path:
+        return False
+    return path.lower().split("?", 1)[0].split("#", 1)[0].endswith(".strm")
+
+
+def _is_bluray_directory(current: dict) -> bool:
+    """识别蓝光目录型电影。"""
+    path = str(current.get("path") or "").lower()
+    if "/bdmv/" in path or path.endswith("/bdmv"):
+        return True
+    return "bluray" in str(current.get("container") or "").lower()
+
+
+async def _hydrate_current_quality_from_emby(current: dict) -> dict:
+    """缺关键质量字段时，尝试从 Emby 实时拉取媒体流信息。"""
+    emby_id = str(current.get("emby_id") or "").strip()
+    if not emby_id:
+        return current
+
+    emby = EmbyClient()
+    try:
+        item = await emby.get_item(
+            emby_id,
+            fields="MediaSources,Path,MediaStreams,ProviderIds,ProductionYear,DateCreated,MediaSourceCount,ChildCount"
+        )
+        playback = await emby.get_playback_info(emby_id)
+    except Exception as exc:
+        logger.warning("[Subscribe] hydrate current quality failed for %s: %s", emby_id, exc)
+        return current
+    finally:
+        await emby.close()
+
+    item = item or {}
+    playback = playback or {}
+    item_sources = item.get("MediaSources") or []
+    playback_sources = playback.get("MediaSources") or []
+    source, video_stream = _pick_video_stream(item_sources)
+    if not source and item_sources:
+        source = item_sources[0]
+    if not video_stream:
+        pb_source, pb_video_stream = _pick_video_stream(playback_sources)
+        if pb_source:
+            source = pb_source
+        elif not source and playback_sources:
+            source = playback_sources[0]
+        video_stream = pb_video_stream
+
+    if source:
+        current["container"] = source.get("Container") or current.get("container") or ""
+        size = source.get("Size")
+        if size:
+            current["size_bytes"] = size
+        source_path = source.get("Path") or item.get("Path") or current.get("path") or ""
+        if source_path:
+            current["path"] = source_path
+
+    if video_stream:
+        width = int(video_stream.get("Width") or 0)
+        height = int(video_stream.get("Height") or 0)
+        if width > 0 and height > 0:
+            current["resolution"] = _resolution_label(width, height)
+        codec = video_stream.get("Codec") or ""
+        if codec:
+            current["video_codec"] = codec
+        video_range = video_stream.get("VideoRange") or ""
+        if video_range:
+            current["video_range"] = video_range
+
+    return current
+
+
+async def _normalise_current_quality_for_display(review: dict) -> dict:
+    """修正审核卡片里的当前质量，兼容旧缓存、STRM 与蓝光目录条目。"""
+    current = dict((review.get("current_quality") or {}))
+    current = await _hydrate_current_quality_from_emby(current)
+
+    path = current.get("path", "")
+    parsed_res = parse_filename_resolution(path)
+    if parsed_res and _is_strm_file(path):
+        current["resolution"] = _resolution_label(*parsed_res)
+    if not current.get("video_codec"):
+        codec = parse_filename_codec(path)
+        if codec:
+            current["video_codec"] = codec
+    if not current.get("video_range"):
+        video_range = parse_filename_video_range(path)
+        if video_range:
+            current["video_range"] = video_range
+    if (not current.get("resolution") or current.get("resolution") == "0x0") and _is_bluray_directory(current):
+        current["resolution"] = "蓝光目录"
+    if not current.get("video_codec") and _is_bluray_directory(current):
+        current["video_codec"] = "原盘目录"
+    if not current.get("size_bytes"):
+        current["size_bytes"] = 0
+    review = dict(review)
+    review["current_quality"] = current
+    return review
+
+
+def _candidate_height(res: dict) -> int:
+    """提取搜索结果高度，字段缺失时回退标题。"""
+    return (
+        _extract_height(_extract_quality(res))
+        or _extract_height(str(res.get("title") or ""))
+        or _extract_height(str(res.get("name") or ""))
+    )
+
+
+def _current_height(item: dict) -> int:
+    """提取当前媒体高度，缓存字段缺失时回退文件名。"""
+    path = item.get("path", "")
+    parsed_res = parse_filename_resolution(path)
+    if parsed_res and _is_strm_file(path):
+        return parsed_res[1]
+    return _height_from_resolution(item.get("resolution", "")) or (parsed_res[1] if parsed_res else 0)
+
+
+def _current_codec(item: dict) -> str:
+    """提取当前媒体编码，兼容 STRM 仅文件名有编码的情况。"""
+    return _normalise_codec(item.get("video_codec", "")) or _normalise_codec(item.get("path", ""))
+
+
+def _current_video_range(item: dict) -> str:
+    """提取当前媒体 HDR/SDR 标记。"""
+    return _normalise_video_range(item.get("video_range", "")) or _normalise_video_range(item.get("path", ""))
+
+
+def _extract_fps(text: str) -> int:
+    """从标题/文件名中提取 fps；未知返回 0。"""
+    m = re.search(r"(?<!\d)([1-9]\d{1,2})\s*(?:fps|帧)", (text or "").lower())
+    if not m:
+        return 0
+    try:
+        return int(m.group(1))
+    except ValueError:
+        return 0
+
+
+def _candidate_fps(res: dict) -> int:
+    """提取搜索结果帧率。"""
+    raw = res.get("_raw") or {}
+    meta = raw.get("meta_info") if isinstance(raw, dict) else {}
+    fps = meta.get("fps") if isinstance(meta, dict) else None
+    try:
+        if fps:
+            return int(fps)
+    except (TypeError, ValueError):
+        pass
+    return _extract_fps(" ".join([
+        str(res.get("title") or ""),
+        str(res.get("name") or ""),
+        str(res.get("description") or ""),
+        str(res.get("remark") or ""),
+    ]))
+
+
+def _current_is_remux(item: dict) -> bool:
+    return "remux" in (item.get("path") or "").lower()
+
+
+def _result_size_bytes(res: dict) -> int:
+    """提取搜索结果大小，支持 MP size 和 HDHive share_size。"""
+    size = res.get("size")
+    if isinstance(size, (int, float)) and size > 0:
+        return int(size)
+    text = str(res.get("share_size") or "")
+    m = re.search(r"(\d+(?:\.\d+)?)\s*(tb|gb|mb|kb)", text, re.I)
+    if not m:
+        return 0
+    value = float(m.group(1))
+    unit = m.group(2).lower()
+    multipliers = {"tb": 1024**4, "gb": 1024**3, "mb": 1024**2, "kb": 1024}
+    return int(value * multipliers.get(unit, 1))
+
+
+def _is_smaller_than_current(item: dict, res: dict) -> bool:
+    """候选资源体积小于当前文件时直接过滤；任一体积未知则不拦截。"""
+    cur_size = int(item.get("size_bytes", 0) or 0)
+    new_size = _result_size_bytes(res)
+    return bool(cur_size and new_size and new_size < cur_size)
+
+
+def _is_meaningful_upgrade(item: dict, res: dict) -> bool:
+    """
+    判断搜索结果是否明确优于当前版本。
+    目标清晰度达标只代表“可用”，这里避免 2160p/H265 → 2160p/H265 这类同质结果进入审核。
+    """
+    if _is_smaller_than_current(item, res):
+        return False
+
+    cur_h = _current_height(item)
+    new_h = _candidate_height(res)
+    if cur_h and new_h:
+        if new_h < cur_h:
+            return False
+        if new_h > cur_h:
+            return True
+    elif new_h and not cur_h:
+        return True
+
+    codec_rank = {"mpeg2": 1, "mpeg4": 1, "vc1": 1, "h264": 2, "hevc": 3, "av1": 4}
+    cur_codec = _current_codec(item)
+    new_codec = _get_video_codec(res)
+    cur_codec_rank = codec_rank.get(cur_codec, 0)
+    new_codec_rank = codec_rank.get(new_codec, 0)
+    if cur_codec and new_codec and new_codec_rank < cur_codec_rank:
+        return False
+    if new_codec and new_codec_rank > cur_codec_rank:
+        return True
+
+    hdr_rank = {"sdr": 1, "hdr": 2, "dolby_vision": 3}
+    cur_hdr = _current_video_range(item) or "sdr"
+    new_hdr = _get_video_range(res)
+    if new_hdr and hdr_rank.get(new_hdr, 0) > hdr_rank.get(cur_hdr, 1):
+        return True
+
+    if _is_remux(res) and not _current_is_remux(item):
+        return True
+
+    cur_size = int(item.get("size_bytes", 0) or 0)
+    new_size = _result_size_bytes(res)
+    if cur_size and new_size and new_size >= cur_size * 1.2:
+        return True
+
+    cur_fps = _extract_fps(item.get("path", ""))
+    new_fps = _candidate_fps(res)
+    if cur_fps and new_fps and new_fps > cur_fps:
+        return True
+
+    return False
 
 
 def _norm_imdb_id(value: str) -> str:
@@ -426,6 +717,7 @@ async def run_subscribe(rule_id: str = ""):
 async def list_reviews(status: str = "pending"):
     """列出审核条目"""
     reviews = await list_subscribe_reviews(status)
+    reviews = [await _normalise_current_quality_for_display(r) for r in reviews]
     return {"status": "success", "data": reviews}
 
 
@@ -439,10 +731,11 @@ async def review_count():
 @router.post("/reviews/{review_id}/approve")
 async def approve_review(review_id: int):
     """批准审核项并执行下载/转存"""
-    reviews = await list_subscribe_reviews("pending")
-    review = next((r for r in reviews if r["id"] == review_id), None)
+    review = await get_subscribe_review(review_id)
     if not review:
-        raise HTTPException(404, "审核项不存在或已处理")
+        raise HTTPException(404, "审核项不存在或已被清空")
+    if review.get("status") != "pending":
+        return _review_already_handled_response(review)
 
     src = review.get("source", "")
     item_name = review.get("item_name", "")
@@ -548,10 +841,11 @@ async def approve_review(review_id: int):
 @router.post("/reviews/{review_id}/reject")
 async def reject_review(review_id: int):
     """拒绝审核项（仅拒绝此次结果，下次仍会搜索但排除此结果）"""
-    reviews = await list_subscribe_reviews("pending")
-    review = next((r for r in reviews if r["id"] == review_id), None)
+    review = await get_subscribe_review(review_id)
     if not review:
-        raise HTTPException(404, "审核项不存在或已处理")
+        raise HTTPException(404, "审核项不存在或已被清空")
+    if review.get("status") != "pending":
+        return _review_already_handled_response(review)
     await update_subscribe_review(review_id, "rejected", "用户拒绝")
 
     # 保存被拒绝的结果标识，下次搜索时排除
@@ -569,10 +863,11 @@ async def reject_review(review_id: int):
 @router.post("/reviews/{review_id}/ignore")
 async def ignore_review(review_id: int):
     """忽略审核项，以后不再扫描此媒体（加入该规则的忽略列表）"""
-    reviews = await list_subscribe_reviews("pending")
-    review = next((r for r in reviews if r["id"] == review_id), None)
+    review = await get_subscribe_review(review_id)
     if not review:
-        raise HTTPException(404, "审核项不存在或已处理")
+        raise HTTPException(404, "审核项不存在或已被清空")
+    if review.get("status") != "pending":
+        return _review_already_handled_response(review)
     rule_id = review.get("rule_id", "")
     item_id = review.get("item_id", "")
     item_name = review.get("item_name", "")
@@ -811,7 +1106,6 @@ async def _run_matching(rules: list[dict]):
                     rejected_ids.add(emby_id)
                 candidates.append(item)
 
-            candidates = candidates[:batch_size]
             if not candidates:
                 await add_subscribe_log(rule_id, rule_name, "skip", message="无符合条件的条目")
                 continue
@@ -826,14 +1120,20 @@ async def _run_matching(rules: list[dict]):
                     if keys:
                         rejected_keys_map[eid] = set(keys)
 
-            _run_status["total"] = len(candidates)
+            target_total = min(batch_size, len(candidates))
+            effective_count = 0
+            _run_status["total"] = target_total
+            _run_status["processed"] = 0
 
             for i, item in enumerate(candidates):
+                if effective_count >= batch_size:
+                    break
+
                 item_id = item.get("emby_id", "")
                 item_name = item.get("name", "")
-                _run_status["current"] = f"{rule_name} → {item_name}"
-                _run_status["progress"] = int((i + 1) / len(candidates) * 100)
-                _run_status["processed"] = i + 1
+                _run_status["current"] = f"{rule_name} → {item_name}（有效 {effective_count}/{target_total}）"
+                _run_status["progress"] = int(effective_count / target_total * 100) if target_total else 0
+                _run_status["processed"] = effective_count
 
                 try:
                     keyword = f"{item_name}"
@@ -921,26 +1221,37 @@ async def _run_matching(rules: list[dict]):
                     # 筛选满足目标的结果
                     better = []
                     # 当前条目分辨率高度（用于"更好"模式）
-                    cur_res = item.get("resolution", "0x0")
-                    cur_h = int(cur_res.split("x")[-1]) if "x" in cur_res else 0
+                    cur_h = _current_height(item)
 
                     # 统计各质量的计数（用于汇总日志）
                     from collections import Counter
                     quality_counts = Counter()
                     skipped = 0
+                    same_quality_skipped = 0
+                    smaller_size_skipped = 0
                     for r in results:
                         q = _extract_quality(r)
                         rh = _extract_height(q)
-                        src = r.get("_source_label", "?")
                         if target_res == "better":
-                            if rh == 0 or rh > cur_h:
-                                better.append(r)
-                                quality_counts[q or "未知"] += 1
+                            target_ok = rh == 0 or rh > cur_h
+                            if target_ok:
+                                if _is_smaller_than_current(item, r):
+                                    smaller_size_skipped += 1
+                                elif _is_meaningful_upgrade(item, r):
+                                    better.append(r)
+                                    quality_counts[q or "未知"] += 1
+                                else:
+                                    same_quality_skipped += 1
                             else:
                                 skipped += 1
                         elif _meets_target(q, target_res):
-                            better.append(r)
-                            quality_counts[q or "未知"] += 1
+                            if _is_smaller_than_current(item, r):
+                                smaller_size_skipped += 1
+                            elif _is_meaningful_upgrade(item, r):
+                                better.append(r)
+                                quality_counts[q or "未知"] += 1
+                            else:
+                                same_quality_skipped += 1
                         else:
                             skipped += 1
 
@@ -948,12 +1259,58 @@ async def _run_matching(rules: list[dict]):
                     if better:
                         summary = ", ".join(f"{q}×{c}" for q, c in quality_counts.most_common(5))
                         total_results = len(results)
-                        logger.info(f"[Subscribe] {item_name}: 纳入 {len(better)}/{total_results} 个结果 ({summary}){f', 跳过 {skipped}' if skipped else ''}")
+                        skip_parts = []
+                        if skipped:
+                            skip_parts.append(f"目标不符 {skipped}")
+                        if same_quality_skipped:
+                            skip_parts.append(f"同质 {same_quality_skipped}")
+                        if smaller_size_skipped:
+                            skip_parts.append(f"体积小 {smaller_size_skipped}")
+                        skip_msg = f"，跳过 {' / '.join(skip_parts)}" if skip_parts else ""
+                        logger.info(
+                            f"[Subscribe] {item_name}: 纳入 {len(better)}/{total_results} "
+                            f"个结果 ({summary}){skip_msg}"
+                        )
                     else:
-                        logger.info(f"[Subscribe] {item_name}: 无符合目标 ({target_res}) 的结果（共 {len(results)} 个结果）")
+                        detail_parts = []
+                        if same_quality_skipped:
+                            detail_parts.append(f"同质 {same_quality_skipped}")
+                        if smaller_size_skipped:
+                            detail_parts.append(f"体积小 {smaller_size_skipped}")
+                        detail = f"，其中{' / '.join(detail_parts)}" if detail_parts else ""
+                        logger.info(
+                            f"[Subscribe] {item_name}: 无明确优于当前版本的目标结果 "
+                            f"({target_res})（共 {len(results)} 个结果{detail}）"
+                        )
 
                     if not better:
-                        await add_subscribe_log(rule_id, rule_name, "no_target", item_name, item_id, f"无 {target_res} 以上结果")
+                        if smaller_size_skipped:
+                            await add_subscribe_log(
+                                rule_id,
+                                rule_name,
+                                "no_upgrade",
+                                item_name,
+                                item_id,
+                                f"有 {target_res} 结果，但体积小于当前文件，已跳过",
+                            )
+                        elif same_quality_skipped:
+                            await add_subscribe_log(
+                                rule_id,
+                                rule_name,
+                                "no_upgrade",
+                                item_name,
+                                item_id,
+                                f"有 {target_res} 结果，但与当前版本同质，已跳过",
+                            )
+                        else:
+                            await add_subscribe_log(
+                                rule_id,
+                                rule_name,
+                                "no_target",
+                                item_name,
+                                item_id,
+                                f"无 {target_res} 以上结果",
+                            )
                         await asyncio.sleep(1.5)
                         continue
 
@@ -1170,7 +1527,12 @@ async def _run_matching(rules: list[dict]):
                                         await tg.send_message(tg_text)
                                     finally:
                                         await tg.close()
+                                effective_count += 1
+                                _run_status["processed"] = effective_count
+                                _run_status["progress"] = int(effective_count / target_total * 100) if target_total else 100
                                 await asyncio.sleep(1.5)
+                                if effective_count >= batch_size:
+                                    break
                                 continue  # 跳过普通审核流程
                             except Exception as e:
                                 logger.warning(f"[Subscribe] 自动审核执行失败: {e}")
@@ -1190,6 +1552,10 @@ async def _run_matching(rules: list[dict]):
                         "message": f"找到 {_extract_quality(best)} 版本，待审核",
                     })
                     await add_subscribe_log(rule_id, rule_name, "pending_review", item_name, item_id, f"已加入审核列表: {_extract_quality(best)}")
+                    if review_id:
+                        effective_count += 1
+                        _run_status["processed"] = effective_count
+                        _run_status["progress"] = int(effective_count / target_total * 100) if target_total else 100
                     # TG 通知 - 新审核项（详细卡片 + 操作按钮）
                     if best and review_id:
                         try:
@@ -1224,6 +1590,8 @@ async def _run_matching(rules: list[dict]):
                     await add_subscribe_log(rule_id, rule_name, "error", item_name, item_id, str(e))
 
                 await asyncio.sleep(2)
+                if effective_count >= batch_size:
+                    break
 
             # 更新规则 last_run
             rule["last_run"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")

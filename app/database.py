@@ -118,6 +118,25 @@ async def init_db():
             );
             CREATE INDEX IF NOT EXISTS idx_rejected_item ON rejected_results(item_id);
             CREATE INDEX IF NOT EXISTS idx_logs_item_action ON subscribe_logs(item_id, action);
+
+            CREATE TABLE IF NOT EXISTS gap_scan_cache (
+                id INTEGER PRIMARY KEY CHECK (id = 1),
+                result_json TEXT NOT NULL DEFAULT '[]',
+                summary_json TEXT NOT NULL DEFAULT '{}',
+                created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+            );
+
+            CREATE TABLE IF NOT EXISTS gap_ignores (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                target_type TEXT NOT NULL,
+                target_id TEXT NOT NULL UNIQUE,
+                series_id TEXT NOT NULL,
+                series_name TEXT NOT NULL,
+                season_number INTEGER DEFAULT 0,
+                episode_number INTEGER DEFAULT 0,
+                ignored_at DATETIME DEFAULT CURRENT_TIMESTAMP
+            );
+            CREATE INDEX IF NOT EXISTS idx_gap_ignores_series ON gap_ignores(series_id);
         """)
         await db.commit()
     finally:
@@ -598,6 +617,25 @@ async def list_subscribe_reviews(status: str = "pending") -> list[dict]:
         await db.close()
 
 
+async def get_subscribe_review(review_id: int) -> dict | None:
+    """按自增 ID 获取单条审核记录，包含已处理记录。"""
+    db = await get_db()
+    try:
+        cursor = await db.execute("SELECT * FROM subscribe_reviews WHERE id = ?", (review_id,))
+        row = await cursor.fetchone()
+        if not row:
+            return None
+        review = dict(row)
+        for key in ("current_quality", "search_result"):
+            try:
+                review[key] = json.loads(review.get(key, "{}"))
+            except Exception:
+                review[key] = {}
+        return review
+    finally:
+        await db.close()
+
+
 async def update_subscribe_review(review_id: int, status: str, message: str = ""):
     """更新审核状态"""
     db = await get_db()
@@ -724,3 +762,213 @@ async def get_subscribe_ignore_ids(rule_id: str) -> set[str]:
         return {r["item_id"] for r in rows}
     finally:
         await db.close()
+
+
+# ─── 缺集管理 ───
+
+def _default_gap_config() -> dict:
+    excluded = [x.strip() for x in settings.exclude_library_ids.split(",") if x.strip()]
+    return {
+        "excluded_libraries": excluded,
+        "cache_interval_hours": 6,
+    }
+
+
+async def get_gap_config() -> dict:
+    """读取缺集管理配置。"""
+    defaults = _default_gap_config()
+    db = await get_db()
+    try:
+        cursor = await db.execute(
+            "SELECT key, value FROM scan_config WHERE key IN ('gaps_excluded_libraries', 'gaps_cache_interval_hours')"
+        )
+        rows = await cursor.fetchall()
+        data = {row["key"]: row["value"] for row in rows}
+
+        excluded_raw = data.get("gaps_excluded_libraries")
+        if excluded_raw:
+            try:
+                excluded = json.loads(excluded_raw)
+                if not isinstance(excluded, list):
+                    excluded = defaults["excluded_libraries"]
+            except json.JSONDecodeError:
+                excluded = [x.strip() for x in excluded_raw.split(",") if x.strip()]
+        else:
+            excluded = defaults["excluded_libraries"]
+
+        try:
+            cache_hours = int(data.get("gaps_cache_interval_hours") or defaults["cache_interval_hours"])
+        except (TypeError, ValueError):
+            cache_hours = defaults["cache_interval_hours"]
+
+        return {
+            "excluded_libraries": [str(x) for x in excluded if str(x).strip()],
+            "cache_interval_hours": max(1, cache_hours),
+        }
+    finally:
+        await db.close()
+
+
+async def save_gap_config(excluded_libraries: list[str], cache_interval_hours: int = 6):
+    """保存缺集管理配置。"""
+    db = await get_db()
+    try:
+        await db.execute(
+            "INSERT OR REPLACE INTO scan_config (key, value) VALUES ('gaps_excluded_libraries', ?)",
+            (json.dumps(excluded_libraries, ensure_ascii=False),),
+        )
+        await db.execute(
+            "INSERT OR REPLACE INTO scan_config (key, value) VALUES ('gaps_cache_interval_hours', ?)",
+            (str(max(1, int(cache_interval_hours or 6))),),
+        )
+        await db.commit()
+    finally:
+        await db.close()
+
+
+async def save_gap_cache(results: list[dict], summary: dict):
+    """保存缺集扫描缓存。"""
+    db = await get_db()
+    try:
+        await db.execute(
+            """
+            INSERT OR REPLACE INTO gap_scan_cache (id, result_json, summary_json, created_at)
+            VALUES (1, ?, ?, datetime('now','localtime'))
+            """,
+            (json.dumps(results, ensure_ascii=False), json.dumps(summary, ensure_ascii=False)),
+        )
+        await db.commit()
+    finally:
+        await db.close()
+
+
+async def load_gap_cache() -> tuple[list[dict], dict, str | None]:
+    """读取缺集扫描缓存。"""
+    db = await get_db()
+    try:
+        cursor = await db.execute("SELECT result_json, summary_json, created_at FROM gap_scan_cache WHERE id = 1")
+        row = await cursor.fetchone()
+        if not row:
+            return [], {}, None
+        try:
+            results = json.loads(row["result_json"] or "[]")
+        except json.JSONDecodeError:
+            results = []
+        try:
+            summary = json.loads(row["summary_json"] or "{}")
+        except json.JSONDecodeError:
+            summary = {}
+        return results if isinstance(results, list) else [], summary if isinstance(summary, dict) else {}, row["created_at"]
+    finally:
+        await db.close()
+
+
+def make_gap_episode_target_id(series_id: str, season_number: int, episode_number: int) -> str:
+    """生成单集忽略 ID。"""
+    return f"{series_id}:S{int(season_number):02d}E{int(episode_number):02d}"
+
+
+async def add_gap_ignore_series(series_id: str, series_name: str):
+    """忽略整部剧集。"""
+    db = await get_db()
+    try:
+        await db.execute(
+            """
+            INSERT OR REPLACE INTO gap_ignores
+            (target_type, target_id, series_id, series_name, season_number, episode_number, ignored_at)
+            VALUES ('series', ?, ?, ?, 0, 0, datetime('now','localtime'))
+            """,
+            (series_id, series_id, series_name),
+        )
+        await db.commit()
+    finally:
+        await db.close()
+
+
+async def add_gap_ignore_episode(series_id: str, series_name: str, season_number: int, episode_number: int):
+    """忽略单集缺口。"""
+    target_id = make_gap_episode_target_id(series_id, season_number, episode_number)
+    db = await get_db()
+    try:
+        await db.execute(
+            """
+            INSERT OR REPLACE INTO gap_ignores
+            (target_type, target_id, series_id, series_name, season_number, episode_number, ignored_at)
+            VALUES ('episode', ?, ?, ?, ?, ?, datetime('now','localtime'))
+            """,
+            (target_id, series_id, series_name, int(season_number), int(episode_number)),
+        )
+        await db.commit()
+    finally:
+        await db.close()
+
+
+async def list_gap_ignores(target_type: str = "") -> list[dict]:
+    """列出缺集忽略项。"""
+    db = await get_db()
+    try:
+        if target_type:
+            cursor = await db.execute(
+                "SELECT * FROM gap_ignores WHERE target_type = ? ORDER BY ignored_at DESC",
+                (target_type,),
+            )
+        else:
+            cursor = await db.execute("SELECT * FROM gap_ignores ORDER BY ignored_at DESC")
+        rows = await cursor.fetchall()
+        items = []
+        for row in rows:
+            item = dict(row)
+            item["type"] = item.pop("target_type", "")
+            item["target"] = item["type"]
+            item["row_id"] = item.get("id")
+            item["id"] = item.get("target_id", "")
+            if item["type"] == "series":
+                item["label"] = item.get("series_name", "")
+            else:
+                item["label"] = f"{item.get('series_name', '')} S{int(item.get('season_number') or 0):02d}E{int(item.get('episode_number') or 0):02d}"
+            items.append(item)
+        return items
+    finally:
+        await db.close()
+
+
+async def get_gap_ignore_targets() -> set[str]:
+    """获取缺集忽略目标 ID 集合。"""
+    db = await get_db()
+    try:
+        cursor = await db.execute("SELECT target_id FROM gap_ignores")
+        rows = await cursor.fetchall()
+        return {row["target_id"] for row in rows}
+    finally:
+        await db.close()
+
+
+async def remove_gap_ignore(target_id: str, target_type: str = "") -> bool:
+    """移除缺集忽略项，兼容目标 ID 和行 ID。"""
+    db = await get_db()
+    try:
+        params: list = [target_id]
+        where = "target_id = ?"
+        try:
+            row_id = int(target_id)
+            where = f"({where} OR id = ?)"
+            params.append(row_id)
+        except (TypeError, ValueError):
+            pass
+        if target_type:
+            where = f"{where} AND target_type = ?"
+            params.append(target_type)
+        cursor = await db.execute(f"DELETE FROM gap_ignores WHERE {where}", params)
+        await db.commit()
+        return cursor.rowcount > 0
+    finally:
+        await db.close()
+
+
+async def remove_gap_ignores(target_ids: list[str]) -> int:
+    """批量移除缺集忽略项。"""
+    deleted = 0
+    for target_id in target_ids:
+        if await remove_gap_ignore(str(target_id)):
+            deleted += 1
+    return deleted
