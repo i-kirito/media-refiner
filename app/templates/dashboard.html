@@ -392,12 +392,12 @@ body.dashboard-resizing, body.dashboard-resizing * { cursor: ns-resize !importan
             </div>
         </div>
         <div class="dashboard-actions">
-            <button onclick="ScanManager.start()" id="btn-start-scan" class="dashboard-action-btn px-3 sm:px-5 py-2 text-xs sm:text-sm font-bold text-white bg-brand-500 hover:bg-brand-600 rounded-xl shadow-md transition active:scale-95 flex items-center gap-1.5 sm:gap-2">
-                <i class="fa-solid fa-rotate" id="scan-icon"></i> <span class="hidden sm:inline">开始质量扫描</span><span class="sm:hidden">扫描</span>
+            <button onclick="ScanManager.start()" id="btn-start-scan" title="立即刷新质量扫描数据" aria-label="立即刷新质量扫描数据" class="dashboard-action-btn px-3 sm:px-5 py-2 text-xs sm:text-sm font-bold text-white bg-brand-500 hover:bg-brand-600 rounded-xl shadow-md transition active:scale-95 flex items-center gap-1.5 sm:gap-2">
+                <i class="fa-solid fa-rotate" id="scan-icon"></i> <span class="hidden sm:inline">立即扫描</span><span class="sm:hidden">扫描</span>
             </button>
             <!-- 定时扫描按钮 -->
             <div class="relative" id="scheduleWrapper">
-                <button onclick="toggleScheduleDropdown()" id="scheduleToggle" class="dashboard-action-btn flex items-center gap-1.5 sm:gap-2 px-3 sm:px-4 py-2 text-xs font-bold rounded-xl transition-all active:scale-95 shadow-sm border border-gray-200 dark:border-white/5 bg-gray-100 dark:bg-apple-hoverDark text-gray-500 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-[#3A3A3C]">
+                <button onclick="toggleScheduleDropdown()" id="scheduleToggle" title="设置定时扫描间隔" aria-label="设置定时扫描间隔" class="dashboard-action-btn flex items-center gap-1.5 sm:gap-2 px-3 sm:px-4 py-2 text-xs font-bold rounded-xl transition-all active:scale-95 shadow-sm border border-gray-200 dark:border-white/5 bg-gray-100 dark:bg-apple-hoverDark text-gray-500 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-[#3A3A3C]">
                     <i class="fa-regular fa-clock"></i>
                     <span id="scheduleText" class="hidden sm:inline">定时扫描</span>
                     <i class="fa-solid fa-chevron-down text-[10px] ml-0.5 opacity-60"></i>
@@ -755,10 +755,14 @@ function _updateScheduleUI(hours) {
     const text = document.getElementById('scheduleText');
     if (hours > 0) {
         btn.className = 'dashboard-action-btn flex items-center gap-2 px-4 py-2 text-xs font-bold rounded-xl transition-all active:scale-95 shadow-sm border border-brand-500 bg-brand-500 text-white hover:bg-brand-600';
-        text.textContent = `每 ${hours}h`;
+        text.textContent = `定时 ${hours}h`;
+        btn.title = `定时扫描：每 ${hours} 小时自动执行`;
+        btn.setAttribute('aria-label', `定时扫描：每 ${hours} 小时自动执行`);
     } else {
         btn.className = 'dashboard-action-btn flex items-center gap-2 px-4 py-2 text-xs font-bold rounded-xl transition-all active:scale-95 shadow-sm border border-gray-200 dark:border-white/5 bg-gray-100 dark:bg-apple-hoverDark text-gray-500 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-[#3A3A3C]';
         text.textContent = '定时扫描';
+        btn.title = '设置定时扫描间隔';
+        btn.setAttribute('aria-label', '设置定时扫描间隔');
     }
     document.querySelectorAll('#scheduleDropdown button[data-schedule-hour]').forEach(el => {
         const h = parseInt(el.dataset.scheduleHour);
@@ -792,7 +796,7 @@ async function setSchedule(hours) {
             _scheduleHours = hours;
             _updateScheduleUI(hours);
             showToast(hours > 0 ? 'success' : 'info',
-                hours > 0 ? `定时扫描已开启，每 ${hours} 小时执行一次` : '定时扫描已关闭');
+                hours > 0 ? `已设置定时扫描：每 ${hours} 小时` : '定时扫描已关闭');
         } else {
             showToast('error', json.message || '设置失败');
         }
