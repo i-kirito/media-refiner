@@ -462,6 +462,48 @@ function unlockedResourceBadgeClass(item) {
     return 'bg-amber-400 text-gray-950 shadow-sm shadow-amber-400/30 ring-1 ring-amber-200/60';
 }
 
+function gapResolverAction(item) {
+    if (item?.ui_transfer_pending === true) {
+        return {
+            label: '正在转存',
+            icon: 'fa-solid fa-circle-notch fa-spin',
+            className: 'bg-sky-500 text-white shadow-sm shadow-sky-500/30 cursor-wait',
+            disabled: true,
+        };
+    }
+    const status = gapTransferStatus(item);
+    if (status === 'already_owned') {
+        return {
+            label: '已在 115',
+            icon: 'fa-solid fa-circle-check',
+            className: 'bg-sky-500 text-white shadow-sm shadow-sky-500/30 cursor-default opacity-95',
+            disabled: true,
+        };
+    }
+    if (isGapTransferDone(item)) {
+        return {
+            label: '已转存',
+            icon: 'fa-solid fa-circle-check',
+            className: 'bg-emerald-600 text-white shadow-sm shadow-emerald-500/30 cursor-default opacity-95',
+            disabled: true,
+        };
+    }
+    if (isUnlockedResource(item)) {
+        return {
+            label: '转存',
+            icon: 'fa-solid fa-cloud-arrow-up',
+            className: 'bg-cyan-500 hover:bg-cyan-600 text-white shadow-sm shadow-cyan-500/25 active:scale-95',
+            disabled: false,
+        };
+    }
+    return {
+        label: '解锁转存',
+        icon: 'fa-solid fa-cloud-arrow-down',
+        className: 'bg-emerald-500 hover:bg-emerald-600 text-white shadow-sm shadow-emerald-500/25 active:scale-95',
+        disabled: false,
+    };
+}
+
 function episodeLabel(season, episode) {
     return `S${String(season).padStart(2, '0')}E${String(episode).padStart(2, '0')}`;
 }
@@ -881,7 +923,7 @@ function renderResolverItem(item, idx) {
         const unlockBadge = unlocked
             ? `<span class="px-2.5 py-1 rounded-full ${unlockedResourceBadgeClass(item)}">${escapeHtml(unlockedResourceLabel(item))}</span>`
             : (item.unlock_points !== undefined ? `<span>点数 ${escapeHtml(item.unlock_points)}</span>` : '');
-        const actionLabel = unlocked ? (isGapTransferDone(item) ? '再次转存' : '转存') : '解锁转存';
+        const action = gapResolverAction(item);
         return `
             <div class="rounded-2xl border border-gray-200 dark:border-white/10 bg-gray-50/80 dark:bg-white/5 p-3">
                 <div class="flex flex-col sm:flex-row sm:items-start justify-between gap-3">
@@ -904,8 +946,8 @@ function renderResolverItem(item, idx) {
                             ${item.unlock_count !== undefined ? `<span class="px-2 py-0.5 rounded-full bg-white dark:bg-white/5 border border-gray-200 dark:border-white/10">解锁 ${escapeHtml(item.unlock_count)}</span>` : ''}
                         </div>
                     </div>
-                    <button onclick="downloadResolverResult(${idx})" class="px-3 py-2 rounded-xl bg-emerald-500 hover:bg-emerald-600 text-white text-xs font-black shrink-0">
-                        <i class="fa-solid fa-cloud-arrow-down mr-1"></i>${actionLabel}
+                    <button onclick="downloadResolverResult(${idx})" ${action.disabled ? 'disabled' : ''} aria-busy="${item?.ui_transfer_pending === true ? 'true' : 'false'}" class="px-3 py-2 rounded-xl text-xs font-black shrink-0 transition-colors ${action.className}">
+                        <i class="${action.icon} mr-1"></i>${action.label}
                     </button>
                 </div>
             </div>
@@ -937,6 +979,8 @@ async function downloadResolverResult(idx) {
     const result = gapState.resolverResults[idx];
     const pending = gapState.pending;
     if (!result || !pending) return;
+    result.ui_transfer_pending = true;
+    renderGapResolver();
     try {
         const path = gapState.source === 'hdhive' ? '/api/gaps/download_hdhive' : '/api/gaps/download';
         const data = await gapApi(path, {
@@ -960,11 +1004,14 @@ async function downloadResolverResult(idx) {
                 result.ui_transfer_marked = true;
                 result.ui_transfer_status = status || 'transferred';
                 result.status = status;
-                renderGapResolver();
             }
         }
+        result.ui_transfer_pending = false;
+        renderGapResolver();
         showToast('success', gapState.source === 'hdhive' ? '转存已提交' : '下载已提交', data.message || '');
     } catch (e) {
+        result.ui_transfer_pending = false;
+        renderGapResolver();
         showToast('error', '提交失败', e.message);
     }
 }
