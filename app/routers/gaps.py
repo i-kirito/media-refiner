@@ -57,6 +57,7 @@ _scan_status: dict[str, Any] = {
 
 GAP_TRANSFER_SUCCESS_STATUSES = {"transferred", "already_owned", "submitted", "success", "ok"}
 GAP_RESOURCE_MARK_STATUSES = GAP_TRANSFER_SUCCESS_STATUSES | {"unlocked"}
+OFFICIAL_GROUP_KEYWORDS = ("官组", "官方", "hiveweb", "hhweb", "hdsweb")
 
 
 class GapConfigPayload(BaseModel):
@@ -127,6 +128,58 @@ def _safe_int(value: Any, default: int = 0) -> int:
         return int(value)
     except (TypeError, ValueError):
         return default
+
+
+def _gap_result_size_bytes(result: dict) -> int:
+    """提取影巢/MP 资源体积，用于缺集候选排序。"""
+    size = result.get("size")
+    if isinstance(size, (int, float)) and size > 0:
+        return int(size)
+    text = " ".join(
+        str(result.get(key) or "")
+        for key in ("share_size", "size_text", "title", "name", "remark")
+    )
+    match = re.search(r"(\d+(?:\.\d+)?)\s*(tib|tb|gib|gb|g|mib|mb|m|kib|kb|k)", text, re.I)
+    if not match:
+        return 0
+    value = float(match.group(1))
+    unit = match.group(2).lower()
+    multipliers = {
+        "tib": 1024**4,
+        "tb": 1024**4,
+        "gib": 1024**3,
+        "gb": 1024**3,
+        "g": 1024**3,
+        "mib": 1024**2,
+        "mb": 1024**2,
+        "m": 1024**2,
+        "kib": 1024,
+        "kb": 1024,
+        "k": 1024,
+    }
+    return int(value * multipliers.get(unit, 1))
+
+
+def _is_official_gap_resource(result: dict) -> bool:
+    """识别影巢官组资源，优先使用 API 字段，兼容备注/组名兜底。"""
+    for key in ("is_official", "official", "ui_is_official"):
+        value = result.get(key)
+        if isinstance(value, bool):
+            return value
+        if str(value).strip().lower() in {"1", "true", "yes", "y"}:
+            return True
+    text_parts: list[str] = []
+    for key in ("group", "release_group", "sharer", "title", "name", "remark"):
+        value = result.get(key)
+        if value:
+            text_parts.append(str(value))
+    source = result.get("source")
+    if isinstance(source, list):
+        text_parts.extend(str(x) for x in source if x)
+    elif source:
+        text_parts.append(str(source))
+    text = " ".join(text_parts).lower()
+    return any(keyword in text for keyword in OFFICIAL_GROUP_KEYWORDS)
 
 
 def _telegram_code(value: Any, limit: int = 120) -> str:
@@ -1074,9 +1127,14 @@ async def search_gap_hdhive(payload: GapSearchPayload):
         episodes = sorted({_safe_int(x, 0) for x in payload.episodes if _safe_int(x, 0) > 0})
         annotated = [_annotate_gap_match(item, payload.season, episodes) for item in _dedupe_results(results)]
         annotated = await _apply_gap_transfer_marks(annotated)
+        for item in annotated:
+            item["ui_size_bytes"] = _gap_result_size_bytes(item)
+            item["ui_is_official"] = _is_official_gap_resource(item)
         annotated.sort(
             key=lambda x: (
                 -float(x.get("ui_episode_match_ratio") or 0),
+                0 if x.get("ui_is_official") else 1,
+                -_safe_int(x.get("ui_size_bytes"), 0),
                 0 if x.get("is_unlocked") else 1,
                 _safe_int(x.get("unlock_points"), 9999),
             )

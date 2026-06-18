@@ -874,6 +874,9 @@ function renderResolverItem(item, idx) {
         const src = joinList(item.source);
         const subtitle = [joinList(item.subtitle_language), joinList(item.subtitle_type)].filter(Boolean).join(' · ');
         const validate = [item.validate_message || '', shortDateTime(item.last_validated_at)].filter(Boolean).join(' · ');
+        const officialBadge = (item.ui_is_official || item.is_official)
+            ? '<span class="px-2 py-0.5 rounded-full bg-amber-100 text-amber-700 dark:bg-amber-400/15 dark:text-amber-300 border border-amber-200/70 dark:border-amber-300/20">官组</span>'
+            : '';
         const unlocked = isUnlockedResource(item);
         const unlockBadge = unlocked
             ? `<span class="px-2.5 py-1 rounded-full ${unlockedResourceBadgeClass(item)}">${escapeHtml(unlockedResourceLabel(item))}</span>`
@@ -888,6 +891,7 @@ function renderResolverItem(item, idx) {
                             ${item.share_size ? `<span>${escapeHtml(item.share_size)}</span>` : ''}
                             ${res ? `<span>${escapeHtml(res)}</span>` : ''}
                             ${src ? `<span>${escapeHtml(src)}</span>` : ''}
+                            ${officialBadge}
                             <span class="${matchClass} px-2 py-0.5 rounded-full">匹配 ${escapeHtml(item.ui_episode_match_text || '0/0')}</span>
                             ${unlockBadge}
                         </div>
