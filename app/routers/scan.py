@@ -158,6 +158,11 @@ async def start_scan(request: ScanRequest | None = Body(None)):
     excluded = list(set(configured_excluded + request_excluded))
 
     # 在后台执行扫描，不阻塞响应
+    scanner._is_scanning = True
+    scanner._progress = 0
+    scanner._total = 0
+    scanner._scanned = 0
+    scanner._current_item = "扫描任务排队中..."
     _scan_task = asyncio.create_task(_run_scan(excluded))
     return {"status": "success", "data": {"is_scanning": True, "message": "扫描已启动"}}
 
