@@ -431,7 +431,7 @@ function isGapTransferSuccess(status) {
 }
 
 function isGapTransferDone(item) {
-    return ['transferred', 'already_owned', 'submitted', 'success', 'ok'].includes(gapTransferStatus(item));
+    return ['transferred', 'already_owned', 'submitted', 'success', 'ok', 'unlocked'].includes(gapTransferStatus(item));
 }
 
 function isUnlockedResource(item) {
