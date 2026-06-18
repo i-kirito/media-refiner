@@ -334,9 +334,14 @@ const gapState = {
     resolverResults: [],
     pollTimer: null,
 };
+const GAP_EMBY_EXTERNAL_BASE = 'https://emby.ikirito.de';
+let gapEmbyServerId = '';
 
 document.addEventListener('DOMContentLoaded', () => {
     loadGapStatus();
+    loadGapEmbyConfig().then(() => {
+        if (gapState.items.length) renderGapResults();
+    });
 });
 
 async function gapApi(url, options = {}) {
@@ -369,6 +374,23 @@ function escapeHtml(value) {
 
 function jsString(value) {
     return JSON.stringify(String(value ?? '')).replace(/</g, '\\u003c');
+}
+
+async function loadGapEmbyConfig() {
+    try {
+        const data = await gapApi(`/api/config?_t=${Date.now()}`);
+        gapEmbyServerId = data.data?.emby_server_id || '';
+    } catch (e) {
+        gapEmbyServerId = '';
+    }
+}
+
+function embySeriesUrl(seriesId) {
+    const id = String(seriesId || '').trim();
+    if (!id) return '';
+    const query = new URLSearchParams({ id });
+    if (gapEmbyServerId) query.set('serverId', gapEmbyServerId);
+    return `${GAP_EMBY_EXTERNAL_BASE}/web/index.html#!/item?${query.toString()}`;
 }
 
 function formatBytes(value) {
@@ -640,6 +662,10 @@ function renderGapEpisodeButtons(series, group, episodeCsv) {
 
 function renderGapCard(series) {
     const missingCount = (series.gaps || []).length;
+    const embyUrl = embySeriesUrl(series.series_id);
+    const titleHtml = embyUrl
+        ? `<a href="${escapeHtml(embyUrl)}" target="_blank" rel="noopener" title="在 Emby 外网打开" class="inline text-[15px] leading-tight font-black text-gray-900 dark:text-white break-words min-w-0 hover:text-brand-500 dark:hover:text-brand-400 transition-colors">${escapeHtml(series.series_name)}<i class="fa-solid fa-arrow-up-right-from-square ml-1 text-[10px] text-gray-400"></i></a>`
+        : `<span class="text-[15px] leading-tight font-black text-gray-900 dark:text-white break-words min-w-0">${escapeHtml(series.series_name)}</span>`;
     const groups = groupGaps(series);
     const groupHtml = groups.map(group => {
         const episodeCsv = group.episodes.map(ep => Number(ep.episode || 0)).filter(Boolean).join(',');
@@ -667,7 +693,7 @@ function renderGapCard(series) {
                     <div class="min-w-0 flex-1 flex flex-col justify-between gap-2">
                         <div class="min-w-0">
                             <div class="flex items-start justify-between gap-2">
-                                <h2 class="text-[15px] leading-tight font-black text-gray-900 dark:text-white break-words min-w-0">${escapeHtml(series.series_name)}</h2>
+                                <h2 class="min-w-0">${titleHtml}</h2>
                                 <span title="缺 ${missingCount} 集" class="px-2 py-1 rounded-lg bg-cyan-50 dark:bg-cyan-500/10 text-cyan-600 dark:text-cyan-300 text-[11px] leading-none font-black shrink-0">${missingCount}</span>
                             </div>
                             <div class="gap-series-meta mt-1.5 text-[10px] font-bold text-gray-500 dark:text-gray-400">
