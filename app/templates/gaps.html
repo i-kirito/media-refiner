@@ -26,6 +26,126 @@
     .gap-modal-panel {
         max-height: min(86vh, 760px);
     }
+    .gap-resolver-list {
+        display: flex;
+        flex-direction: column;
+        gap: 10px;
+    }
+    .gap-resolver-card {
+        border: 1px solid #e5e7eb;
+        background: #fff;
+        border-radius: 16px;
+        padding: 12px;
+    }
+    html.dark .gap-resolver-card {
+        border-color: rgba(255, 255, 255, 0.1);
+        background: rgba(255, 255, 255, 0.04);
+    }
+    .gap-resolver-main {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) auto;
+        gap: 12px;
+        align-items: start;
+    }
+    .gap-resolver-title {
+        color: #111827;
+        font-size: 14px;
+        font-weight: 900;
+        line-height: 1.45;
+        overflow-wrap: anywhere;
+    }
+    html.dark .gap-resolver-title {
+        color: #fff;
+    }
+    .gap-resolver-pills {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 6px;
+        margin-top: 8px;
+        min-width: 0;
+    }
+    .gap-resolver-pill,
+    .gap-resolver-status {
+        display: inline-flex;
+        align-items: center;
+        gap: 5px;
+        max-width: 100%;
+        min-height: 24px;
+        padding: 3px 8px;
+        border-radius: 999px;
+        font-size: 11px;
+        font-weight: 800;
+        line-height: 1.2;
+        white-space: nowrap;
+    }
+    .gap-resolver-pill {
+        border: 1px solid #e5e7eb;
+        background: #f9fafb;
+        color: #4b5563;
+    }
+    html.dark .gap-resolver-pill {
+        border-color: rgba(255, 255, 255, 0.1);
+        background: rgba(255, 255, 255, 0.05);
+        color: #d1d5db;
+    }
+    .gap-resolver-pill-match {
+        border-color: #bbf7d0;
+        background: #f0fdf4;
+        color: #15803d;
+    }
+    html.dark .gap-resolver-pill-match {
+        border-color: rgba(74, 222, 128, 0.22);
+        background: rgba(34, 197, 94, 0.12);
+        color: #86efac;
+    }
+    .gap-resolver-pill-muted {
+        color: #6b7280;
+    }
+    html.dark .gap-resolver-pill-muted {
+        color: #9ca3af;
+    }
+    .gap-resolver-pill-official {
+        border-color: #fde68a;
+        background: #fffbeb;
+        color: #b45309;
+    }
+    html.dark .gap-resolver-pill-official {
+        border-color: rgba(251, 191, 36, 0.24);
+        background: rgba(251, 191, 36, 0.12);
+        color: #fcd34d;
+    }
+    .gap-resolver-remark {
+        max-height: 64px;
+        margin-top: 10px;
+        overflow-y: auto;
+        border: 1px solid #e5e7eb;
+        border-radius: 12px;
+        background: #f9fafb;
+        padding: 8px 10px;
+        color: #374151;
+        font-size: 12px;
+        font-weight: 700;
+        line-height: 1.55;
+        overflow-wrap: anywhere;
+    }
+    html.dark .gap-resolver-remark {
+        border-color: rgba(255, 255, 255, 0.1);
+        background: rgba(0, 0, 0, 0.18);
+        color: #e5e7eb;
+    }
+    .gap-resolver-action {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        gap: 6px;
+        min-width: 104px;
+        min-height: 36px;
+        border-radius: 12px;
+        padding: 8px 12px;
+        font-size: 12px;
+        font-weight: 900;
+        line-height: 1;
+    }
     .gap-toolbar {
         position: sticky;
         top: 72px;
@@ -162,6 +282,8 @@
         .gap-poster { width: 56px; height: 84px; }
         .gap-library-header { align-items: flex-start; flex-direction: column; }
         .gap-library-switch { margin-left: -2px; margin-right: -2px; padding-left: 2px; padding-right: 2px; }
+        .gap-resolver-main { grid-template-columns: minmax(0, 1fr); }
+        .gap-resolver-action { width: 100%; }
     }
 </style>
 {% endblock %}
@@ -926,7 +1048,7 @@ function renderGapResolver() {
         body.innerHTML = '<div class="text-center py-16 text-gray-400 font-bold">没有搜索结果</div>';
         return;
     }
-    body.innerHTML = `<div class="space-y-2">${results.map((item, idx) => renderResolverItem(item, idx)).join('')}</div>`;
+    body.innerHTML = `<div class="gap-resolver-list">${results.map((item, idx) => renderResolverItem(item, idx)).join('')}</div>`;
 }
 
 function joinList(value) {
@@ -943,65 +1065,65 @@ function renderResolverItem(item, idx) {
     const isHdhive = gapState.source === 'hdhive';
     const title = item.title || item.name || '未知资源';
     const ratio = Number(item.ui_episode_match_ratio || 0);
-    const matchClass = ratio > 0 ? 'text-green-600 dark:text-green-400 bg-green-50 dark:bg-green-500/10' : 'text-gray-500 bg-gray-100 dark:bg-white/5';
+    const matchClass = ratio > 0 ? 'gap-resolver-pill-match' : 'gap-resolver-pill-muted';
     if (isHdhive) {
         const res = joinList(item.video_resolution);
         const src = joinList(item.source);
         const subtitle = [joinList(item.subtitle_language), joinList(item.subtitle_type)].filter(Boolean).join(' · ');
         const validate = [item.validate_message || '', shortDateTime(item.last_validated_at)].filter(Boolean).join(' · ');
         const officialBadge = (item.ui_is_official || item.is_official)
-            ? '<span class="px-2 py-0.5 rounded-full bg-amber-100 text-amber-700 dark:bg-amber-400/15 dark:text-amber-300 border border-amber-200/70 dark:border-amber-300/20">官组</span>'
+            ? '<span class="gap-resolver-pill gap-resolver-pill-official">官组</span>'
             : '';
         const unlocked = isUnlockedResource(item);
         const unlockBadge = unlocked
-            ? `<span class="px-2.5 py-1 rounded-full ${unlockedResourceBadgeClass(item)}">${escapeHtml(unlockedResourceLabel(item))}</span>`
-            : (item.unlock_points !== undefined ? `<span>点数 ${escapeHtml(item.unlock_points)}</span>` : '');
+            ? `<span class="gap-resolver-status ${unlockedResourceBadgeClass(item)}">${escapeHtml(unlockedResourceLabel(item))}</span>`
+            : (item.unlock_points !== undefined ? `<span class="gap-resolver-pill">点数 ${escapeHtml(item.unlock_points)}</span>` : '');
         const action = gapResolverAction(item);
         return `
-            <div class="rounded-2xl border border-gray-200 dark:border-white/10 bg-gray-50/80 dark:bg-white/5 p-3">
-                <div class="flex flex-col sm:flex-row sm:items-start justify-between gap-3">
+            <div class="gap-resolver-card">
+                <div class="gap-resolver-main">
                     <div class="min-w-0 flex-1">
-                        <div class="font-black text-sm text-gray-900 dark:text-white break-words">${escapeHtml(title)}</div>
-                        <div class="flex flex-wrap gap-2 mt-2 text-[11px] font-bold text-gray-500 dark:text-gray-400">
-                            ${item.share_size ? `<span>${escapeHtml(item.share_size)}</span>` : ''}
-                            ${res ? `<span>${escapeHtml(res)}</span>` : ''}
-                            ${src ? `<span>${escapeHtml(src)}</span>` : ''}
+                        <div class="gap-resolver-title">${escapeHtml(title)}</div>
+                        <div class="gap-resolver-pills">
+                            ${item.share_size ? `<span class="gap-resolver-pill">${escapeHtml(item.share_size)}</span>` : ''}
+                            ${res ? `<span class="gap-resolver-pill">${escapeHtml(res)}</span>` : ''}
+                            ${src ? `<span class="gap-resolver-pill">${escapeHtml(src)}</span>` : ''}
                             ${officialBadge}
-                            <span class="${matchClass} px-2 py-0.5 rounded-full">匹配 ${escapeHtml(item.ui_episode_match_text || '0/0')}</span>
+                            <span class="gap-resolver-pill ${matchClass}">匹配 ${escapeHtml(item.ui_episode_match_text || '0/0')}</span>
                             ${unlockBadge}
                         </div>
-                        ${item.remark ? `<div class="mt-2 rounded-xl bg-white/70 dark:bg-black/15 border border-gray-200/70 dark:border-white/10 px-3 py-2 text-[12px] leading-relaxed font-semibold text-gray-700 dark:text-gray-200 break-words">${escapeHtml(item.remark)}</div>` : ''}
-                        <div class="flex flex-wrap gap-1.5 mt-2 text-[10px] font-bold text-gray-500 dark:text-gray-400">
-                            ${subtitle ? `<span class="px-2 py-0.5 rounded-full bg-white dark:bg-white/5 border border-gray-200 dark:border-white/10">字幕 ${escapeHtml(subtitle)}</span>` : ''}
-                            ${item.pan_type ? `<span class="px-2 py-0.5 rounded-full bg-white dark:bg-white/5 border border-gray-200 dark:border-white/10">网盘 ${escapeHtml(item.pan_type)}</span>` : ''}
-                            ${item.sharer ? `<span class="px-2 py-0.5 rounded-full bg-white dark:bg-white/5 border border-gray-200 dark:border-white/10">分享 ${escapeHtml(item.sharer)}</span>` : ''}
-                            ${validate ? `<span class="px-2 py-0.5 rounded-full bg-white dark:bg-white/5 border border-gray-200 dark:border-white/10">${escapeHtml(validate)}</span>` : ''}
-                            ${item.unlock_count !== undefined ? `<span class="px-2 py-0.5 rounded-full bg-white dark:bg-white/5 border border-gray-200 dark:border-white/10">解锁 ${escapeHtml(item.unlock_count)}</span>` : ''}
+                        ${item.remark ? `<div class="gap-resolver-remark mac-scrollbar">${escapeHtml(item.remark)}</div>` : ''}
+                        <div class="gap-resolver-pills">
+                            ${subtitle ? `<span class="gap-resolver-pill">字幕 ${escapeHtml(subtitle)}</span>` : ''}
+                            ${item.pan_type ? `<span class="gap-resolver-pill">网盘 ${escapeHtml(item.pan_type)}</span>` : ''}
+                            ${item.sharer ? `<span class="gap-resolver-pill">分享 ${escapeHtml(item.sharer)}</span>` : ''}
+                            ${validate ? `<span class="gap-resolver-pill">${escapeHtml(validate)}</span>` : ''}
+                            ${item.unlock_count !== undefined ? `<span class="gap-resolver-pill">解锁 ${escapeHtml(item.unlock_count)}</span>` : ''}
                         </div>
                     </div>
-                    <button onclick="downloadResolverResult(${idx})" ${action.disabled ? 'disabled' : ''} aria-busy="${item?.ui_transfer_pending === true ? 'true' : 'false'}" class="px-3 py-2 rounded-xl text-xs font-black shrink-0 transition-colors ${action.className}">
-                        <i class="${action.icon} mr-1"></i>${action.label}
+                    <button onclick="downloadResolverResult(${idx})" ${action.disabled ? 'disabled' : ''} aria-busy="${item?.ui_transfer_pending === true ? 'true' : 'false'}" class="gap-resolver-action shrink-0 transition-colors ${action.className}">
+                        <i class="${action.icon}"></i><span>${action.label}</span>
                     </button>
                 </div>
             </div>
         `;
     }
     return `
-        <div class="rounded-2xl border border-gray-200 dark:border-white/10 bg-gray-50/80 dark:bg-white/5 p-3">
-            <div class="flex flex-col sm:flex-row sm:items-start justify-between gap-3">
+        <div class="gap-resolver-card">
+            <div class="gap-resolver-main">
                 <div class="min-w-0">
-                    <div class="font-black text-sm text-gray-900 dark:text-white break-words">${escapeHtml(title)}</div>
-                    <div class="flex flex-wrap gap-2 mt-2 text-[11px] font-bold text-gray-500 dark:text-gray-400">
-                        ${item.site_name ? `<span>${escapeHtml(item.site_name)}</span>` : ''}
-                        <span>${formatBytes(item.size)}</span>
-                        ${item.resolution ? `<span>${escapeHtml(item.resolution)}</span>` : ''}
-                        ${item.video_encode ? `<span>${escapeHtml(item.video_encode)}</span>` : ''}
-                        <span class="${matchClass} px-2 py-0.5 rounded-full">匹配 ${escapeHtml(item.ui_episode_match_text || '0/0')}</span>
-                        ${item.seeders !== undefined ? `<span>${escapeHtml(item.seeders)} 做种</span>` : ''}
+                    <div class="gap-resolver-title">${escapeHtml(title)}</div>
+                    <div class="gap-resolver-pills">
+                        ${item.site_name ? `<span class="gap-resolver-pill">${escapeHtml(item.site_name)}</span>` : ''}
+                        <span class="gap-resolver-pill">${formatBytes(item.size)}</span>
+                        ${item.resolution ? `<span class="gap-resolver-pill">${escapeHtml(item.resolution)}</span>` : ''}
+                        ${item.video_encode ? `<span class="gap-resolver-pill">${escapeHtml(item.video_encode)}</span>` : ''}
+                        <span class="gap-resolver-pill ${matchClass}">匹配 ${escapeHtml(item.ui_episode_match_text || '0/0')}</span>
+                        ${item.seeders !== undefined ? `<span class="gap-resolver-pill">${escapeHtml(item.seeders)} 做种</span>` : ''}
                     </div>
                 </div>
-                <button onclick="downloadResolverResult(${idx})" class="px-3 py-2 rounded-xl bg-brand-500 hover:bg-brand-600 text-white text-xs font-black shrink-0">
-                    <i class="fa-solid fa-download mr-1"></i>下载
+                <button onclick="downloadResolverResult(${idx})" class="gap-resolver-action bg-brand-500 hover:bg-brand-600 text-white shrink-0">
+                    <i class="fa-solid fa-download"></i><span>下载</span>
                 </button>
             </div>
         </div>
