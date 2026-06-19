@@ -905,22 +905,62 @@ async def delete_item_history(item_id: str):
 async def list_history():
     """合并历史记录：subscribe_reviews（非 pending）+ subscribe_logs（已完成动作，按 item_id 去重取最新）"""
     from app.database import list_subscribe_logs as db_list_logs
+    from app.database import list_recent_gap_transfer_marks
 
     reviews = await list_subscribe_reviews("history")
     logs = await db_list_logs(limit=500)
+    gap_marks = await list_recent_gap_transfer_marks(limit=200)
 
-    # 过滤已完成动作，按 item_id 去重（保留最新一条）
-    completed_actions = {"download", "transfer", "auto_approved"}
+    # 过滤已完成动作，按 item_id 去重（保留最新一条）。
+    # 缺集管理需要同时展示同一季集的解锁和下载动作，因此按 item_id + action 去重。
+    completed_actions = {"download", "transfer", "auto_approved", "unlock"}
     seen_items = set()
     unique_logs = []
     for log in reversed(logs):  # reversed 使最后一条（最新）覆盖前面
-        if log.get("action") in completed_actions and log.get("item_id"):
+        action = log.get("action")
+        is_gap_log = log.get("rule_name") == "缺集管理"
+        if (action in completed_actions or (is_gap_log and action == "error")) and log.get("item_id"):
             iid = log["item_id"]
-            if iid not in seen_items:
-                seen_items.add(iid)
+            dedupe_key = f"{iid}|{action}" if is_gap_log else iid
+            if dedupe_key not in seen_items:
+                seen_items.add(dedupe_key)
                 unique_logs.append(log)
     # unique_logs 现在是按 created_at 升序，反转一下让最新的在前面
     unique_logs.reverse()
+
+    existing_gap_keys = {f"{log.get('item_id')}|{log.get('action')}" for log in unique_logs if log.get("rule_name") == "缺集管理"}
+    for mark in gap_marks:
+        season = int(mark.get("season_number") or 0)
+        episodes = mark.get("episodes") or []
+        episode_key = "-".join(f"{int(ep):02d}" for ep in episodes if str(ep).isdigit()) or "all"
+        base_key = f"gap:name:{(mark.get('series_name') or '').strip().lower() or 'unknown'}:s{season:02d}:{episode_key}"
+        status = str(mark.get("status") or "").strip().lower()
+        action = "unlock" if status == "unlocked" else "transfer"
+        dedupe_key = f"{base_key}|{action}"
+        if dedupe_key in existing_gap_keys:
+            continue
+        title = (mark.get("series_name") or mark.get("resource_title") or "缺集资源").strip() or "缺集资源"
+        episode_text = f"S{season:02d}"
+        if episodes:
+            episode_text = f"S{season:02d} " + ", ".join(f"E{int(ep):02d}" for ep in episodes[:12] if str(ep).isdigit())
+        status_text = {
+            "unlocked": "已解锁",
+            "transferred": "已转存",
+            "already_owned": "已在 115",
+            "submitted": "已提交转存",
+            "success": "已转存",
+            "ok": "已转存",
+        }.get(status, status or "已处理")
+        unique_logs.append({
+            "id": f"gap-mark:{mark.get('resource_key')}",
+            "rule_id": "",
+            "rule_name": "缺集管理",
+            "action": action,
+            "item_name": f"{title} {episode_text}".strip(),
+            "item_id": base_key,
+            "message": f"缺集影巢处理 · {episode_text} · 资源: {mark.get('resource_title') or title} · 状态: {status_text}",
+            "created_at": mark.get("updated_at"),
+        })
 
     return {
         "status": "success",

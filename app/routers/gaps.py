@@ -17,6 +17,7 @@ from pydantic import BaseModel, Field
 
 from app.config import settings
 from app.database import (
+    add_subscribe_log,
     add_gap_ignore_episode,
     add_gap_ignore_series,
     get_gap_config,
@@ -110,6 +111,7 @@ class GapDownloadPayload(BaseModel):
     tmdb_id: int | str = 0
     folder_id: str = ""
     slug: str = ""
+    series_id: str = ""
     series_name: str = ""
     season: int = 0
     episodes: list[int] = Field(default_factory=list)
@@ -214,6 +216,53 @@ def _gap_result_title(result: dict) -> str:
     )
 
 
+def _gap_history_item_id(payload: GapDownloadPayload) -> str:
+    series_id = str(payload.series_id or "").strip()
+    tmdb_id = _safe_int(payload.tmdb_id, 0)
+    if series_id:
+        target = f"series:{series_id}"
+    elif tmdb_id > 0:
+        target = f"tmdb:{tmdb_id}"
+    else:
+        name = re.sub(r"[^a-z0-9]+", "-", str(payload.series_name or "").strip().lower()).strip("-")
+        target = f"name:{name or 'unknown'}"
+    episodes = sorted({_safe_int(ep, 0) for ep in payload.episodes if _safe_int(ep, 0) > 0})
+    episode_key = "-".join(f"{episode:02d}" for episode in episodes) or "all"
+    return f"gap:{target}:s{_safe_int(payload.season, 0):02d}:{episode_key}"
+
+
+def _gap_history_item_name(payload: GapDownloadPayload) -> str:
+    series_name = str(payload.series_name or "").strip() or "缺集资源"
+    episode_text = _gap_episode_summary(_safe_int(payload.season, 0), payload.episodes)
+    return f"{series_name} {episode_text}".strip()
+
+
+def _gap_transfer_status_label(status: str) -> str:
+    return {
+        "unlocked": "已解锁",
+        "transferred": "已转存",
+        "already_owned": "已在 115",
+        "submitted": "已提交转存",
+        "success": "已转存",
+        "ok": "已转存",
+        "not_115": "非 115 资源",
+        "password_error": "分享密码异常",
+        "error": "失败",
+    }.get(str(status or "").strip().lower(), str(status or "").strip() or "未知状态")
+
+
+def _gap_history_message(prefix: str, payload: GapDownloadPayload, result: dict | None = None, status: str = "", extra: str = "") -> str:
+    parts = [prefix, _gap_episode_summary(_safe_int(payload.season, 0), payload.episodes)]
+    title = _gap_result_title(result or payload.result or {})
+    if title:
+        parts.append(f"资源: {title}")
+    if status:
+        parts.append(f"状态: {_gap_transfer_status_label(status)}")
+    if extra:
+        parts.append(extra)
+    return " · ".join(part for part in parts if part)
+
+
 def _normalize_gap_resource_key(value: Any) -> str:
     text = str(value or "").strip()
     if not text:
@@ -274,6 +323,7 @@ async def _notify_gap_hdhive_transfer(payload: GapDownloadPayload, resp: dict, o
         status = _gap_transfer_status(resp)
         icon = "✅" if ok and status == "transferred" else ("ℹ️" if ok else "❌")
         status_label = {
+            "unlocked": "已解锁",
             "transferred": "转存成功",
             "already_owned": "已在 115 中",
             "submitted": "已提交转存",
@@ -1288,12 +1338,25 @@ async def download_gap_moviepilot(payload: GapDownloadPayload):
         return _error("缺少下载链接")
 
     mp = MoviePilotClient()
+    item_id = _gap_history_item_id(payload)
+    item_name = _gap_history_item_name(payload)
     try:
         resp = await mp.download(torrent_url, torrent_info=result, tmdbid=_safe_int(payload.tmdb_id, 0))
         if resp and resp.get("success"):
+            await add_subscribe_log(
+                "",
+                "缺集管理",
+                "download",
+                item_name,
+                item_id,
+                _gap_history_message("缺集 MP 下载", payload, result=result),
+            )
             return _success(resp, "MoviePilot 下载已提交")
-        return _error(resp.get("message", "MoviePilot 下载提交失败") if resp else "MoviePilot API 无响应", resp)
+        message = resp.get("message", "MoviePilot 下载提交失败") if resp else "MoviePilot API 无响应"
+        await add_subscribe_log("", "缺集管理", "error", item_name, item_id, f"缺集 MP 下载失败: {message}")
+        return _error(message, resp)
     except Exception as e:
+        await add_subscribe_log("", "缺集管理", "error", item_name, item_id, f"缺集 MP 下载异常: {e}")
         return _error(f"MoviePilot 下载异常: {e}")
     finally:
         await mp.close()
@@ -1307,21 +1370,26 @@ async def download_gap_hdhive(payload: GapDownloadPayload):
         return _error("缺少影巢资源标识")
 
     hd = HDHiveClient()
+    item_id = _gap_history_item_id(payload)
+    item_name = _gap_history_item_name(payload)
     try:
         folder_id = payload.folder_id or settings.cloud115_folder_id or "0"
         resp = await hd.unlock_and_transfer(slug, folder_id)
         if not resp:
             await _notify_gap_hdhive_transfer(payload, {}, False, "影巢 API 无响应")
+            await add_subscribe_log("", "缺集管理", "error", item_name, item_id, "缺集影巢转存失败: 影巢 API 无响应")
             return _error("影巢 API 无响应")
         status = _gap_transfer_status(resp)
         if status == "error":
             message = resp.get("message", "影巢转存失败")
             await _notify_gap_hdhive_transfer(payload, resp, False, message)
+            await add_subscribe_log("", "缺集管理", "error", item_name, item_id, f"缺集影巢转存失败: {message}")
             return _error(message, resp)
-        ok = _is_gap_transfer_success_status(status)
+        ok = _is_gap_resource_mark_status(status)
         if not ok:
             message = resp.get("message") or f"影巢转存未完成: {status or '未知状态'}"
             await _notify_gap_hdhive_transfer(payload, resp, False, message)
+            await add_subscribe_log("", "缺集管理", "error", item_name, item_id, f"缺集影巢转存失败: {message}")
             return _error(message, resp)
         if ok:
             result_for_key = dict(result)
@@ -1337,10 +1405,20 @@ async def download_gap_hdhive(payload: GapDownloadPayload):
                 status=status,
                 response=resp,
             )
+            await add_subscribe_log(
+                "",
+                "缺集管理",
+                "unlock" if status == "unlocked" else "transfer",
+                item_name,
+                item_id,
+                _gap_history_message("缺集影巢处理", payload, result=result, status=status),
+            )
         await _notify_gap_hdhive_transfer(payload, resp, ok, resp.get("message", ""))
-        return _success(resp, resp.get("message") or "影巢转存已提交")
+        default_message = "影巢资源已解锁" if status == "unlocked" else "影巢转存已提交"
+        return _success(resp, resp.get("message") or default_message)
     except Exception as e:
         await _notify_gap_hdhive_transfer(payload, {"status": "error"}, False, f"影巢转存异常: {e}")
+        await add_subscribe_log("", "缺集管理", "error", item_name, item_id, f"缺集影巢转存异常: {e}")
         return _error(f"影巢转存异常: {e}")
     finally:
         await hd.close()

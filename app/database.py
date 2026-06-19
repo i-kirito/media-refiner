@@ -951,6 +951,32 @@ async def list_gap_transfer_marks(resource_keys: list[str]) -> dict[str, dict]:
         await db.close()
 
 
+async def list_recent_gap_transfer_marks(limit: int = 50) -> list[dict]:
+    """读取最近的缺集解锁/转存记录，供历史页补充展示。"""
+    db = await get_db()
+    try:
+        cursor = await db.execute(
+            "SELECT * FROM gap_transfer_marks ORDER BY updated_at DESC LIMIT ?",
+            (limit,),
+        )
+        rows = await cursor.fetchall()
+        items: list[dict] = []
+        for row in rows:
+            item = dict(row)
+            try:
+                item["episodes"] = json.loads(item.get("episode_numbers_json") or "[]")
+            except json.JSONDecodeError:
+                item["episodes"] = []
+            try:
+                item["response"] = json.loads(item.get("response_json") or "{}")
+            except json.JSONDecodeError:
+                item["response"] = {}
+            items.append(item)
+        return items
+    finally:
+        await db.close()
+
+
 def make_gap_episode_target_id(series_id: str, season_number: int, episode_number: int) -> str:
     """生成单集忽略 ID。"""
     return f"{series_id}:S{int(season_number):02d}E{int(episode_number):02d}"

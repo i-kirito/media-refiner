@@ -15,11 +15,12 @@
     </div>
 
     <!-- 分类 Tab -->
-    <div class="flex gap-1 mb-5 p-1 bg-gray-100 dark:bg-gray-800/80 rounded-2xl w-fit">
+    <div class="flex flex-wrap gap-1 mb-5 p-1 bg-gray-100 dark:bg-gray-800/80 rounded-2xl w-fit max-w-full">
         <button id="tabAll" onclick="switchTab('all')" class="tab-btn px-4 py-2 text-[13px] font-bold rounded-xl transition-all">全部 <span id="cntAll" class="ml-1 text-[11px] opacity-60">0</span></button>
         <button id="tabSuccess" onclick="switchTab('success')" class="tab-btn px-4 py-2 text-[13px] font-bold rounded-xl transition-all">✅ 成功 <span id="cntSuccess" class="ml-1 text-[11px] opacity-60">0</span></button>
         <button id="tabFail" onclick="switchTab('fail')" class="tab-btn px-4 py-2 text-[13px] font-bold rounded-xl transition-all">❌ 失败 <span id="cntFail" class="ml-1 text-[11px] opacity-60">0</span></button>
-        <button id="tabReject" onclick="switchTab('reject')" class="tab-btn px-4 py-2 text-[13px] font-bold rounded-xl transition-all">⏭ 拒绝 <span id="cntReject" class="ml-1 text-[11px] opacity-60">0</span></button>
+        <button id="tabReject" onclick="switchTab('reject')" class="tab-btn px-4 py-2 text-[13px] font-bold rounded-xl transition-all">🚫 拒绝 <span id="cntReject" class="ml-1 text-[11px] opacity-60">0</span></button>
+        <button id="tabIgnore" onclick="switchTab('ignore')" class="tab-btn px-4 py-2 text-[13px] font-bold rounded-xl transition-all">⏭ 忽略 <span id="cntIgnore" class="ml-1 text-[11px] opacity-60">0</span></button>
     </div>
 
     <!-- 加载中 -->
@@ -61,7 +62,7 @@
     let _allItems = [];
     let _currentTab = 'all';
 
-    document.addEventListener('DOMContentLoaded', loadHistory);
+    document.addEventListener('DOMContentLoaded', () => loadHistory());
 
     function escapeHtml(text) {
         if (!text) return '';
@@ -84,9 +85,10 @@
 
     function getItemCategory(item) {
         const s = item.status;
-        if (s === 'approved' || s === 'auto_approved' || s === 'download' || s === 'transfer') return 'success';
+        if (s === 'approved' || s === 'auto_approved' || s === 'download' || s === 'transfer' || s === 'unlock') return 'success';
         if (s === 'failed' || s === 'error') return 'fail';
-        if (s === 'rejected' || s === 'ignored') return 'reject';
+        if (s === 'rejected') return 'reject';
+        if (s === 'ignored') return 'ignore';
         return 'other';
     }
 
@@ -122,11 +124,34 @@
         }
 
         container.innerHTML = filtered.map(item => {
-            const isSuccess = item.status === 'approved' || item.status === 'auto_approved' || item.status === 'download' || item.status === 'transfer';
-            const iconColor = isSuccess ? 'text-green-500 bg-green-50 dark:bg-green-900/20' : item.status === 'failed' ? 'text-red-500 bg-red-50 dark:bg-red-900/20' : 'text-gray-400 bg-gray-100 dark:bg-gray-800';
-            const badgeColor = isSuccess ? 'bg-green-100 text-green-700 dark:bg-green-900/40 dark:text-green-300' : item.status === 'failed' ? 'bg-red-100 text-red-700 dark:bg-red-900/40 dark:text-red-300' : 'bg-gray-200 text-gray-600 dark:bg-gray-700 dark:text-gray-400';
-            const icon = isSuccess ? 'fa-check-circle' : item.status === 'failed' ? 'fa-circle-xmark' : 'fa-ban';
-            const canRestore = !!item.itemId;
+            const category = getItemCategory(item);
+            const isSuccess = item.status === 'approved' || item.status === 'auto_approved' || item.status === 'download' || item.status === 'transfer' || item.status === 'unlock';
+            const iconColor = isSuccess
+                ? 'text-green-500 bg-green-50 dark:bg-green-900/20'
+                : category === 'fail'
+                    ? 'text-red-500 bg-red-50 dark:bg-red-900/20'
+                    : category === 'reject'
+                        ? 'text-rose-500 bg-rose-50 dark:bg-rose-900/20'
+                        : category === 'ignore'
+                            ? 'text-gray-400 bg-gray-100 dark:bg-gray-800'
+                            : 'text-gray-400 bg-gray-100 dark:bg-gray-800';
+            const badgeColor = isSuccess
+                ? 'bg-green-100 text-green-700 dark:bg-green-900/40 dark:text-green-300'
+                : category === 'fail'
+                    ? 'bg-red-100 text-red-700 dark:bg-red-900/40 dark:text-red-300'
+                    : category === 'reject'
+                        ? 'bg-rose-100 text-rose-700 dark:bg-rose-900/40 dark:text-rose-300'
+                        : category === 'ignore'
+                            ? 'bg-gray-200 text-gray-600 dark:bg-gray-700 dark:text-gray-400'
+                            : 'bg-gray-200 text-gray-600 dark:bg-gray-700 dark:text-gray-400';
+            const icon = isSuccess
+                ? 'fa-check-circle'
+                : category === 'fail'
+                    ? 'fa-circle-xmark'
+                    : category === 'reject'
+                        ? 'fa-circle-minus'
+                        : 'fa-ban';
+            const canRestore = !!item.itemId && item.sourceKind !== 'gapLog';
             return `
                 <div class="apple-card p-4 sm:p-5">
                     <div class="flex items-center gap-4">
@@ -137,7 +162,8 @@
                             <div class="flex items-center gap-2 flex-wrap">
                                 <span class="font-bold text-gray-900 dark:text-white">${escapeHtml(item.name)}</span>
                                 <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-[11px] font-bold ${badgeColor}">${escapeHtml(item.statusLabel)}</span>
-                                ${item.itemId ? `<span class="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold ${item.actionType === 'MP 下载' ? 'bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-300' : item.actionType === 'plan' ? 'bg-gray-100 text-gray-600 dark:bg-gray-700 dark:text-gray-400' : 'bg-purple-100 text-purple-700 dark:bg-purple-900/40 dark:text-purple-300'}">${escapeHtml(item.actionType)}</span>` : ''}
+                                ${item.itemId ? `<span class="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold ${item.actionType === 'MP 下载' || item.actionType === '缺集下载' ? 'bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-300' : item.actionType === '影巢解锁' ? 'bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300' : item.actionType === 'plan' ? 'bg-gray-100 text-gray-600 dark:bg-gray-700 dark:text-gray-400' : 'bg-purple-100 text-purple-700 dark:bg-purple-900/40 dark:text-purple-300'}">${escapeHtml(item.actionType)}</span>` : ''}
+                                ${item.sourceKind === 'gapLog' ? `<span class="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300">缺集管理</span>` : ''}
                             </div>
                             ${item.ruleName ? `<div class="text-[11px] text-gray-400 mt-0.5">${escapeHtml(item.ruleName)}</div>` : ''}
                             <div class="flex items-center gap-2 mt-1 text-xs text-gray-500">
@@ -160,7 +186,7 @@
         return items.filter(i => getItemCategory(i) === cat).length;
     }
 
-    async function loadHistory() {
+    async function loadHistory({ activeTab = 'all' } = {}) {
         const container = document.getElementById('historyContainer');
         const loading = document.getElementById('loading');
 
@@ -226,21 +252,25 @@
             // subscribe_logs（去重）
             const logs = historyJson?.data?.logs || [];
             logs.forEach(log => {
+                const isGapLog = log.rule_name === '缺集管理';
                 const actionLabel = {
                     'auto_approved': '自动通过',
-                    'download': '下载完成',
+                    'download': isGapLog ? '下载已提交' : '下载完成',
+                    'unlock': '已解锁',
                     'transfer': '转存完成',
                     'error': '失败',
                 };
                 const label = actionLabel[log.action] || log.action;
                 const brief = (log.message || '').split('\n')[0].substring(0, 120);
                 const actionType = log.action === 'download'
-                    ? 'MP 下载'
-                    : log.action === 'auto_approved'
-                        ? '自动洗版'
-                        : log.action === 'error'
-                            ? '失败'
-                            : '影巢转存';
+                    ? (isGapLog ? '缺集下载' : 'MP 下载')
+                    : log.action === 'unlock'
+                        ? '影巢解锁'
+                        : log.action === 'auto_approved'
+                            ? '自动洗版'
+                            : log.action === 'error'
+                                ? '失败'
+                                : '影巢转存';
                 _allItems.push({
                     name: log.item_name || '未知',
                     status: log.action,
@@ -250,7 +280,7 @@
                     time: formatDate(log.created_at) || '',
                     itemId: log.item_id,
                     ruleName: log.rule_name || '',
-                    sourceKind: 'log',
+                    sourceKind: isGapLog ? 'gapLog' : 'log',
                 });
             });
 
@@ -273,9 +303,10 @@
             document.getElementById('cntSuccess').textContent = countByCategory(_allItems, 'success');
             document.getElementById('cntFail').textContent = countByCategory(_allItems, 'fail');
             document.getElementById('cntReject').textContent = countByCategory(_allItems, 'reject');
+            document.getElementById('cntIgnore').textContent = countByCategory(_allItems, 'ignore');
 
             loading.classList.add('hidden');
-            switchTab('all');
+            switchTab(activeTab);
         } catch(e) {
             loading.classList.add('hidden');
             container.innerHTML = `<div class="apple-card p-12 text-center text-red-400">加载失败: ${e.message}</div>`;
@@ -306,9 +337,10 @@
             const resp = await fetch(`/api/subscribe/history/${_pendingDeleteId}`, { method: 'DELETE' });
             const json = await resp.json();
             if (resp.ok && json.status === 'success') {
+                const activeTab = _currentTab;
                 closeConfirmModal();
                 // 重新加载列表
-                await loadHistory();
+                await loadHistory({ activeTab });
             } else {
                 alert('删除失败: ' + (json.message || resp.statusText));
             }
