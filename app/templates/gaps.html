@@ -343,6 +343,7 @@ const gapState = {
     source: '',
     resolverResults: [],
     pollTimer: null,
+    refreshingSeries: new Set(),
 };
 const GAP_EMBY_EXTERNAL_BASE = 'https://emby.ikirito.de';
 let gapEmbyServerId = '';
@@ -578,6 +579,32 @@ async function startGapScan() {
     }
 }
 
+async function refreshGapSeries(seriesId) {
+    const id = String(seriesId || '').trim();
+    if (!id || gapState.refreshingSeries.has(id)) return;
+    gapState.refreshingSeries.add(id);
+    renderGapResults();
+    try {
+        const data = await gapApi('/api/gaps/refresh_series', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({ series_id: id }),
+        });
+        const status = (data.data || {}).status;
+        if (status) {
+            applyGapStatus(status);
+        } else {
+            await loadGapStatus();
+        }
+        showToast('success', '刷新完成', data.message || '该剧缺集数据已更新');
+    } catch (e) {
+        showToast('error', '刷新失败', e.message);
+    } finally {
+        gapState.refreshingSeries.delete(id);
+        renderGapResults();
+    }
+}
+
 function startGapPolling() {
     if (gapState.pollTimer) clearInterval(gapState.pollTimer);
     gapState.pollTimer = setInterval(async () => {
@@ -751,6 +778,7 @@ function renderGapEpisodeButtons(series, group, episodeCsv) {
 function renderGapCard(series) {
     const missingCount = (series.gaps || []).length;
     const embyUrl = embySeriesUrl(series.series_id);
+    const isRefreshing = gapState.refreshingSeries.has(String(series.series_id || ''));
     const titleHtml = embyUrl
         ? `<a href="${escapeHtml(embyUrl)}" target="_blank" rel="noopener" title="在 Emby 外网打开" class="inline text-[15px] leading-tight font-black text-gray-900 dark:text-white break-words min-w-0 hover:text-brand-500 dark:hover:text-brand-400 transition-colors">${escapeHtml(series.series_name)}<i class="fa-solid fa-arrow-up-right-from-square ml-1 text-[10px] text-gray-400"></i></a>`
         : `<span class="text-[15px] leading-tight font-black text-gray-900 dark:text-white break-words min-w-0">${escapeHtml(series.series_name)}</span>`;
@@ -782,7 +810,12 @@ function renderGapCard(series) {
                         <div class="min-w-0">
                             <div class="flex items-start justify-between gap-2">
                                 <h2 class="min-w-0">${titleHtml}</h2>
-                                <span title="缺 ${missingCount} 集" class="px-2 py-1 rounded-lg bg-cyan-50 dark:bg-cyan-500/10 text-cyan-600 dark:text-cyan-300 text-[11px] leading-none font-black shrink-0">${missingCount}</span>
+                                <div class="flex items-center gap-1.5 shrink-0">
+                                    <button title="刷新此剧缺集数据" ${isRefreshing ? 'disabled' : ''} onclick='refreshGapSeries(${jsString(series.series_id)})' class="w-7 h-7 rounded-lg ${isRefreshing ? 'bg-brand-500 text-white cursor-wait' : 'bg-brand-50 dark:bg-brand-500/10 text-brand-500 hover:bg-brand-100 dark:hover:bg-brand-500/20'} transition-colors">
+                                        <i class="fa-solid fa-rotate ${isRefreshing ? 'fa-spin' : ''} text-[11px]"></i>
+                                    </button>
+                                    <span title="缺 ${missingCount} 集" class="px-2 py-1 rounded-lg bg-cyan-50 dark:bg-cyan-500/10 text-cyan-600 dark:text-cyan-300 text-[11px] leading-none font-black">${missingCount}</span>
+                                </div>
                             </div>
                             <div class="gap-series-meta mt-1.5 text-[10px] font-bold text-gray-500 dark:text-gray-400">
                                 <span class="gap-missing-meta inline-flex items-center rounded-md bg-cyan-50 dark:bg-cyan-500/10 border border-cyan-100 dark:border-cyan-500/20 px-1.5 text-cyan-600 dark:text-cyan-300"><i class="fa-solid fa-triangle-exclamation mr-1 text-[9px]"></i>缺 ${missingCount} 集</span>

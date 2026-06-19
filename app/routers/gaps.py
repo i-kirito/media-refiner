@@ -40,6 +40,7 @@ logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/gaps", tags=["缺集管理"])
 
 _scan_task: asyncio.Task | None = None
+_refresh_lock = asyncio.Lock()
 _scan_status: dict[str, Any] = {
     "is_scanning": False,
     "progress": 0,
@@ -81,6 +82,10 @@ class GapSeriesPayload(BaseModel):
     series_name: str = ""
     series_ids: list[str] = Field(default_factory=list)
     items: list[dict] = Field(default_factory=list)
+
+
+class GapRefreshSeriesPayload(BaseModel):
+    series_id: str
 
 
 class GapUnignorePayload(BaseModel):
@@ -310,6 +315,21 @@ def _episode_target_id(series_id: str, season: int, episode: int) -> str:
 
 def _gap_library_label(lib: dict) -> str:
     return lib.get("Name") or str(lib.get("ItemId") or "") or "剧集库"
+
+
+def _gap_summary_from_results(results: list[dict], base: dict | None = None) -> dict:
+    """根据当前缓存结果重算缺集统计，保留全库扫描相关计数。"""
+    base = dict(base or {})
+    library_ids = {str(item.get("library_id") or "") for item in results if item.get("library_id")}
+    library_names = {str(item.get("library_name") or "") for item in results if item.get("library_name")}
+    fallback_library_count = len(library_ids or library_names)
+    return {
+        **base,
+        "series_count": len(results),
+        "gap_count": sum(_safe_int(item.get("gap_count"), 0) for item in results),
+        "library_count": _safe_int(base.get("library_count"), fallback_library_count),
+        "processed": _safe_int(base.get("processed"), len(results)),
+    }
 
 
 def _is_missing_emby_episode(item: dict) -> bool:
@@ -710,6 +730,79 @@ async def gap_scan_progress():
     """获取缺集扫描进度和最新结果。"""
     await _hydrate_cache_if_needed()
     return _success(dict(_scan_status))
+
+
+@router.post("/refresh_series")
+async def refresh_gap_series(payload: GapRefreshSeriesPayload):
+    """只刷新单部剧集的缺集缓存，避免等待下一次全库扫描。"""
+    series_id = str(payload.series_id or "").strip()
+    if not series_id:
+        return _error("缺少剧集 ID")
+    if _scan_status.get("is_scanning"):
+        return _error("全库缺集扫描正在运行，请稍后再刷新单部剧集")
+
+    async with _refresh_lock:
+        await _hydrate_cache_if_needed()
+        results = [dict(item) for item in (_scan_status.get("results") or [])]
+        base_summary = dict(_scan_status.get("summary") or {})
+        existing = next((item for item in results if str(item.get("series_id") or "") == series_id), None)
+
+        emby = EmbyClient()
+        try:
+            series = await emby.get_item(
+                series_id,
+                fields=(
+                    "ProviderIds,Overview,ImageTags,ProductionYear,PremiereDate,"
+                    "ChildCount,RecursiveItemCount,Path,ParentId"
+                ),
+            )
+            if not series:
+                return _error("Emby 中找不到该剧集，可能已被删除或权限不足")
+
+            libraries = await emby.get_libraries()
+            library_map = {str(lib.get("ItemId") or ""): lib for lib in libraries}
+            library_id = str((existing or {}).get("library_id") or series.get("ParentId") or "")
+            library = library_map.get(library_id) or {
+                "ItemId": library_id,
+                "Name": (existing or {}).get("library_name") or "",
+            }
+            ignored = await get_gap_ignore_targets()
+            refreshed = await _scan_one_series(emby, series, library, ignored)
+
+            results = [item for item in results if str(item.get("series_id") or "") != series_id]
+            if refreshed:
+                results.append(refreshed)
+            results.sort(key=lambda x: (-_safe_int(x.get("gap_count"), 0), x.get("series_name", "")))
+
+            summary = _gap_summary_from_results(results, base_summary)
+            await save_gap_cache(results, summary)
+            refreshed_at = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            _scan_status.update(
+                {
+                    "is_scanning": False,
+                    "progress": 100,
+                    "results": results,
+                    "summary": summary,
+                    "error": "",
+                    "current_item": f"已刷新 {series.get('Name') or (existing or {}).get('series_name') or series_id}",
+                    "finished_at": refreshed_at,
+                    "created_at": refreshed_at,
+                }
+            )
+            message = "已刷新该剧缺集数据" if refreshed else "已刷新：该剧当前无缺集，已从列表移除"
+            return _success(
+                {
+                    "series": refreshed,
+                    "removed": refreshed is None,
+                    "status": dict(_scan_status),
+                },
+                message,
+            )
+        except Exception as e:
+            logger.exception("[Gaps] 刷新单剧缺集失败: %s", series_id)
+            return _error(f"刷新失败: {e}")
+        finally:
+            await emby.close()
 
 
 @router.post("/scan/verify")
