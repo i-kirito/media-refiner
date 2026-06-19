@@ -432,7 +432,7 @@ function isGapTransferSuccess(status) {
 }
 
 function isGapTransferDone(item) {
-    return ['transferred', 'already_owned', 'submitted', 'success', 'ok', 'unlocked'].includes(gapTransferStatus(item));
+    return ['transferred', 'already_owned', 'submitted', 'success', 'ok'].includes(gapTransferStatus(item));
 }
 
 function isUnlockedResource(item) {
@@ -458,7 +458,7 @@ function unlockedResourceBadgeClass(item) {
         return 'bg-sky-500 text-white shadow-sm shadow-sky-500/30 ring-1 ring-sky-300/50';
     }
     if (isGapTransferDone(item)) {
-        return 'bg-emerald-500 text-white shadow-sm shadow-emerald-500/30 ring-1 ring-emerald-300/50';
+        return 'bg-blue-500 text-white shadow-sm shadow-blue-500/30 ring-1 ring-blue-300/50';
     }
     return 'bg-amber-400 text-gray-950 shadow-sm shadow-amber-400/30 ring-1 ring-amber-200/60';
 }
@@ -485,16 +485,16 @@ function gapResolverAction(item) {
         return {
             label: '已转存',
             icon: 'fa-solid fa-circle-check',
-            className: 'bg-emerald-600 text-white shadow-sm shadow-emerald-500/30 cursor-default opacity-95',
+            className: 'bg-blue-600 text-white shadow-sm shadow-blue-500/30 cursor-default opacity-95',
             disabled: true,
         };
     }
     if (isUnlockedResource(item)) {
         return {
-            label: '转存',
-            icon: 'fa-solid fa-cloud-arrow-up',
-            className: 'bg-cyan-500 hover:bg-cyan-600 text-white shadow-sm shadow-cyan-500/25 active:scale-95',
-            disabled: false,
+            label: '已转存',
+            icon: 'fa-solid fa-circle-check',
+            className: 'bg-blue-600 text-white shadow-sm shadow-blue-500/30 cursor-default opacity-95',
+            disabled: true,
         };
     }
     return {
