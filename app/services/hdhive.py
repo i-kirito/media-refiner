@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import ipaddress
 from urllib.parse import urlparse
 
 import httpx
@@ -22,14 +23,16 @@ class HDHiveClient:
     def __init__(self, api_key: str = "", proxy: str = ""):
         self.api_key = api_key or settings.hdhive_api_key
         self.mode = (settings.hdhive_mode or "openapi").strip().lower()
-        self.symedia_url = (settings.symedia_url or "").rstrip("/")
+        self.symedia_url = self._normalize_symedia_url(settings.symedia_url or "")
         self.symedia_cloud_type = settings.symedia_cloud_type or "channel_115"
         self.proxy = proxy or settings.proxy
-        timeout = 30.0 if self.mode == "symedia" else 15.0
+        timeout = httpx.Timeout(120.0, connect=8.0, write=30.0, pool=30.0) if self.mode == "symedia" else 15.0
         client_kwargs = {"timeout": timeout, "verify": False}
-        if self.proxy:
+        if self.proxy and not (self.mode == "symedia" and self._is_private_url(self.symedia_url)):
             client_kwargs["proxy"] = self.proxy
             print(f"[HDHive] 使用代理: {self.proxy}")
+        elif self.proxy and self.mode == "symedia":
+            print(f"[HDHive] Symedia 内网地址 {self.symedia_url}，已跳过全局代理")
         self._client = httpx.AsyncClient(**client_kwargs)
 
     @property
@@ -66,8 +69,30 @@ class HDHiveClient:
             base = f"{base}/api/v1"
         return f"{base}{path if path.startswith('/') else '/' + path}"
 
+    @staticmethod
+    def _normalize_symedia_url(value: str) -> str:
+        """兼容旧配置：Symedia host 网络实例当前 API 监听在 18095。"""
+        text = (value or "").strip().rstrip("/")
+        if not text:
+            return ""
+        parsed = urlparse(text)
+        if parsed.hostname == "192.168.31.213" and parsed.port == 8095:
+            return text.replace(":8095", ":18095", 1)
+        return text
+
+    @staticmethod
+    def _is_private_url(value: str) -> bool:
+        host = urlparse(value or "").hostname or ""
+        if host in {"localhost", "127.0.0.1", "::1"}:
+            return True
+        try:
+            ip = ipaddress.ip_address(host)
+            return ip.is_private or ip.is_loopback or ip.is_link_local
+        except ValueError:
+            return host.endswith(".local")
+
     async def _symedia_search_request(self, payload: dict) -> httpx.Response:
-        """搜索请求是只读操作，允许短重试来兜住代理/上游偶发断连。"""
+        """搜索请求是只读操作，允许重试来兜住 Symedia/影巢偶发慢查询。"""
         last_error: Exception | None = None
         url = self._symedia_api_url("/discover/search_resources")
         for attempt in range(1, 4):
@@ -81,9 +106,9 @@ class HDHiveClient:
                 last_error = e
                 print(f"[HDHive] Symedia 搜索连接失败 {attempt}/3: {type(e).__name__}: {e}")
                 if attempt < 3:
-                    await asyncio.sleep(0.6 * attempt)
+                    await asyncio.sleep(1.2 * attempt)
         detail = f"{type(last_error).__name__}: {last_error}" if last_error else "未知网络错误"
-        raise RuntimeError(f"Symedia 搜索连接中断，请稍后重试（{detail}）")
+        raise RuntimeError(f"Symedia/影巢搜索超时，请稍后重试或检查 Symedia 影巢插件状态（{detail}）")
 
     async def _get(self, path: str, params: dict = None) -> dict | list | None:
         """GET 请求"""
