@@ -9,6 +9,8 @@ services:
     volumes:
       - ${MEDIA_REFINER_DATA_DIR:-./data}:/workspace/data
       - ${MEDIA_REFINER_CONFIG_DIR:-./config}:/workspace/config
+      - ${MEDIA_REFINER_MEDIA_DIR:-/volume1/media}:/media:ro
+      - ${MEDIA_REFINER_CLOUDNAS_DIR:-/volume1/CloudNAS}:/CloudNAS:ro
     environment:
       - TZ=Asia/Shanghai
       - REFINER_DB_PATH=/workspace/data/refiner.db

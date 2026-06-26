@@ -7,6 +7,14 @@ from app.models.schemas import ConfigModel
 router = APIRouter(prefix="/api/config", tags=["配置"])
 
 
+def _format_env_line(key: str, value: object) -> str:
+    text = "" if value is None else str(value)
+    if "\n" in text or "\r" in text:
+        raise ValueError(f"{key} 包含非法换行")
+    escaped = text.replace("\\", "\\\\").replace('"', '\\"')
+    return f'{key}="{escaped}"\n'
+
+
 @router.get("")
 async def get_config():
     """获取当前配置（隐藏敏感信息）"""
@@ -41,6 +49,8 @@ async def get_config():
             "symedia_parent_id": settings.symedia_parent_id,
             "cloud115_cookie": "已设置" if settings.cloud115_cookie else "",
             "cloud115_folder_id": settings.cloud115_folder_id,
+            "clouddrive_url": settings.clouddrive_url,
+            "clouddrive_token": "已设置" if settings.clouddrive_token else "",
             "exclude_library_ids": settings.exclude_library_ids,
             "scan_schedule": settings.scan_schedule,
             "proxy": settings.proxy,
@@ -66,6 +76,7 @@ async def save_config(config: ConfigModel):
             "symedia_token",
             "symedia_cookie",
             "cloud115_cookie",
+            "clouddrive_token",
             "tg_bot_token",
         }
         masked_values = {"已设置"}
@@ -77,10 +88,12 @@ async def save_config(config: ConfigModel):
             if existing and (not val or val in masked_values or str(val).startswith("••••")):
                 data[key] = existing
 
-        with open(env_path, "w") as f:
+        tmp_path = f"{env_path}.tmp"
+        with open(tmp_path, "w") as f:
             for k, v in data.items():
                 key = f"REFINER_{k.upper()}"
-                f.write(f"{key}={v}\n")
+                f.write(_format_env_line(key, v))
+        os.replace(tmp_path, env_path)
         # 重新加载配置
         for k, v in data.items():
             setattr(settings, k, v)
@@ -140,6 +153,21 @@ async def test_cloud115():
                 "message": "连接成功" if ok else "连接失败"}
     finally:
         await c115.close()
+
+
+@router.post("/test/clouddrive")
+async def test_clouddrive():
+    """测试 CloudDrive2 连接，并刷新目录缓存。"""
+    from app.services.clouddrive import CloudDriveClient
+    cd2 = CloudDriveClient()
+    try:
+        result = await cd2.check_connectivity()
+        return {
+            "status": "success" if result.get("ok") else "error",
+            "message": result.get("message", "连接失败"),
+        }
+    finally:
+        await cd2.close()
 
 
 @router.post("/test/telegram")

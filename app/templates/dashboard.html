@@ -6,7 +6,8 @@
 #dashboard-grid {
     display: grid;
     gap: 1rem;
-    grid-auto-rows: minmax(60px, auto);
+    grid-auto-flow: row dense;
+    grid-auto-rows: minmax(48px, auto);
     grid-template-columns: repeat(var(--dashboard-cols, 1), minmax(0, 1fr));
     align-items: start;
 }
@@ -14,27 +15,39 @@
     --dash-border: rgba(226, 232, 240, 0.9);
     --dash-muted: rgb(100, 116, 139);
     --dash-panel: rgba(255, 255, 255, 0.94);
+    --dash-soft: rgba(248, 250, 252, 0.82);
+    --dash-shadow: 0 18px 44px -38px rgba(15, 23, 42, 0.74);
+    --dash-card-radius: 16px;
 }
 .dark .dashboard-page {
     --dash-border: rgba(255, 255, 255, 0.08);
     --dash-muted: rgb(148, 163, 184);
     --dash-panel: rgba(28, 28, 30, 0.86);
+    --dash-soft: rgba(255, 255, 255, 0.045);
+    --dash-shadow: 0 18px 48px -36px rgba(0, 0, 0, 0.95);
 }
 .dashboard-page .apple-card,
 .dashboard-hero {
-    border-radius: 20px;
+    border-radius: var(--dash-card-radius);
     border-color: var(--dash-border);
     background: var(--dash-panel);
     backdrop-filter: none;
     -webkit-backdrop-filter: none;
-    box-shadow: 0 12px 30px -26px rgba(15, 23, 42, 0.48);
+    box-shadow: var(--dash-shadow);
 }
 .dark .dashboard-page .apple-card,
 .dark .dashboard-hero {
-    box-shadow: 0 14px 36px -28px rgba(0, 0, 0, 0.9);
+    box-shadow: var(--dash-shadow);
 }
 .dashboard-page .apple-card:hover {
     transform: none;
+}
+.dashboard-page .widget-item > .apple-card {
+    transition: transform 180ms ease, box-shadow 180ms ease, border-color 180ms ease;
+}
+.dashboard-page .widget-item > .apple-card:hover {
+    transform: translateY(-2px);
+    border-color: rgba(0, 122, 255, 0.18);
 }
 
 .widget-item {
@@ -49,6 +62,9 @@
     display: flex;
     flex-direction: column;
 }
+.dashboard-page .widget-item:not([data-module="poor"]) > .apple-card {
+    padding: 1rem !important;
+}
 .widget-item.has-fixed-height {
     min-height: 0;
 }
@@ -58,7 +74,7 @@
     overflow: auto;
     overscroll-behavior: contain;
     scrollbar-gutter: stable;
-    padding-bottom: 0.45rem;
+    padding-bottom: 0;
 }
 .widget-item .widget-scroll::-webkit-scrollbar { width: 6px; height: 6px; }
 .widget-item .widget-scroll::-webkit-scrollbar-thumb {
@@ -69,14 +85,26 @@
 
 /* ── 自适应主卡片 ── */
 .dashboard-hero {
+    position: relative;
+    overflow: hidden;
     display: flex;
     flex-direction: column;
-    gap: 0.9rem;
+    gap: 1rem;
+}
+.dashboard-hero::after {
+    content: '';
+    position: absolute;
+    left: 1rem;
+    right: 1rem;
+    bottom: 0;
+    height: 1px;
+    background: linear-gradient(90deg, rgba(0, 122, 255, 0.34), rgba(20, 184, 166, 0.22), transparent);
 }
 .dashboard-hero-icon {
-    width: 42px;
-    height: 42px;
+    width: 40px;
+    height: 40px;
     border-radius: 14px;
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.55);
 }
 .dashboard-actions {
     display: flex;
@@ -96,13 +124,35 @@
     gap: 0;
     overflow: hidden;
     border: 1px solid var(--dash-border);
-    border-radius: 16px;
+    border-radius: 18px;
+    background: var(--dash-soft);
 }
 .dashboard-metric {
+    position: relative;
     min-width: 0;
-    padding: 0.85rem 1rem;
+    min-height: 68px;
+    padding: 0.7rem 0.9rem 0.65rem;
     border-right: 1px solid var(--dash-border);
     border-bottom: 1px solid var(--dash-border);
+    background: linear-gradient(180deg, rgba(255,255,255,0.42), rgba(255,255,255,0));
+}
+.dark .dashboard-metric {
+    background: linear-gradient(180deg, rgba(255,255,255,0.04), rgba(255,255,255,0));
+}
+.dashboard-metric::before {
+    content: '';
+    display: block;
+    width: 1.65rem;
+    height: 3px;
+    margin-bottom: 0.55rem;
+    border-radius: 999px;
+    background: var(--metric-accent, #007AFF);
+}
+.dashboard-metric:nth-child(2) { --metric-accent: #8b5cf6; }
+.dashboard-metric:nth-child(3) { --metric-accent: #22c55e; }
+.dashboard-metric:nth-child(4) { --metric-accent: #6366f1; }
+.dashboard-metric .stat-number {
+    margin-top: 0.1rem;
 }
 .dashboard-metric:nth-child(2n) { border-right: 0; }
 .dashboard-metric:nth-last-child(-n + 2) { border-bottom: 0; }
@@ -126,16 +176,19 @@
     border-radius: 16px;
 }
 .hdr-card {
-    min-height: 78px;
+    min-height: 64px;
     display: flex;
     align-items: center;
     justify-content: space-between;
     gap: 1rem;
-    padding: 0.95rem 1rem;
+    padding: 0.65rem 0.8rem;
     border-radius: 0;
     border: 0;
     border-bottom: 1px solid var(--dash-border);
-    background: transparent;
+    background: linear-gradient(180deg, rgba(255,255,255,0.34), rgba(255,255,255,0));
+}
+.dark .hdr-card {
+    background: linear-gradient(180deg, rgba(255,255,255,0.04), rgba(255,255,255,0));
 }
 .hdr-card:last-child {
     border-bottom: 0;
@@ -150,7 +203,7 @@
     overflow-wrap: normal;
 }
 .hdr-card-value {
-    font-size: clamp(1.55rem, 5cqw, 2rem);
+    font-size: clamp(1.35rem, 5cqw, 1.7rem);
     line-height: 1;
     color: rgb(17, 24, 39);
 }
@@ -162,28 +215,40 @@
     font-size: 0.68rem;
     line-height: 1.25;
 }
+.dashboard-page .widget-item:not([data-module="stats"]):not([data-module="poor"]) h3 {
+    margin-bottom: 0.75rem !important;
+}
+.dashboard-page [data-module="score"] #score-histogram {
+    height: 10rem !important;
+}
+.dashboard-page [data-module="libraries"] #library-dist {
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: 0.55rem;
+}
 .library-card {
     display: block;
     width: 100%;
-    padding: 0.9rem 0;
+    padding: 0.65rem 0.75rem;
     text-align: left;
     color: inherit;
     font: inherit;
-    border-left: 0;
-    border-top: 0;
-    border-right: 0;
-    border-bottom: 1px solid var(--dash-border);
-    background: transparent;
+    border: 1px solid var(--dash-border);
+    border-radius: 14px;
+    background: rgba(248, 250, 252, 0.5);
     transition: background-color 0.16s ease;
 }
+.dark .library-card {
+    background: rgba(255, 255, 255, 0.035);
+}
 .library-card:last-child {
-    border-bottom: 0;
+    border-bottom: 1px solid var(--dash-border);
 }
 .library-card:hover {
     background: rgba(148, 163, 184, 0.08);
 }
 .library-card .library-title {
-    font-size: 0.92rem;
+    font-size: 0.86rem;
 }
 .dashboard-pill {
     display: inline-flex;
@@ -202,17 +267,18 @@
 .poor-row {
     display: flex;
     align-items: center;
-    gap: 1rem;
-    padding: 0.85rem 1.25rem;
+    gap: 0.7rem;
+    min-height: 48px;
+    padding: 0.5rem 0.85rem;
     transition: background-color 0.16s ease;
 }
 .poor-row:hover {
     background: rgba(148, 163, 184, 0.08);
 }
 .poor-score {
-    min-width: 44px;
-    height: 44px;
-    border-radius: 14px;
+    min-width: 36px;
+    height: 36px;
+    border-radius: 11px;
     display: inline-flex;
     flex-direction: column;
     align-items: center;
@@ -223,6 +289,13 @@
 .dark .poor-score {
     background: rgba(255, 255, 255, 0.04);
 }
+.dashboard-page [data-module="poor"] > .apple-card > .border-b {
+    padding: 0.75rem 1rem !important;
+}
+.dashboard-page [data-module="poor"] .poor-row button {
+    padding: 0.45rem 0.65rem !important;
+    border-radius: 0.75rem !important;
+}
 @media (min-width: 768px) {
     .dashboard-hero {
         flex-direction: row;
@@ -230,7 +303,12 @@
         justify-content: space-between;
     }
 }
-@container (min-width: 620px) {
+@media (min-width: 1280px) {
+    #dashboard-grid {
+        gap: 1rem;
+    }
+}
+@container (min-width: 520px) {
     .dashboard-stat-grid {
         grid-template-columns: repeat(4, minmax(0, 1fr));
     }
@@ -250,19 +328,29 @@
         grid-template-columns: repeat(3, minmax(0, 1fr));
     }
     .hdr-card {
-        min-height: 104px;
+        min-height: 88px;
         display: block;
-        padding: 1rem;
+        padding: 0.85rem;
         border-right: 1px solid var(--dash-border);
         border-bottom: 0;
     }
     .hdr-card:last-child {
         border-right: 0;
     }
+    .dashboard-page [data-module="libraries"] #library-dist {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
 }
 @container (max-width: 440px) {
     .dashboard-stat-grid {
         grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+    .hdr-card {
+        min-height: 56px;
+        padding: 0.55rem 0.75rem;
+    }
+    .hdr-card-desc {
+        display: none;
     }
 }
 
@@ -365,6 +453,17 @@ body.dashboard-resizing, body.dashboard-resizing * { cursor: ns-resize !importan
 .widget-item.resizing { user-select: none; }
 .widget-item.resizing > .apple-card { border-color: #818cf8; box-shadow: 0 0 0 2px rgba(129,140,248,0.3); }
 
+/* ── 固定仪表盘：不暴露拖拽、缩放、排序和模块自定义入口 ── */
+.dashboard-page .widget-drag-handle,
+.dashboard-page .widget-menu-btn,
+.dashboard-page .widget-resize-handle,
+.dashboard-page .widget-resize-w,
+#widget-menu-popup,
+#dash-manager-modal,
+#moduleFab {
+    display: none !important;
+}
+
 /* ── Widget 菜单弹窗 ── */
 .apple-blur { background: rgba(255,255,255,0.85); backdrop-filter: blur(20px); -webkit-backdrop-filter: blur(20px); }
 .dark .apple-blur { background: rgba(28,28,30,0.85); }
@@ -375,10 +474,10 @@ body.dashboard-resizing, body.dashboard-resizing * { cursor: ns-resize !importan
 </style>
 {% endblock %}
 {% block content %}
-<div class="dashboard-page max-w-7xl mx-auto w-full px-4 md:px-8 py-6 pb-24 relative">
+<div class="dashboard-page max-w-[96rem] mx-auto w-full px-3 md:px-5 xl:px-7 py-4 md:py-5 pb-24 relative">
 
     <!-- 标题 + 操作 -->
-    <div class="dashboard-hero mb-6 p-4 border">
+    <div class="dashboard-hero mb-4 p-4 border">
         <div class="flex items-center gap-3">
             <div class="dashboard-hero-icon bg-brand-50 dark:bg-brand-900/30 flex items-center justify-center border border-brand-100 dark:border-brand-800">
                 <i class="fa-solid fa-chart-line text-brand-500 text-xl"></i>
@@ -441,7 +540,7 @@ body.dashboard-resizing, body.dashboard-resizing * { cursor: ns-resize !importan
     <div id="dashboard-content" class="hidden">
         <div id="dashboard-grid">
             <!-- ===== Widget：统计概览 ===== -->
-            <div class="widget-item" data-module="stats" data-default-size="3x1">
+            <div class="widget-item" data-module="stats" data-default-size="4x1">
                 <div class="apple-card p-5 md:p-6 relative overflow-hidden">
                     <div class="widget-drag-handle" title="拖拽排序"><i class="fa-solid fa-grip-lines"></i></div>
                     <div class="widget-resize-handle" title="调整高度"></div>
@@ -477,7 +576,7 @@ body.dashboard-resizing, body.dashboard-resizing * { cursor: ns-resize !importan
             </div>
 
             <!-- ===== Widget：质量分布 ===== -->
-            <div class="widget-item" data-module="charts" data-default-size="1x1">
+            <div class="widget-item" data-module="charts" data-default-size="2x1">
                 <div class="apple-card p-5 md:p-6 relative overflow-hidden">
                     <div class="widget-drag-handle" title="拖拽排序"><i class="fa-solid fa-grip-lines"></i></div>
                     <div class="widget-resize-handle" title="调整高度"></div>
@@ -556,7 +655,7 @@ body.dashboard-resizing, body.dashboard-resizing * { cursor: ns-resize !importan
             </div>
 
             <!-- ===== Widget：媒体库分布 ===== -->
-            <div class="widget-item" data-module="libraries" data-default-size="1x1">
+            <div class="widget-item" data-module="libraries" data-default-size="2x1">
                 <div class="apple-card p-5 md:p-6 relative overflow-hidden">
                     <div class="widget-drag-handle" title="拖拽排序"><i class="fa-solid fa-grip-lines"></i></div>
                     <div class="widget-resize-handle" title="调整高度"></div>
@@ -574,7 +673,7 @@ body.dashboard-resizing, body.dashboard-resizing * { cursor: ns-resize !importan
             </div>
 
             <!-- ===== Widget：低质量预览 ===== -->
-            <div class="widget-item" data-module="poor" data-default-size="3x2">
+            <div class="widget-item" data-module="poor" data-default-size="2x1">
                 <div class="apple-card overflow-hidden p-0 relative">
                     <div class="widget-drag-handle" title="拖拽排序"><i class="fa-solid fa-grip-lines"></i></div>
                     <div class="widget-resize-handle" title="调整高度"></div>
@@ -909,7 +1008,7 @@ async function loadDashboard() {
         renderLibraries();
 
         // ── 低质量预览 ──
-        const poorItems = items.filter(i => (i.quality_score || 0) <= 60).slice(0, 5);
+        const poorItems = items.filter(i => (i.quality_score || 0) <= 60).slice(0, 4);
         const previewContainer = document.getElementById('poor-items-preview');
         if (poorItems.length === 0) {
             previewContainer.innerHTML = '<div class="p-8 text-center text-gray-400 text-sm"><i class="fa-solid fa-face-smile text-4xl mb-3 opacity-30"></i><br>没有低质量条目</div>';
@@ -933,14 +1032,8 @@ async function loadDashboard() {
         loading.innerHTML = `<div class="text-center py-16 text-red-400"><i class="fa-solid fa-circle-exclamation text-4xl mb-3"></i><p>加载失败: ${e.message}</p></div>`;
     }
 
-    // 应用网格布局（排序 + 显隐 + 列宽）
+    // 应用固定网格布局
     Layout.apply();
-    // 初始化网格拖拽 + 缩放手柄
-    setTimeout(() => {
-        initGridSortable();
-        initResizeHandles();
-        initResizeWHandles();
-    }, 100);
 }
 
 // ── 媒体库卡片渲染 ──
@@ -1136,20 +1229,20 @@ function escapeHtml(text) { if (!text) return ''; const div = document.createEle
 const MODULE_NAMES = { stats: '统计概览', charts: '质量分布', hdr: 'HDR 概览', score: '质量分数分布', libraries: '媒体库分布', poor: '低质量预览' };
 const MODULE_ICONS = { stats: 'fa-chart-simple', charts: 'fa-chart-bar', hdr: 'fa-sun', score: 'fa-chart-column', libraries: 'fa-folder-tree', poor: 'fa-triangle-exclamation' };
 const MODULE_COLORS = { stats: 'from-blue-500 to-cyan-500', charts: 'from-green-500 to-teal-500', hdr: 'from-indigo-500 to-purple-500', score: 'from-amber-500 to-orange-500', libraries: 'from-sky-500 to-blue-500', poor: 'from-rose-500 to-pink-500' };
-const MODULE_ORDER = ['stats', 'score', 'charts', 'libraries', 'hdr', 'poor'];
+const MODULE_ORDER = ['stats', 'poor', 'charts', 'score', 'hdr', 'libraries'];
 
-// ── DashboardState 持久化 ──
+// ── DashboardState：固定布局，不再读取/写入本地自定义位置 ──
 const DashboardState = {
     _key: 'dashboardLayout',
     _defaultKey: 'dashboardLayoutDefault',
-    _version: 3,
+    _version: 8,
     _default() {
         return {
             version: this._version,
             order: [...MODULE_ORDER],
             visibility: {},
-            widths: { stats: 3, charts: 1, hdr: 1, score: 1, libraries: 1, poor: 3 },
-            heights: { score_px: 320, libraries_px: 520, poor_px: 402 }
+            widths: { stats: 4, poor: 2, charts: 2, score: 1, hdr: 1, libraries: 2 },
+            heights: { stats_px: 152, poor_px: 296, charts_px: 296, score_px: 272, hdr_px: 272, libraries_px: 272 }
         };
     },
     _normalize(state) {
@@ -1181,77 +1274,46 @@ const DashboardState = {
         next.version = this._version;
         return next;
     },
-    load() {
-        try {
-            const s = localStorage.getItem(this._key);
-            if (!s) return this._default();
-            const parsed = JSON.parse(s);
-            // v1 → v2 迁移
-            if (!parsed.version || parsed.version < 2) {
-                delete parsed.version;
-                if (parsed.heights) {
-                    Object.keys(parsed.heights).forEach(k => {
-                        if (parsed.heights[k] > 10) delete parsed.heights[k];
-                    });
-                }
-                delete parsed.sizes;
-                parsed.version = this._version;
-                this.save(parsed);
-            }
-            const normalized = this._normalize(parsed);
-            if (JSON.stringify(normalized) !== JSON.stringify(parsed)) this.save(normalized);
-            return normalized;
-        } catch(e) { return this._default(); }
-    },
-    save(state) {
-        localStorage.setItem(this._key, JSON.stringify({ ...state, version: this._version }));
-    },
+    load() { return this._default(); },
+    save() {},
     /** 将当前布局存为用户默认 */
-    saveAsDefault() {
-        const state = this.load();
-        localStorage.setItem(this._defaultKey, JSON.stringify({ ...state, version: this._version }));
-    },
+    saveAsDefault() {},
     /** 加载用户保存的默认布局，若不存在则返回硬编码默认 */
-    loadDefault() {
-        try {
-            const s = localStorage.getItem(this._defaultKey);
-            if (!s) return this._default();
-            const parsed = JSON.parse(s);
-            return this._normalize(parsed);
-        } catch(e) { return this._default(); }
-    },
+    loadDefault() { return this._default(); },
     /** 重置为「用户默认」或有则「硬编码默认」 */
     reset() {
-        const def = this.loadDefault();
-        this.save(def);
         location.reload();
     },
     /** 恢复到硬编码出厂默认 */
     factoryReset() {
-        localStorage.removeItem(this._key);
-        localStorage.removeItem(this._defaultKey);
         location.reload();
     },
     getOrder() { return this.load().order; },
-    setOrder(order) { const s = this.load(); s.order = order; this.save(s); },
+    setOrder() {},
     getWidth(id) { return this.load().widths[id] || null; },
-    setWidth(id, w) { const s = this.load(); s.widths[id] = w; this.save(s); },
+    setWidth() {},
     getHeight(id) { return this.load().heights[id] || null; },
-    setHeight(id, h) { const s = this.load(); s.heights[id] = h; this.save(s); },
+    setHeight() {},
     isVisible(id) { const s = this.load(); return s.visibility[id] !== false; },
-    setVisible(id, v) { const s = this.load(); s.visibility[id] = v; this.save(s); },
+    setVisible() {},
 };
 
 // ── Layout 引擎：计算 grid-column / grid-row ──
 const Layout = {
     _cols: 2, // 由 resize 更新
+    _masonryRowPx: 8,
     getCols() {
         const grid = document.getElementById('dashboard-grid');
         const w = grid?.clientWidth || window.innerWidth;
-        if (w >= 1480) return 4;
-        if (w >= 1080) return 3;
+        if (w >= 1120) return 4;
+        if (w >= 920) return 3;
         if (w >= 620) return 2;
         return 1;
+    },
+    _rowSpanForHeight(grid, height) {
+        const styles = getComputedStyle(grid);
+        const rowGap = parseFloat(styles.rowGap || styles.gap || '0') || 0;
+        return Math.max(1, Math.ceil(height / (this._masonryRowPx + rowGap)));
     },
     apply() {
         const grid = document.getElementById('dashboard-grid');
@@ -1259,6 +1321,9 @@ const Layout = {
         const state = DashboardState.load();
         this._cols = this.getCols();
         grid.style.setProperty('--dashboard-cols', this._cols);
+        const compact = this._cols > 1;
+        grid.style.gridAutoFlow = compact ? 'row dense' : '';
+        grid.style.gridAutoRows = compact ? `${this._masonryRowPx}px` : '';
 
         // 1) 排序
         if (state.order) {
@@ -1285,20 +1350,12 @@ const Layout = {
             el.style.gridColumn = `span ${maxCols}`;
         });
 
-        // 4) 高度：默认自适应，用户拖拽后固定像素高度，超出内容在卡片内部滚动
+        // 4) 高度：桌面使用像素高度 + 行跨度做紧凑排布，移动端保留自然流
         grid.querySelectorAll('[data-module]').forEach(el => {
             const id = el.dataset.module;
-            const h = state.heights[id];
-            if (h) {
-                el.style.gridRow = `span ${h}`;
-            } else {
-                el.style.gridRow = '';
-                const ds = el.dataset.defaultSize || '1x1';
-                const [, defaultRows] = ds.split('x').map(Number);
-                if (defaultRows > 1) el.style.gridRow = `span ${defaultRows}`;
-            }
+            el.style.gridRow = '';
             const customH = state.heights[id + '_px'];
-            if (customH) {
+            if (customH && compact) {
                 el.classList.add('has-fixed-height');
                 el.style.height = customH + 'px';
                 el.style.minHeight = '0';
@@ -1308,6 +1365,16 @@ const Layout = {
                 el.style.minHeight = '';
             }
         });
+
+        if (compact) {
+            grid.querySelectorAll('[data-module]').forEach(el => {
+                if (el.classList.contains('hidden')) return;
+                const id = el.dataset.module;
+                const configuredH = state.heights[id + '_px'];
+                const measuredH = configuredH || Math.ceil(el.getBoundingClientRect().height);
+                el.style.gridRow = `span ${this._rowSpanForHeight(grid, measuredH)}`;
+            });
+        }
     }
 };
 
@@ -1708,7 +1775,7 @@ window.addEventListener('resize', () => {
 });
 
 document.addEventListener('scan-complete', () => {
-    setTimeout(() => { initGridSortable(); initResizeHandles(); initResizeWHandles(); Layout.apply(); }, 1500);
+    setTimeout(() => { Layout.apply(); }, 1500);
 });
 </script>
 {% endblock %}

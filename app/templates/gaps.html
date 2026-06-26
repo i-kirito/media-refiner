@@ -24,7 +24,24 @@
         justify-content: center;
     }
     .gap-modal-panel {
-        max-height: min(86vh, 760px);
+        max-height: min(86dvh, 47.5rem);
+    }
+    #gapResolverModal {
+        will-change: opacity;
+    }
+    #gapResolverModal .gap-modal-panel,
+    #gapResolverBody {
+        contain: layout paint;
+    }
+    .gap-files-panel {
+        width: min(97dvw, 92rem);
+        max-width: calc(100dvw - 1.25rem);
+    }
+    .gap-files-body {
+        background: #f8fafc;
+    }
+    html.dark .gap-files-body {
+        background: rgba(0, 0, 0, 0.12);
     }
     .gap-resolver-list {
         display: flex;
@@ -56,6 +73,27 @@
     }
     html.dark .gap-resolver-title {
         color: #fff;
+    }
+    .gap-resolver-title-link {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        max-width: 100%;
+        color: inherit;
+        text-align: left;
+        text-decoration: none;
+        transition: color 160ms ease;
+    }
+    .gap-resolver-title-link:hover {
+        color: #007AFF;
+    }
+    .gap-resolver-title-link i {
+        color: #9ca3af;
+        font-size: 10px;
+        transform: translateY(1px);
+    }
+    html.dark .gap-resolver-title-link i {
+        color: #6b7280;
     }
     .gap-resolver-pills {
         display: flex;
@@ -97,6 +135,16 @@
         border-color: rgba(74, 222, 128, 0.22);
         background: rgba(34, 197, 94, 0.12);
         color: #86efac;
+    }
+    .gap-resolver-pill-pack {
+        border-color: #fde68a;
+        background: #fffbeb;
+        color: #b45309;
+    }
+    html.dark .gap-resolver-pill-pack {
+        border-color: rgba(251, 191, 36, 0.24);
+        background: rgba(251, 191, 36, 0.12);
+        color: #fcd34d;
     }
     .gap-resolver-pill-muted {
         color: #6b7280;
@@ -145,6 +193,184 @@
         font-size: 12px;
         font-weight: 900;
         line-height: 1;
+    }
+    .gap-files-summary {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+    }
+    .gap-files-summary-row {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 12px;
+    }
+    .gap-files-actions {
+        display: flex;
+        align-items: center;
+        justify-content: flex-end;
+        gap: 8px;
+        margin-left: auto;
+    }
+    .gap-files-summary button,
+    .gap-files-summary span,
+    .gap-file-status {
+        display: inline-flex;
+        align-items: center;
+        min-height: 24px;
+        border-radius: 999px;
+        padding: 3px 8px;
+        font-size: 11px;
+        font-weight: 900;
+        line-height: 1.2;
+        white-space: nowrap;
+    }
+    .gap-files-summary button {
+        transition: transform 140ms ease, filter 140ms ease, box-shadow 140ms ease;
+    }
+    .gap-files-summary button:active {
+        transform: scale(0.97);
+    }
+    .gap-files-action {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        gap: 6px;
+        min-height: 30px;
+        border-radius: 10px;
+        padding: 6px 10px;
+        font-size: 12px;
+        font-weight: 900;
+        line-height: 1;
+        white-space: nowrap;
+        transition: transform 140ms ease, background-color 140ms ease, color 140ms ease;
+    }
+    .gap-files-action:active {
+        transform: scale(0.97);
+    }
+    .gap-files-action:disabled {
+        cursor: not-allowed;
+        opacity: 0.52;
+        transform: none;
+    }
+    .gap-files-list {
+        display: flex;
+        flex-direction: column;
+        gap: 10px;
+    }
+    .gap-files-season {
+        overflow: hidden;
+        border: 1px solid #e5e7eb;
+        border-radius: 14px;
+        background: #fff;
+        box-shadow: 0 1px 2px rgba(15, 23, 42, 0.04);
+    }
+    html.dark .gap-files-season {
+        border-color: rgba(255, 255, 255, 0.1);
+        background: rgba(255, 255, 255, 0.04);
+        box-shadow: none;
+    }
+    .gap-files-season-head {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 12px;
+        padding: 9px 12px;
+        border-bottom: 1px solid #e5e7eb;
+        background: #f9fafb;
+    }
+    html.dark .gap-files-season-head {
+        border-color: rgba(255, 255, 255, 0.1);
+        background: rgba(255, 255, 255, 0.05);
+    }
+    .gap-file-row {
+        display: grid;
+        grid-template-columns: max-content minmax(14rem, 0.78fr) minmax(26rem, 1.52fr);
+        gap: clamp(0.75rem, 1dvw, 1rem);
+        align-items: stretch;
+        padding: 0.625rem clamp(0.75rem, 1dvw, 1rem);
+        transition: background-color 140ms ease;
+    }
+    .gap-file-row:hover {
+        background: #f8fafc;
+    }
+    html.dark .gap-file-row:hover {
+        background: rgba(255, 255, 255, 0.035);
+    }
+    .gap-file-row + .gap-file-row {
+        border-top: 1px solid #f3f4f6;
+    }
+    html.dark .gap-file-row + .gap-file-row {
+        border-color: rgba(255, 255, 255, 0.08);
+    }
+    .gap-file-episode-col {
+        display: flex;
+        flex-direction: column;
+        align-items: flex-start;
+        gap: 6px;
+        min-width: 0;
+    }
+    .gap-file-title-col {
+        min-width: 0;
+        padding-top: 2px;
+    }
+    .gap-file-title-line {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: center;
+        gap: 7px;
+        min-width: 0;
+    }
+    .gap-file-source-col {
+        min-width: 0;
+    }
+    .gap-file-title,
+    .gap-file-name,
+    .gap-file-path {
+        overflow-wrap: anywhere;
+        word-break: break-word;
+    }
+    .gap-file-title {
+        line-height: 1.35;
+    }
+    .gap-file-source {
+        border-radius: 12px;
+        border: 1px solid #dbe3ef;
+        background: #f8fafc;
+        padding: 9px 11px;
+    }
+    html.dark .gap-file-source {
+        border-color: rgba(255, 255, 255, 0.1);
+        background: rgba(0, 0, 0, 0.16);
+    }
+    .gap-file-source + .gap-file-source {
+        margin-top: 6px;
+    }
+    .gap-file-name {
+        color: #0f172a;
+        font-size: 12px;
+        font-weight: 900;
+        line-height: 1.35;
+    }
+    html.dark .gap-file-name {
+        color: #f8fafc;
+    }
+    .gap-file-path {
+        margin-top: 4px;
+        color: #64748b;
+        font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
+        font-size: 10.5px;
+        font-weight: 700;
+        line-height: 1.55;
+    }
+    html.dark .gap-file-path {
+        color: #94a3b8;
+    }
+    .gap-file-meta {
+        margin-top: 4px;
+        color: #94a3b8;
+        font-size: 10.5px;
+        font-weight: 800;
     }
     .gap-toolbar {
         position: sticky;
@@ -203,6 +429,60 @@
     }
     .gap-series-info {
         flex-shrink: 0;
+        min-width: 0;
+        overflow: hidden;
+    }
+    .gap-series-head {
+        display: flex;
+        align-items: flex-start;
+        justify-content: space-between;
+        gap: 8px;
+        min-width: 0;
+    }
+    .gap-series-title {
+        min-width: 0;
+        flex: 1 1 auto;
+        display: flex;
+        align-items: flex-start;
+        gap: 6px;
+    }
+    .gap-series-title-text {
+        display: -webkit-box;
+        max-width: 100%;
+        overflow: hidden;
+        overflow-wrap: anywhere;
+        word-break: break-word;
+        -webkit-box-orient: vertical;
+        -webkit-line-clamp: 2;
+        line-clamp: 2;
+        line-height: 1.25;
+    }
+    .gap-title-line {
+        min-width: 0;
+        flex: 1 1 auto;
+    }
+    .gap-anomaly-dot {
+        width: 7px;
+        height: 7px;
+        margin-top: 4px;
+        border-radius: 999px;
+        background: #ef4444;
+        box-shadow: 0 0 0 3px rgba(239, 68, 68, 0.16);
+        flex: 0 0 auto;
+    }
+    .gap-chip-anomaly-dot {
+        width: 6px;
+        height: 6px;
+        border-radius: 999px;
+        background: #ef4444;
+        box-shadow: 0 0 0 3px rgba(239, 68, 68, 0.14);
+        flex: 0 0 auto;
+    }
+    .gap-series-actions {
+        display: flex;
+        flex: 0 0 auto;
+        align-items: center;
+        gap: 6px;
     }
     .gap-series-seasons {
         flex: 0 0 var(--gap-season-window-height);
@@ -221,13 +501,23 @@
         min-width: 0;
         max-width: 100%;
     }
+    .gap-series-meta a {
+        display: inline-flex;
+        align-items: center;
+        color: inherit;
+        text-decoration: none;
+        transition: color 140ms ease;
+    }
+    .gap-series-meta a:hover {
+        color: #007AFF;
+    }
     .gap-missing-meta {
         min-height: 20px;
     }
     .gap-season-row {
         display: grid;
-        grid-template-columns: 74px minmax(0, 1fr) 34px;
-        gap: 8px;
+        grid-template-columns: max-content minmax(0, 1fr);
+        gap: 10px;
         align-items: center;
         min-height: 44px;
         overflow: hidden;
@@ -239,8 +529,10 @@
         min-width: 0;
         overflow-x: auto;
         overflow-y: hidden;
-        padding-bottom: 1px;
+        padding: 0 8px 1px 0;
+        scroll-padding-inline: 8px;
         scrollbar-width: thin;
+        -webkit-overflow-scrolling: touch;
     }
     .gap-episode-compact {
         min-height: 32px;
@@ -274,6 +566,8 @@
     }
     @media (max-width: 1023px) {
         .gap-card { --gap-card-height: 220px; --gap-season-window-height: 54px; }
+        .gap-file-row { grid-template-columns: max-content minmax(0, 1fr); }
+        .gap-file-source-col { grid-column: 1 / -1; }
     }
     @media (max-width: 640px) {
         .gap-shell { padding-left: 12px; padding-right: 12px; }
@@ -284,13 +578,17 @@
         .gap-library-switch { margin-left: -2px; margin-right: -2px; padding-left: 2px; padding-right: 2px; }
         .gap-resolver-main { grid-template-columns: minmax(0, 1fr); }
         .gap-resolver-action { width: 100%; }
+        .gap-files-summary-row { align-items: stretch; flex-direction: column; }
+        .gap-files-actions { justify-content: flex-start; margin-left: 0; }
+        .gap-file-row { grid-template-columns: minmax(0, 1fr); gap: 8px; }
+        .gap-file-source-col { grid-column: auto; }
     }
 </style>
 {% endblock %}
 {% block content %}
 <div class="gap-shell mx-auto w-full px-4 md:px-8 py-5 pb-24">
     <div class="apple-card p-4 mb-3">
-        <div class="flex flex-col xl:flex-row xl:items-center justify-between gap-4">
+        <div class="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
             <div class="flex items-center gap-3 min-w-0">
                 <div class="w-10 h-10 rounded-xl bg-cyan-50 dark:bg-cyan-500/15 border border-cyan-100 dark:border-cyan-500/20 flex items-center justify-center text-cyan-500 shrink-0">
                     <i class="fa-solid fa-layer-group text-lg"></i>
@@ -304,7 +602,7 @@
                     </div>
                 </div>
             </div>
-            <div class="flex flex-wrap items-center gap-2">
+            <div class="flex flex-wrap lg:flex-nowrap lg:justify-end items-center gap-2">
                 <button onclick="openGapConfig()" class="px-3 py-2 rounded-xl bg-gray-100 dark:bg-apple-hoverDark hover:bg-gray-200 dark:hover:bg-[#3A3A3C] text-gray-600 dark:text-gray-300 text-xs font-bold transition-colors border border-gray-200 dark:border-white/5 flex items-center gap-2">
                     <i class="fa-solid fa-sliders"></i><span>设置</span>
                 </button>
@@ -418,6 +716,20 @@
     </div>
 </div>
 
+<div id="gapFilesModal" class="fixed inset-0 z-[124] hidden opacity-0 transition-opacity duration-200">
+    <div class="absolute inset-0 bg-black/50 backdrop-blur-sm" onclick="closeGapFiles()"></div>
+    <div class="gap-modal-panel gap-files-panel absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 bg-white dark:bg-apple-cardDark rounded-[24px] shadow-2xl border border-gray-200 dark:border-white/5 overflow-hidden flex flex-col">
+        <div class="px-5 py-4 border-b border-gray-100 dark:border-white/5 flex items-center justify-between gap-3 shrink-0">
+            <div class="min-w-0">
+                <h3 id="gapFilesTitle" class="font-black text-gray-900 dark:text-white truncate">集数文件</h3>
+                <p id="gapFilesSub" class="text-xs text-gray-500 dark:text-gray-400 mt-1 truncate"></p>
+            </div>
+            <button onclick="closeGapFiles()" class="w-8 h-8 rounded-full bg-gray-100 dark:bg-white/5 text-gray-400 hover:text-gray-700 dark:hover:text-white transition-colors shrink-0"><i class="fa-solid fa-xmark"></i></button>
+        </div>
+        <div id="gapFilesBody" class="gap-files-body p-4 overflow-y-auto mac-scrollbar flex-1 min-h-[260px]"></div>
+    </div>
+</div>
+
 <div id="gapIgnoresModal" class="fixed inset-0 z-[122] hidden opacity-0 transition-opacity duration-200">
     <div class="absolute inset-0 bg-black/50 backdrop-blur-sm" onclick="closeGapIgnores()"></div>
     <div class="gap-modal-panel absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[94%] max-w-2xl bg-white dark:bg-apple-cardDark rounded-[24px] shadow-2xl border border-gray-200 dark:border-white/5 overflow-hidden flex flex-col">
@@ -464,11 +776,20 @@ const gapState = {
     pending: null,
     source: '',
     resolverResults: [],
+    resolverOpen: false,
+    resolverToken: 0,
     pollTimer: null,
     refreshingSeries: new Set(),
+    subscribingSeries: new Set(),
+    fileData: null,
+    fileFilter: 'all',
+    scanMonitor: null,
+    scanStatus: {},
+    downloadStatusToken: 0,
 };
 const GAP_EMBY_EXTERNAL_BASE = 'https://emby.ikirito.de';
 let gapEmbyServerId = '';
+const gapModalHideTimers = new Map();
 
 document.addEventListener('DOMContentLoaded', () => {
     loadGapStatus();
@@ -484,19 +805,39 @@ async function gapApi(url, options = {}) {
     return data;
 }
 
+async function loadSharedScanMonitor() {
+    try {
+        const data = await gapApi(`/api/scan/status?_t=${Date.now()}`);
+        return data.data || null;
+    } catch (_) {
+        return null;
+    }
+}
+
 function showGapModal(id) {
     const el = document.getElementById(id);
     if (!el) return;
+    const hideTimer = gapModalHideTimers.get(id);
+    if (hideTimer) {
+        clearTimeout(hideTimer);
+        gapModalHideTimers.delete(id);
+    }
     el.classList.remove('hidden');
     void el.offsetWidth;
     el.classList.remove('opacity-0');
 }
 
-function hideGapModal(id) {
+function hideGapModal(id, afterHidden = null) {
     const el = document.getElementById(id);
     if (!el) return;
+    const hideTimer = gapModalHideTimers.get(id);
+    if (hideTimer) clearTimeout(hideTimer);
     el.classList.add('opacity-0');
-    setTimeout(() => el.classList.add('hidden'), 180);
+    gapModalHideTimers.set(id, setTimeout(() => {
+        el.classList.add('hidden');
+        gapModalHideTimers.delete(id);
+        if (typeof afterHidden === 'function') requestAnimationFrame(afterHidden);
+    }, 180));
 }
 
 function escapeHtml(value) {
@@ -526,6 +867,12 @@ function embySeriesUrl(seriesId) {
     return `${GAP_EMBY_EXTERNAL_BASE}/web/index.html#!/item?${query.toString()}`;
 }
 
+function tmdbSeriesUrl(tmdbId) {
+    const id = String(tmdbId || '').trim();
+    if (!id) return '';
+    return `https://www.themoviedb.org/tv/${encodeURIComponent(id)}`;
+}
+
 function formatBytes(value) {
     if (typeof value === 'string') {
         if (/[kmgt]b/i.test(value)) return value;
@@ -545,16 +892,27 @@ function formatBytes(value) {
     return `${size.toFixed(idx >= 3 ? 2 : 1)} ${units[idx]}`;
 }
 
+function formatDownloaderSpeed(value) {
+    const speed = Number(value || 0);
+    if (!Number.isFinite(speed) || speed <= 0) return '';
+    return `${formatBytes(speed)}/s`;
+}
+
 function gapTransferStatus(item) {
     return String(item?.ui_transfer_status || item?.status || '').trim().toLowerCase();
 }
 
 function isGapTransferSuccess(status) {
-    return ['transferred', 'already_owned', 'submitted', 'success', 'ok', 'unlocked'].includes(String(status || '').trim().toLowerCase());
+    return ['transferred', 'already_owned', 'success', 'ok', 'unlocked'].includes(String(status || '').trim().toLowerCase());
+}
+
+function isGapTransferredStatus(status) {
+    return ['transferred', 'success', 'ok'].includes(String(status || '').trim().toLowerCase());
 }
 
 function isGapTransferDone(item) {
-    return ['transferred', 'already_owned', 'submitted', 'success', 'ok'].includes(gapTransferStatus(item));
+    const status = gapTransferStatus(item);
+    return status === 'already_owned' || isGapTransferredStatus(status);
 }
 
 function isUnlockedResource(item) {
@@ -567,21 +925,19 @@ function isUnlockedResource(item) {
         || (item?.ui_transfer_marked === true && isGapTransferSuccess(status));
 }
 
-function unlockedResourceLabel(item) {
+function isUnlockedOnlyResource(item) {
     const status = gapTransferStatus(item);
-    if (status === 'already_owned') return '已在 115';
-    if (isGapTransferDone(item)) return '已转存';
+    return isUnlockedResource(item)
+        && status !== 'already_owned'
+        && status !== 'submitted'
+        && !isGapTransferredStatus(status);
+}
+
+function unlockedResourceLabel(item) {
     return '已解锁';
 }
 
 function unlockedResourceBadgeClass(item) {
-    const status = gapTransferStatus(item);
-    if (status === 'already_owned') {
-        return 'bg-sky-500 text-white shadow-sm shadow-sky-500/30 ring-1 ring-sky-300/50';
-    }
-    if (isGapTransferDone(item)) {
-        return 'bg-blue-500 text-white shadow-sm shadow-blue-500/30 ring-1 ring-blue-300/50';
-    }
     return 'bg-amber-400 text-gray-950 shadow-sm shadow-amber-400/30 ring-1 ring-amber-200/60';
 }
 
@@ -595,28 +951,32 @@ function gapResolverAction(item) {
         };
     }
     const status = gapTransferStatus(item);
-    if (status === 'already_owned') {
-        return {
-            label: '已在 115',
-            icon: 'fa-solid fa-circle-check',
-            className: 'bg-sky-500 text-white shadow-sm shadow-sky-500/30 cursor-default opacity-95',
-            disabled: true,
-        };
-    }
+    const matchKind = String(item?.ui_episode_match_kind || '');
     if (isGapTransferDone(item)) {
         return {
-            label: '已转存',
-            icon: 'fa-solid fa-circle-check',
-            className: 'bg-blue-600 text-white shadow-sm shadow-blue-500/30 cursor-default opacity-95',
-            disabled: true,
+            label: '重新转存',
+            icon: 'fa-solid fa-rotate',
+            className: 'bg-blue-600 hover:bg-blue-700 text-white shadow-sm shadow-blue-500/30 active:scale-95',
+            disabled: false,
+            title: status === 'already_owned' ? '资源已在 115，仍会重新提交转存' : '该资源已有转存记录，仍会强制重新提交转存',
         };
     }
-    if (isUnlockedResource(item)) {
+    if (item?.ui_download_blocked === true || matchKind === 'none') {
         return {
-            label: '已转存',
-            icon: 'fa-solid fa-circle-check',
-            className: 'bg-blue-600 text-white shadow-sm shadow-blue-500/30 cursor-default opacity-95',
-            disabled: true,
+            label: '不匹配',
+            icon: 'fa-solid fa-ban',
+            className: 'bg-gray-200 hover:bg-gray-300 text-gray-600 dark:bg-white/10 dark:hover:bg-white/15 dark:text-gray-300 shadow-sm shadow-gray-300/20 active:scale-95',
+            disabled: false,
+            title: item?.ui_download_block_reason || '不匹配，点击仍会强制提交',
+        };
+    }
+    if (isUnlockedOnlyResource(item)) {
+        return {
+            label: '转存',
+            icon: 'fa-solid fa-cloud-arrow-down',
+            className: 'bg-emerald-500 hover:bg-emerald-600 text-white shadow-sm shadow-emerald-500/25 active:scale-95',
+            disabled: false,
+            title: '资源已解锁，提交转存到 115',
         };
     }
     return {
@@ -624,11 +984,175 @@ function gapResolverAction(item) {
         icon: 'fa-solid fa-cloud-arrow-down',
         className: 'bg-emerald-500 hover:bg-emerald-600 text-white shadow-sm shadow-emerald-500/25 active:scale-95',
         disabled: false,
+        title: '解锁后转存到 115',
+    };
+}
+
+function moviepilotDownloadTaskAction(item) {
+    const status = String(item?.ui_download_status || '').trim().toLowerCase();
+    const baseLabel = item?.ui_download_label || '已在下载器';
+    const progress = Number(item?.ui_download_progress || 0);
+    const speed = formatDownloaderSpeed(item?.ui_download_speed);
+    const showProgress = ['downloading', 'stalled', 'queued', 'checking'].includes(status) && progress > 0 && progress < 1;
+    const label = showProgress ? `${baseLabel} ${Math.round(progress * 100)}%` : baseLabel;
+    const titleParts = [
+        item?.ui_downloader ? `下载器: ${item.ui_downloader}` : '',
+        item?.ui_download_name ? `任务: ${item.ui_download_name}` : '',
+        speed ? `速度: ${speed}` : '',
+    ].filter(Boolean);
+    const title = titleParts.join(' · ') || '下载器中已有该任务';
+    if (status === 'completed') {
+        return {
+            label,
+            icon: 'fa-solid fa-circle-check',
+            className: 'bg-emerald-500 text-white shadow-sm shadow-emerald-500/25 cursor-default',
+            disabled: true,
+            title,
+        };
+    }
+    if (status === 'paused') {
+        return {
+            label,
+            icon: 'fa-solid fa-circle-pause',
+            className: 'bg-amber-500 text-white shadow-sm shadow-amber-500/25 cursor-default',
+            disabled: true,
+            title,
+        };
+    }
+    if (status === 'error') {
+        return {
+            label,
+            icon: 'fa-solid fa-triangle-exclamation',
+            className: 'bg-red-500 text-white shadow-sm shadow-red-500/25 cursor-default',
+            disabled: true,
+            title,
+        };
+    }
+    if (status === 'queued' || status === 'checking' || status === 'stalled') {
+        return {
+            label,
+            icon: 'fa-solid fa-clock',
+            className: 'bg-slate-500 text-white shadow-sm shadow-slate-500/25 cursor-default',
+            disabled: true,
+            title,
+        };
+    }
+    return {
+        label,
+        icon: 'fa-solid fa-circle-down',
+        className: 'bg-sky-500 text-white shadow-sm shadow-sky-500/25 cursor-default',
+        disabled: true,
+        title,
+    };
+}
+
+function moviepilotResolverAction(item) {
+    const matchKind = String(item?.ui_episode_match_kind || '');
+    const downloadMode = String(item?.ui_download_mode || '');
+    const pending = gapState.pending || {};
+    const pendingFullSeries = pending.fullSeries === true;
+    const pendingTargets = Array.isArray(pending.targets) ? pending.targets : [];
+    const pendingSeasonOnly = pendingTargets.length > 0 && pendingTargets.every(target => (
+        target?.season_missing === true && !(Array.isArray(target?.episodes) && target.episodes.length)
+    ));
+    const itemTargets = Array.isArray(item?.ui_gap_targets) ? item.ui_gap_targets : [];
+    const itemSeasonOnly = itemTargets.some(target => (
+        target?.season_missing === true || (target?.match_kind === 'season_pack' && !(Array.isArray(target?.episodes) && target.episodes.length))
+    ));
+    const forceDirect = pendingFullSeries || (matchKind === 'season_pack' && (pendingSeasonOnly || itemSeasonOnly || downloadMode === 'normal'));
+    const shouldSplit = !forceDirect && (downloadMode === 'split' || (!downloadMode && ['episode_pack', 'season_pack'].includes(matchKind)));
+    if (item?.ui_transfer_pending === true) {
+        const pendingLabel = shouldSplit ? '正在拆包' : '正在下载';
+        return {
+            label: pendingLabel,
+            icon: 'fa-solid fa-circle-notch fa-spin',
+            className: 'bg-sky-500 text-white shadow-sm shadow-sky-500/30 cursor-wait',
+            disabled: true,
+            title: '正在提交下载任务',
+        };
+    }
+    if (item?.ui_download_task === true) {
+        return moviepilotDownloadTaskAction(item);
+    }
+    if (item?.ui_download_blocked === true || matchKind === 'none') {
+        return {
+            label: '不匹配',
+            icon: 'fa-solid fa-ban',
+            className: 'bg-gray-200 hover:bg-gray-300 text-gray-600 dark:bg-white/10 dark:hover:bg-white/15 dark:text-gray-300 shadow-sm shadow-gray-300/20 active:scale-95',
+            disabled: false,
+            title: item?.ui_download_block_reason || '不匹配，点击仍会强制提交',
+        };
+    }
+    if (shouldSplit) {
+        return {
+            label: '拆包下载',
+            icon: 'fa-solid fa-list-check',
+            className: 'bg-indigo-500 hover:bg-indigo-600 text-white shadow-sm shadow-indigo-500/25 active:scale-95',
+            disabled: false,
+            title: item?.ui_download_hint || '提交后只选择缺失集数文件',
+        };
+    }
+    if (pendingFullSeries || matchKind === 'full_series' || item?.ui_full_series === true) {
+        return {
+            label: '下载全集',
+            icon: 'fa-solid fa-download',
+            className: 'bg-amber-500 hover:bg-amber-600 text-white shadow-sm shadow-amber-500/25 active:scale-95',
+            disabled: false,
+            title: '下载全集资源',
+        };
+    }
+    if (matchKind === 'season_pack') {
+        return {
+            label: '下载整季',
+            icon: 'fa-solid fa-download',
+            className: 'bg-brand-500 hover:bg-brand-600 text-white active:scale-95',
+            disabled: false,
+            title: item?.ui_download_hint || '提交 MoviePilot 下载整季资源',
+        };
+    }
+    return {
+        label: '下载',
+        icon: 'fa-solid fa-download',
+        className: 'bg-brand-500 hover:bg-brand-600 text-white active:scale-95',
+        disabled: false,
+        title: '下载缺失集数',
     };
 }
 
 function episodeLabel(season, episode) {
+    if (Number(episode || 0) <= 0) return `S${String(season).padStart(2, '0')}`;
     return `S${String(season).padStart(2, '0')}E${String(episode).padStart(2, '0')}`;
+}
+
+function isSeasonMissingGap(item) {
+    return item?.season_missing === true || String(item?.source || '') === 'season_inferred' || Number(item?.episode || 0) <= 0;
+}
+
+function isGapAnomaly(item) {
+    return item?.anomaly === true || Boolean(item?.anomaly_type);
+}
+
+function seriesGapAnomalies(series) {
+    return (series?.gaps || []).filter(isGapAnomaly);
+}
+
+function gapAnomalyText(item) {
+    return item?.anomaly_message || '本地季号与 TMDB 季信息不一致，可能是入库季号错误';
+}
+
+function seriesAnomalyText(series) {
+    const anomalies = seriesGapAnomalies(series);
+    if (!anomalies.length) return '';
+    return anomalies.map(gap => `S${String(gap.season || 0).padStart(2, '0')}: ${gapAnomalyText(gap)}`).join('；');
+}
+
+function gapMissingSummary(series) {
+    const gaps = Array.isArray(series?.gaps) ? series.gaps : [];
+    const seasonCount = gaps.filter(isSeasonMissingGap).length;
+    const episodeCount = gaps.length - seasonCount;
+    if (seasonCount && episodeCount) return `缺 ${episodeCount} 集/${seasonCount} 季`;
+    if (seasonCount) return `缺 ${seasonCount} 季`;
+    return `缺 ${episodeCount} 集`;
 }
 
 function groupGaps(series) {
@@ -644,10 +1168,50 @@ function groupGaps(series) {
     })).sort((a, b) => a.season - b.season);
 }
 
+function seriesGapTargets(series) {
+    const targets = [];
+    groupGaps(series).forEach(group => {
+        const season = Number(group.season || 0);
+        if (group.episodes.some(isSeasonMissingGap)) {
+            targets.push({season, episodes: [], season_missing: true});
+        }
+        const episodes = group.episodes
+            .filter(ep => !isSeasonMissingGap(ep))
+            .map(ep => Number(ep.episode || 0))
+            .filter(Boolean);
+        if (episodes.length) targets.push({season, episodes});
+    });
+    return targets;
+}
+
+function episodeListText(episodes) {
+    const nums = (episodes || []).map(v => Number(v || 0)).filter(Boolean).sort((a, b) => a - b);
+    if (!nums.length) return '';
+    if (nums.length > 1 && nums.every((num, idx) => idx === 0 || num === nums[idx - 1] + 1)) {
+        return `E${String(nums[0]).padStart(2, '0')}-E${String(nums[nums.length - 1]).padStart(2, '0')}`;
+    }
+    return nums.slice(0, 8).map(e => `E${String(e).padStart(2, '0')}`).join(', ') + (nums.length > 8 ? ` +${nums.length - 8}` : '');
+}
+
+function gapTargetLabel(targets) {
+    const items = (targets || []).filter(target => target.season_missing === true || (target.episodes || []).length);
+    if (!items.length) return '全部缺失';
+    const parts = items.slice(0, 4).map(target => (
+        target.season_missing === true && !(target.episodes || []).length
+            ? `S${String(target.season).padStart(2, '0')} 整季`
+            : `S${String(target.season).padStart(2, '0')} ${episodeListText(target.episodes)}`
+    ));
+    return parts.join(' / ') + (items.length > 4 ? ` / +${items.length - 4}季` : '');
+}
+
 async function loadGapStatus() {
     try {
-        const data = await gapApi('/api/gaps/scan/progress');
-        applyGapStatus(data.data || {});
+        const [gapData, scanMonitor] = await Promise.all([
+            gapApi('/api/gaps/scan/progress'),
+            loadSharedScanMonitor(),
+        ]);
+        gapState.scanMonitor = scanMonitor;
+        applyGapStatus(gapData.data || {});
     } catch (e) {
         document.getElementById('gapLoading').classList.add('hidden');
         showToast('error', '加载失败', e.message);
@@ -656,26 +1220,47 @@ async function loadGapStatus() {
 
 function applyGapStatus(status) {
     const running = !!status.is_scanning;
+    gapState.scanStatus = status || {};
     gapState.items = Array.isArray(status.results) ? status.results : [];
     gapState.summary = status.summary || {};
     document.getElementById('gapLoading').classList.add('hidden');
+    const emptyText = document.querySelector('#gapEmpty p');
+    if (emptyText) {
+        emptyText.textContent = running ? '扫描中，缺集记录会陆续出现' : '暂无缺集记录';
+    }
     updateGapStats(status);
     updateGapProgress(status);
     renderGapLibrarySwitch();
     renderGapResults();
-    if (running) startGapPolling();
+    if (running && !gapState.pollTimer) startGapPolling();
 }
 
 function updateGapStats(status = {}) {
     const summary = gapState.summary || {};
     const seriesCount = summary.series_count ?? gapState.items.length;
     const gapCount = summary.gap_count ?? gapState.items.reduce((sum, item) => sum + (item.gaps || []).length, 0);
+    const processed = summary.processed ?? status.processed ?? 0;
+    const total = summary.total ?? status.total ?? 0;
     document.getElementById('statSeries').textContent = seriesCount;
     document.getElementById('statGaps').textContent = gapCount;
-    document.getElementById('statProcessed').textContent = summary.processed ?? status.processed ?? 0;
+    document.getElementById('statProcessed').textContent = status.is_scanning && total ? `${processed}/${total}` : processed;
     document.getElementById('statState').textContent = status.is_scanning ? '扫描中' : (status.error ? '异常' : '空闲');
     document.getElementById('gapLibraryCount').textContent = `剧集库 ${summary.library_count ?? 0}`;
-    document.getElementById('gapCacheTime').textContent = status.created_at ? `缓存 ${status.created_at}` : '等待扫描';
+    const scanMonitor = gapState.scanMonitor || {};
+    const scanSummary = scanMonitor.summary || {};
+    const scanTime = scanMonitor.scan_time || scanSummary.scan_time || scanMonitor.cache?.created_at || '';
+    const scanTimeEl = document.getElementById('gapCacheTime');
+    if (scanTime) {
+        scanTimeEl.textContent = `上次扫描: ${scanTime}`;
+        const nextScan = scanMonitor.schedule?.next_scan;
+        scanTimeEl.title = nextScan ? `下次定时扫描: ${nextScan}` : '与仪表盘同步的扫描时间';
+    } else if (status.created_at) {
+        scanTimeEl.textContent = `缺集扫描: ${status.created_at}`;
+        scanTimeEl.title = '缺集缓存更新时间';
+    } else {
+        scanTimeEl.textContent = '等待扫描';
+        scanTimeEl.removeAttribute('title');
+    }
 }
 
 function updateGapProgress(status = {}) {
@@ -728,8 +1313,11 @@ async function refreshGapSeries(seriesId) {
 }
 
 function startGapPolling() {
-    if (gapState.pollTimer) clearInterval(gapState.pollTimer);
-    gapState.pollTimer = setInterval(async () => {
+    if (gapState.pollTimer) {
+        clearInterval(gapState.pollTimer);
+        gapState.pollTimer = null;
+    }
+    const tick = async () => {
         try {
             const data = await gapApi(`/api/gaps/scan/progress?_t=${Date.now()}`);
             applyGapStatus(data.data || {});
@@ -742,7 +1330,9 @@ function startGapPolling() {
             gapState.pollTimer = null;
             showToast('error', '轮询失败', e.message);
         }
-    }, 1200);
+    };
+    tick();
+    gapState.pollTimer = setInterval(tick, 1000);
 }
 
 function filteredGapItems() {
@@ -866,13 +1456,34 @@ function compactRangeLabel(range) {
 }
 
 function renderGapEpisodeButtons(series, group, episodeCsv) {
+    if (group.episodes.some(isSeasonMissingGap)) {
+        return group.episodes.map(ep => {
+            if (!isSeasonMissingGap(ep)) return '';
+            const anomaly = isGapAnomaly(ep);
+            const chipClass = anomaly
+                ? 'bg-red-50 dark:bg-red-500/10 border-red-200 dark:border-red-500/25 text-red-700 dark:text-red-300'
+                : 'bg-amber-50 dark:bg-amber-500/10 border-amber-200 dark:border-amber-500/20 text-amber-700 dark:text-amber-300';
+            const chipTitle = anomaly ? `数据异常：${gapAnomalyText(ep)}` : '搜索整季缺失';
+            return `
+                <div class="gap-episode-chip inline-flex items-center rounded-lg border ${chipClass} overflow-hidden">
+                    <button title="${escapeHtml(chipTitle)}" class="gap-chip inline-flex items-center gap-1.5 px-2 text-[11px] font-black hover:text-brand-500 hover:bg-white/60 dark:hover:bg-white/10 transition-colors" onclick='openGapSourceSeason(${jsString(series.series_id)}, ${Number(ep.season || group.season || 0)})'>
+                        ${anomaly ? '<span class="gap-chip-anomaly-dot"></span>' : ''}
+                        整季缺失
+                    </button>
+                    <button title="忽略整季缺失" class="w-7 h-7 border-l border-black/5 dark:border-white/10 hover:bg-black/5 dark:hover:bg-white/10 text-gray-400 hover:text-red-500 transition-colors" onclick='ignoreGapEpisode(${jsString(series.series_id)}, ${jsString(series.series_name)}, ${Number(ep.season || group.season || 0)}, 0)'>
+                        <i class="fa-solid fa-xmark text-[11px]"></i>
+                    </button>
+                </div>
+            `;
+        }).join('');
+    }
     const range = compactEpisodeRange(group.episodes);
     if (range) {
         const statusClass = range.isPending
             ? 'bg-amber-50 dark:bg-amber-500/10 border-amber-200 dark:border-amber-500/20 text-amber-700 dark:text-amber-300'
             : 'bg-cyan-50 dark:bg-cyan-500/10 border-cyan-200 dark:border-cyan-500/20 text-cyan-700 dark:text-cyan-300';
         return `
-            <button title="搜索 ${compactRangeLabel(range)}" class="gap-episode-compact inline-flex items-center gap-2 rounded-lg border ${statusClass} px-3 text-[11px] font-black hover:bg-white/70 dark:hover:bg-white/10 transition-colors" onclick='openGapSource(${jsString(series.series_id)}, ${Number(group.season)}, "${episodeCsv}")'>
+            <button title="搜索全部缺失" class="gap-episode-compact inline-flex items-center gap-2 rounded-lg border ${statusClass} px-3 text-[11px] font-black hover:bg-white/70 dark:hover:bg-white/10 transition-colors" onclick='openGapSourceAll(${jsString(series.series_id)})'>
                 <i class="fa-solid fa-layer-group text-[10px] opacity-70"></i>
                 <span>整集</span>
                 <span class="opacity-70">${compactRangeLabel(range)}</span>
@@ -886,7 +1497,7 @@ function renderGapEpisodeButtons(series, group, episodeCsv) {
             : 'bg-gray-50 dark:bg-white/5 border-gray-200 dark:border-white/10 text-gray-700 dark:text-gray-300';
         return `
             <div class="gap-episode-chip inline-flex items-center rounded-lg border ${statusClass} overflow-hidden">
-                <button class="gap-chip px-2 text-[11px] font-black hover:text-brand-500 hover:bg-white/60 dark:hover:bg-white/10 transition-colors" onclick='openGapSource(${jsString(series.series_id)}, ${Number(ep.season)}, "${Number(ep.episode)}")'>
+                <button title="搜索全部缺失" class="gap-chip px-2 text-[11px] font-black hover:text-brand-500 hover:bg-white/60 dark:hover:bg-white/10 transition-colors" onclick='openGapSourceAll(${jsString(series.series_id)})'>
                     E${String(ep.episode).padStart(2, '0')}
                 </button>
                 <button title="忽略" class="w-7 h-7 border-l border-black/5 dark:border-white/10 hover:bg-black/5 dark:hover:bg-white/10 text-gray-400 hover:text-red-500 transition-colors" onclick='ignoreGapEpisode(${jsString(series.series_id)}, ${jsString(series.series_name)}, ${Number(ep.season)}, ${Number(ep.episode)})'>
@@ -899,27 +1510,43 @@ function renderGapEpisodeButtons(series, group, episodeCsv) {
 
 function renderGapCard(series) {
     const missingCount = (series.gaps || []).length;
+    const missingLabel = gapMissingSummary(series);
     const embyUrl = embySeriesUrl(series.series_id);
-    const isRefreshing = gapState.refreshingSeries.has(String(series.series_id || ''));
-    const titleHtml = embyUrl
-        ? `<a href="${escapeHtml(embyUrl)}" target="_blank" rel="noopener" title="在 Emby 外网打开" class="inline text-[15px] leading-tight font-black text-gray-900 dark:text-white break-words min-w-0 hover:text-brand-500 dark:hover:text-brand-400 transition-colors">${escapeHtml(series.series_name)}<i class="fa-solid fa-arrow-up-right-from-square ml-1 text-[10px] text-gray-400"></i></a>`
-        : `<span class="text-[15px] leading-tight font-black text-gray-900 dark:text-white break-words min-w-0">${escapeHtml(series.series_name)}</span>`;
+    const seriesId = String(series.series_id || '');
+    const isRefreshing = gapState.refreshingSeries.has(seriesId);
+    const isSubscribing = gapState.subscribingSeries.has(seriesId);
     const groups = groupGaps(series);
+    const allTargets = seriesGapTargets(series);
+    const canSubscribe = Number(series.tmdb_id || 0) > 0;
+    const tmdbUrl = tmdbSeriesUrl(series.tmdb_id);
+    const titleText = escapeHtml(series.series_name);
+    const anomalyText = seriesAnomalyText(series);
+    const anomalyDot = anomalyText
+        ? `<span class="gap-anomaly-dot" title="${escapeHtml(anomalyText)}"></span>`
+        : '';
+    const titleHtml = embyUrl
+        ? `<span class="gap-title-line"><a href="${escapeHtml(embyUrl)}" target="_blank" rel="noopener" title="${titleText}" class="gap-series-title-text text-[15px] font-black text-gray-900 dark:text-white hover:text-brand-500 dark:hover:text-brand-400 transition-colors">${titleText}<i class="fa-solid fa-arrow-up-right-from-square ml-1 text-[10px] text-gray-400"></i></a></span>`
+        : `<span class="gap-title-line"><span title="${titleText}" class="gap-series-title-text text-[15px] font-black text-gray-900 dark:text-white">${titleText}</span></span>`;
+    const allTargetTitle = `搜索全部缺失：${gapTargetLabel(allTargets)}`;
+    const subscribeTitle = canSubscribe
+        ? `添加到 MoviePilot 订阅：${gapTargetLabel(allTargets)}`
+        : '缺少 TMDB ID，无法订阅';
+    const subscribeClass = !canSubscribe
+        ? 'bg-gray-100 dark:bg-white/5 text-gray-300 dark:text-gray-600 cursor-not-allowed'
+        : (isSubscribing
+            ? 'bg-emerald-500 text-white cursor-wait'
+            : 'bg-emerald-50 dark:bg-emerald-500/10 text-emerald-600 dark:text-emerald-300 hover:bg-emerald-100 dark:hover:bg-emerald-500/20');
     const groupHtml = groups.map(group => {
         const episodeCsv = group.episodes.map(ep => Number(ep.episode || 0)).filter(Boolean).join(',');
         const chips = renderGapEpisodeButtons(series, group, episodeCsv);
+        const groupSeasonMissing = group.episodes.some(isSeasonMissingGap);
         return `
             <div class="gap-season-row rounded-xl bg-gray-50/80 dark:bg-white/5 border border-gray-200/70 dark:border-white/10 px-2.5 py-2">
                 <div class="flex items-center gap-2 min-w-0">
                     <span class="text-sm font-black text-gray-800 dark:text-white">S${String(group.season).padStart(2, '0')}</span>
-                    <span class="text-[10px] text-gray-400 font-black">${group.episodes.length} 集</span>
+                    <span class="text-[10px] text-gray-400 font-black">${groupSeasonMissing ? '整季' : `${group.episodes.length} 集`}</span>
                 </div>
                 <div class="gap-episode-grid">${chips}</div>
-                <div class="flex justify-end">
-                    <button title="搜索本季" class="w-8 h-8 rounded-lg bg-brand-500/10 hover:bg-brand-500/20 text-brand-500 text-xs font-black transition-colors" onclick='openGapSource(${jsString(series.series_id)}, ${group.season}, "${episodeCsv}")'>
-                        <i class="fa-solid fa-magnifying-glass"></i>
-                    </button>
-                </div>
             </div>
         `;
     }).join('');
@@ -930,27 +1557,35 @@ function renderGapCard(series) {
                     <img class="gap-poster rounded-lg shrink-0 border border-gray-200 dark:border-white/10" src="${escapeHtml(series.poster || '')}" onerror="this.style.display='none'">
                     <div class="min-w-0 flex-1 flex flex-col justify-between gap-2">
                         <div class="min-w-0">
-                            <div class="flex items-start justify-between gap-2">
-                                <h2 class="min-w-0">${titleHtml}</h2>
-                                <div class="flex items-center gap-1.5 shrink-0">
+                            <div class="gap-series-head">
+                                <h2 class="gap-series-title">${titleHtml}${anomalyDot}</h2>
+                                <div class="gap-series-actions">
+                                    <button title="${escapeHtml(subscribeTitle)}" ${(!canSubscribe || isSubscribing) ? 'disabled' : ''} onclick='subscribeGapSeries(${jsString(series.series_id)})' class="w-7 h-7 rounded-lg ${subscribeClass} transition-colors">
+                                        <i class="fa-solid ${isSubscribing ? 'fa-circle-notch fa-spin' : 'fa-calendar-plus'} text-[11px]"></i>
+                                    </button>
+                                    <button title="${escapeHtml(allTargetTitle)}" onclick='openGapSourceAll(${jsString(series.series_id)})' class="w-7 h-7 rounded-lg bg-brand-50 dark:bg-brand-500/10 text-brand-500 hover:bg-brand-100 dark:hover:bg-brand-500/20 transition-colors">
+                                        <i class="fa-solid fa-magnifying-glass text-[11px]"></i>
+                                    </button>
+                                    <button title="查看集数文件名" onclick='openGapFiles(${jsString(series.series_id)})' class="w-7 h-7 rounded-lg bg-slate-50 dark:bg-white/5 text-slate-500 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-white/10 hover:text-cyan-500 transition-colors">
+                                        <i class="fa-solid fa-list-ul text-[11px]"></i>
+                                    </button>
                                     <button title="刷新此剧缺集数据" ${isRefreshing ? 'disabled' : ''} onclick='refreshGapSeries(${jsString(series.series_id)})' class="w-7 h-7 rounded-lg ${isRefreshing ? 'bg-brand-500 text-white cursor-wait' : 'bg-brand-50 dark:bg-brand-500/10 text-brand-500 hover:bg-brand-100 dark:hover:bg-brand-500/20'} transition-colors">
                                         <i class="fa-solid fa-rotate ${isRefreshing ? 'fa-spin' : ''} text-[11px]"></i>
                                     </button>
-                                    <span title="缺 ${missingCount} 集" class="px-2 py-1 rounded-lg bg-cyan-50 dark:bg-cyan-500/10 text-cyan-600 dark:text-cyan-300 text-[11px] leading-none font-black">${missingCount}</span>
+                                    <span title="${escapeHtml(missingLabel)}" class="px-2 py-1 rounded-lg bg-cyan-50 dark:bg-cyan-500/10 text-cyan-600 dark:text-cyan-300 text-[11px] leading-none font-black">${missingCount}</span>
                                 </div>
                             </div>
                             <div class="gap-series-meta mt-1.5 text-[10px] font-bold text-gray-500 dark:text-gray-400">
-                                <span class="gap-missing-meta inline-flex items-center rounded-md bg-cyan-50 dark:bg-cyan-500/10 border border-cyan-100 dark:border-cyan-500/20 px-1.5 text-cyan-600 dark:text-cyan-300"><i class="fa-solid fa-triangle-exclamation mr-1 text-[9px]"></i>缺 ${missingCount} 集</span>
+                                <span class="gap-missing-meta inline-flex items-center rounded-md bg-cyan-50 dark:bg-cyan-500/10 border border-cyan-100 dark:border-cyan-500/20 px-1.5 text-cyan-600 dark:text-cyan-300"><i class="fa-solid fa-triangle-exclamation mr-1 text-[9px]"></i>${escapeHtml(missingLabel)}</span>
                                 ${series.year ? `<span class="truncate"><i class="fa-regular fa-calendar mr-1 text-gray-400"></i>${escapeHtml(series.year)}</span>` : ''}
                                 ${series.library_name ? `<span class="truncate"><i class="fa-solid fa-folder mr-1 text-gray-400"></i>${escapeHtml(series.library_name)}</span>` : ''}
-                                ${series.tmdb_id ? `<span class="truncate"><i class="fa-solid fa-hashtag mr-1 text-gray-400"></i>TMDB ${escapeHtml(series.tmdb_id)}</span>` : ''}
                             </div>
                         </div>
                         <div class="flex items-center justify-between gap-2">
                             <button title="忽略剧集" onclick='ignoreGapSeries(${jsString(series.series_id)}, ${jsString(series.series_name)})' class="px-2.5 py-1.5 rounded-lg bg-gray-100 dark:bg-white/5 hover:bg-red-50 dark:hover:bg-red-500/10 text-gray-500 hover:text-red-500 transition-colors text-[10px] font-black">
                                 <i class="fa-solid fa-box-archive mr-1"></i>忽略
                             </button>
-                            ${series.imdb_id ? `<span class="text-[10px] text-gray-500 dark:text-gray-500 font-bold truncate">${escapeHtml(series.imdb_id)}</span>` : ''}
+                            ${tmdbUrl ? `<a href="${escapeHtml(tmdbUrl)}" target="_blank" rel="noopener noreferrer" title="打开 TMDB ${escapeHtml(series.tmdb_id)}" class="text-[10px] text-gray-500 dark:text-gray-500 hover:text-brand-500 dark:hover:text-brand-400 font-bold truncate transition-colors"><i class="fa-solid fa-hashtag mr-1 text-gray-400"></i>TMDB ${escapeHtml(series.tmdb_id)}</a>` : ''}
                         </div>
                     </div>
                 </div>
@@ -990,12 +1625,435 @@ function findGapSeries(seriesId) {
     return gapState.items.find(item => String(item.series_id) === String(seriesId));
 }
 
+function closeGapFiles() {
+    hideGapModal('gapFilesModal');
+}
+
+function gapFileStatusHtml(item) {
+    if (isSeasonMissingGap(item)) {
+        return `<span class="gap-file-status bg-amber-50 dark:bg-amber-500/10 text-amber-700 dark:text-amber-300 border border-amber-200 dark:border-amber-500/20">整季缺失</span>`;
+    }
+    if (item?.missing) {
+        const label = item?.virtual ? '虚拟缺失' : '缺失';
+        return `<span class="gap-file-status bg-amber-50 dark:bg-amber-500/10 text-amber-700 dark:text-amber-300 border border-amber-200 dark:border-amber-500/20">${label}</span>`;
+    }
+    return '<span class="gap-file-status bg-emerald-50 dark:bg-emerald-500/10 text-emerald-700 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-500/20">已入库</span>';
+}
+
+function gapFileSourceBadge(item) {
+    return '';
+}
+
+function renderGapFileSources(item) {
+    if (isSeasonMissingGap(item)) {
+        return `
+            <div class="gap-file-source border-amber-200 dark:border-amber-500/20 bg-amber-50 dark:bg-amber-500/10">
+                <div class="gap-file-name text-amber-700 dark:text-amber-300">该季没有入库文件</div>
+            </div>
+        `;
+    }
+    let sources = Array.isArray(item?.media_sources) ? item.media_sources.filter(source => source?.filename || source?.path) : [];
+    if (!sources.length && (item?.filename || item?.path)) {
+        sources = [{ filename: item.filename || '', path: item.path || '', container: '', size: 0 }];
+    }
+    if (!sources.length) {
+        return `
+            <div class="gap-file-source border-amber-200 dark:border-amber-500/20 bg-amber-50 dark:bg-amber-500/10">
+                <div class="gap-file-name text-amber-700 dark:text-amber-300">无文件</div>
+            </div>
+        `;
+    }
+    return sources.map(source => {
+        const meta = [
+            source.container ? String(source.container).toUpperCase() : '',
+            Number(source.size || 0) > 0 ? formatBytes(source.size) : '',
+        ].filter(Boolean).join(' · ');
+        return `
+            <div class="gap-file-source">
+                <div class="gap-file-name">${escapeHtml(source.filename || source.path || '未知文件')}</div>
+                ${source.path ? `<div class="gap-file-path">${escapeHtml(source.path)}</div>` : ''}
+                ${meta ? `<div class="gap-file-meta">${escapeHtml(meta)}</div>` : ''}
+            </div>
+        `;
+    }).join('');
+}
+
+function renderGapFileRow(item) {
+    return `
+        <div class="gap-file-row">
+            <div class="gap-file-episode-col">
+                <span class="inline-flex items-center min-h-7 px-2 rounded-lg bg-gray-100 dark:bg-white/5 text-gray-800 dark:text-gray-100 text-xs font-black font-mono">${escapeHtml(item.label || episodeLabel(item.season, item.episode))}</span>
+                ${gapFileSourceBadge(item)}
+            </div>
+            <div class="gap-file-title-col">
+                <div class="gap-file-title-line">
+                    ${gapFileStatusHtml(item)}
+                    <span class="gap-file-title text-sm font-black text-gray-900 dark:text-white">${escapeHtml(item.title || '')}</span>
+                </div>
+                ${item.date ? `<div class="mt-1 text-[10px] text-gray-400 dark:text-gray-500 font-bold">${escapeHtml(String(item.date).slice(0, 10))}</div>` : ''}
+            </div>
+            <div class="gap-file-source-col">
+                ${renderGapFileSources(item)}
+            </div>
+        </div>
+    `;
+}
+
+function gapFilesFilterButton(filter, label, count, className) {
+    const active = gapState.fileFilter === filter;
+    const activeClass = active
+        ? 'ring-2 ring-brand-500 dark:ring-brand-400 ring-offset-1 ring-offset-white dark:ring-offset-apple-cardDark shadow-sm'
+        : 'hover:brightness-95 dark:hover:brightness-110';
+    return `
+        <button type="button" onclick='setGapFileFilter(${jsString(filter)})' aria-pressed="${active ? 'true' : 'false'}" class="${className} ${activeClass}">
+            ${escapeHtml(label)} ${Number(count || 0)}
+        </button>
+    `;
+}
+
+function filterGapFileEpisodes(episodes, filter) {
+    if (filter === 'missing') return episodes.filter(item => item.missing);
+    if (filter === 'present') return episodes.filter(item => !item.missing);
+    if (filter === 'virtual') return episodes.filter(item => item.virtual);
+    if (filter === 'season_missing') return episodes.filter(isSeasonMissingGap);
+    return episodes;
+}
+
+function setGapFileFilter(filter) {
+    const next = ['all', 'present', 'missing', 'virtual', 'season_missing'].includes(String(filter || '')) ? String(filter) : 'all';
+    if (gapState.fileFilter === next) return;
+    gapState.fileFilter = next;
+    renderGapFiles();
+    const body = document.getElementById('gapFilesBody');
+    if (body) body.scrollTop = 0;
+}
+
+function gapFileMissingTargets() {
+    const data = gapState.fileData || {};
+    const grouped = new Map();
+    const seasonOnly = new Set();
+    (Array.isArray(data.episodes) ? data.episodes : []).forEach(item => {
+        if (!item?.missing) return;
+        const season = Number(item.season || 0);
+        const episode = Number(item.episode || 0);
+        if (isSeasonMissingGap(item)) {
+            if (Number.isInteger(season) && season >= 0) seasonOnly.add(season);
+            return;
+        }
+        if (!Number.isInteger(episode) || episode <= 0) return;
+        if (!grouped.has(season)) grouped.set(season, new Set());
+        grouped.get(season).add(episode);
+    });
+    const targets = Array.from(seasonOnly).sort((a, b) => a - b).map(season => ({
+        season,
+        episodes: [],
+        season_missing: true,
+    }));
+    targets.push(...Array.from(grouped.entries()).sort((a, b) => a[0] - b[0]).map(([season, episodes]) => ({
+        season,
+        episodes: Array.from(episodes).sort((a, b) => a - b),
+    })).filter(target => target.episodes.length));
+    return targets;
+}
+
+function gapFileActionSeries() {
+    const data = gapState.fileData || {};
+    const modalSeries = data.series || {};
+    const cached = findGapSeries(modalSeries.series_id) || {};
+    return {
+        ...cached,
+        ...modalSeries,
+        series_id: modalSeries.series_id || cached.series_id || '',
+        series_name: modalSeries.series_name || cached.series_name || '',
+        tmdb_id: modalSeries.tmdb_id || cached.tmdb_id || 0,
+        year: modalSeries.year || cached.year || '',
+    };
+}
+
+function gapFileActionsHtml() {
+    const targets = gapFileMissingTargets();
+    const series = gapFileActionSeries();
+    const hasTargets = targets.length > 0;
+    const canSubscribe = hasTargets && Number(series.tmdb_id || 0) > 0;
+    const subscribeKey = String(series.series_id || series.series_name || '').trim();
+    const isSubscribing = subscribeKey && gapState.subscribingSeries.has(subscribeKey);
+    const targetLabel = hasTargets ? gapTargetLabel(targets) : '没有缺失集数';
+    return `
+        <div class="gap-files-actions">
+            <button type="button" title="${escapeHtml(hasTargets ? `补齐缺失：${targetLabel}` : '没有缺失集数')}" ${hasTargets ? '' : 'disabled'} onclick="openGapFileSourceAll()" class="gap-files-action bg-brand-50 dark:bg-brand-500/10 text-brand-600 dark:text-brand-300 hover:bg-brand-100 dark:hover:bg-brand-500/20">
+                <i class="fa-solid fa-magnifying-glass text-[11px]"></i><span>补集</span>
+            </button>
+            <button type="button" title="${escapeHtml(series.series_name ? `整剧搜索资源并重新下载：${series.series_name}` : '缺少剧集信息')}" ${series.series_id || series.series_name ? '' : 'disabled'} onclick="openGapFileFullRedownload()" class="gap-files-action bg-amber-50 dark:bg-amber-500/10 text-amber-700 dark:text-amber-300 hover:bg-amber-100 dark:hover:bg-amber-500/20">
+                <i class="fa-solid fa-rotate text-[11px]"></i><span>全集重下</span>
+            </button>
+            <button type="button" title="${escapeHtml(canSubscribe ? `添加到 MoviePilot 订阅：${targetLabel}` : (hasTargets ? '缺少 TMDB ID，无法订阅' : '没有缺失集数'))}" ${(canSubscribe && !isSubscribing) ? '' : 'disabled'} onclick="subscribeGapFileMissing()" class="gap-files-action ${isSubscribing ? 'bg-emerald-500 text-white cursor-wait' : 'bg-emerald-50 dark:bg-emerald-500/10 text-emerald-700 dark:text-emerald-300 hover:bg-emerald-100 dark:hover:bg-emerald-500/20'}">
+                <i class="fa-solid ${isSubscribing ? 'fa-circle-notch fa-spin' : 'fa-calendar-plus'} text-[11px]"></i><span>${isSubscribing ? '订阅中' : '订阅'}</span>
+            </button>
+        </div>
+    `;
+}
+
+function renderGapFiles(data = null) {
+    if (data) gapState.fileData = data;
+    data = gapState.fileData || {};
+    const body = document.getElementById('gapFilesBody');
+    const title = document.getElementById('gapFilesTitle');
+    const sub = document.getElementById('gapFilesSub');
+    const series = data.series || {};
+    const episodes = Array.isArray(data.episodes) ? data.episodes : [];
+    const summary = data.summary || {};
+    const filter = gapState.fileFilter || 'all';
+    const visibleEpisodes = filterGapFileEpisodes(episodes, filter);
+    const filterName = {
+        all: '全部',
+        present: '已入库',
+        missing: '缺失',
+        virtual: '虚拟',
+        season_missing: '整季',
+    }[filter] || '全部';
+    title.textContent = series.series_name || '集数文件';
+    const seasonMissingCount = Number(summary.season_missing_count || 0);
+    sub.textContent = `${summary.episode_count ?? episodes.length} 项 · 已入库 ${summary.present_count ?? 0} · 缺失 ${summary.missing_count ?? 0}${seasonMissingCount ? ` · 整季 ${seasonMissingCount}` : ''}${filter !== 'all' ? ` · 当前${filterName} ${visibleEpisodes.length}` : ''}`;
+    if (!episodes.length) {
+        body.innerHTML = '<div class="text-center py-16 text-gray-400 font-bold">没有读取到集数</div>';
+        return;
+    }
+
+    const groups = new Map();
+    visibleEpisodes.forEach(item => {
+        const season = Number(item.season || 0);
+        if (!groups.has(season)) groups.set(season, []);
+        groups.get(season).push(item);
+    });
+    const summaryHtml = `
+        <div class="gap-files-summary-row mb-3">
+            <div class="gap-files-summary">
+                ${gapFilesFilterButton('all', '总数', summary.episode_count ?? episodes.length, 'bg-gray-100 dark:bg-white/5 text-gray-600 dark:text-gray-300')}
+                ${gapFilesFilterButton('present', '已入库', summary.present_count ?? 0, 'bg-emerald-50 dark:bg-emerald-500/10 text-emerald-700 dark:text-emerald-300')}
+                ${gapFilesFilterButton('missing', '缺失', summary.missing_count ?? 0, 'bg-amber-50 dark:bg-amber-500/10 text-amber-700 dark:text-amber-300')}
+                ${Number(summary.virtual_count || 0) ? gapFilesFilterButton('virtual', '虚拟', summary.virtual_count, 'bg-cyan-50 dark:bg-cyan-500/10 text-cyan-700 dark:text-cyan-300') : ''}
+                ${seasonMissingCount ? gapFilesFilterButton('season_missing', '整季', seasonMissingCount, 'bg-orange-50 dark:bg-orange-500/10 text-orange-700 dark:text-orange-300') : ''}
+                ${Number(summary.source_count || 0) ? `<span class="bg-slate-100 dark:bg-white/5 text-slate-600 dark:text-slate-300">文件源 ${summary.source_count}</span>` : ''}
+            </div>
+            ${gapFileActionsHtml()}
+        </div>
+    `;
+    if (!visibleEpisodes.length) {
+        body.innerHTML = `${summaryHtml}<div class="text-center py-16 text-gray-400 font-bold">没有${escapeHtml(filterName)}集数</div>`;
+        return;
+    }
+    const seasonsHtml = Array.from(groups.entries()).sort((a, b) => a[0] - b[0]).map(([season, items]) => {
+        const missing = items.filter(item => item.missing).length;
+        const seasonMissing = items.some(isSeasonMissingGap);
+        items.sort((a, b) => Number(a.episode || 0) - Number(b.episode || 0));
+        return `
+            <section class="gap-files-season">
+                <div class="gap-files-season-head">
+                    <div class="text-sm font-black text-gray-900 dark:text-white">S${String(season).padStart(2, '0')}</div>
+                    <div class="text-[11px] font-black text-gray-500 dark:text-gray-400">${seasonMissing ? '整季缺失' : `${items.length} 集${missing ? ` · 缺 ${missing}` : ''}`}</div>
+                </div>
+                <div>${items.map(renderGapFileRow).join('')}</div>
+            </section>
+        `;
+    }).join('');
+    body.innerHTML = `${summaryHtml}<div class="gap-files-list">${seasonsHtml}</div>`;
+}
+
+async function openGapFiles(seriesId) {
+    const id = String(seriesId || '').trim();
+    const series = findGapSeries(id);
+    if (!series) return;
+    gapState.fileData = null;
+    gapState.fileFilter = 'all';
+    document.getElementById('gapFilesTitle').textContent = series.series_name || '集数文件';
+    document.getElementById('gapFilesSub').textContent = '正在读取 Emby 集数';
+    document.getElementById('gapFilesBody').innerHTML = `
+        <div class="text-center py-20 text-gray-400">
+            <i class="fa-solid fa-circle-notch fa-spin text-3xl mb-4 text-brand-500"></i>
+            <p class="text-sm font-bold">读取中...</p>
+        </div>
+    `;
+    showGapModal('gapFilesModal');
+    try {
+        const data = await gapApi(`/api/gaps/series/${encodeURIComponent(id)}/episodes?_t=${Date.now()}`);
+        renderGapFiles(data.data || {});
+    } catch (e) {
+        document.getElementById('gapFilesBody').innerHTML = `<div class="text-center py-16 text-red-400 font-bold">${escapeHtml(e.message)}</div>`;
+        document.getElementById('gapFilesSub').textContent = '读取失败';
+    }
+}
+
+function openGapFileSourceAll() {
+    const targets = gapFileMissingTargets();
+    if (!targets.length) {
+        showToast('warning', '没有缺失集数');
+        return;
+    }
+    const series = gapFileActionSeries();
+    if (!series.series_id && !series.series_name) {
+        showToast('error', '补集失败', '缺少剧集信息');
+        return;
+    }
+    const first = targets[0];
+    gapState.pending = {
+        series,
+        season: Number(first.season || 0),
+        episodes: [...first.episodes],
+        targets,
+        targetLabel: gapTargetLabel(targets),
+    };
+    document.getElementById('gapSourceTarget').textContent = `${series.series_name || '当前剧集'} 缺失 ${gapState.pending.targetLabel}`;
+    hideGapModal('gapFilesModal');
+    setTimeout(() => showGapModal('gapSourceModal'), 180);
+}
+
+function openGapFileFullRedownload() {
+    const series = gapFileActionSeries();
+    if (!series.series_id && !series.series_name) {
+        showToast('error', '全集重下失败', '缺少剧集信息');
+        return;
+    }
+    gapState.pending = {
+        series,
+        season: 1,
+        episodes: [],
+        targets: [],
+        targetLabel: '全集重下',
+        fullSeries: true,
+    };
+    document.getElementById('gapSourceTarget').textContent = `${series.series_name || '当前剧集'} 全集重下`;
+    hideGapModal('gapFilesModal');
+    setTimeout(() => showGapModal('gapSourceModal'), 180);
+}
+
+async function subscribeGapFileMissing() {
+    const targets = gapFileMissingTargets();
+    const series = gapFileActionSeries();
+    const id = String(series.series_id || series.series_name || '').trim();
+    if (!targets.length) {
+        showToast('warning', '没有缺失集数');
+        return;
+    }
+    if (!Number(series.tmdb_id || 0)) {
+        showToast('error', '订阅失败', '缺少 TMDB ID，MoviePilot 无法准确订阅');
+        return;
+    }
+    if (!id || gapState.subscribingSeries.has(id)) return;
+    const first = targets[0];
+    gapState.subscribingSeries.add(id);
+    renderGapFiles();
+    renderGapResults();
+    try {
+        const data = await gapApi('/api/gaps/subscribe_mp', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({
+                series_id: series.series_id || '',
+                series_name: series.series_name || '',
+                year: series.year || '',
+                season: Number(first.season || 0),
+                episodes: [...first.episodes],
+                targets,
+                tmdb_id: series.tmdb_id || 0,
+            }),
+        });
+        showToast('success', '订阅已提交', data.message || '已添加到 MoviePilot 订阅');
+    } catch (e) {
+        showToast('error', '订阅失败', e.message);
+    } finally {
+        gapState.subscribingSeries.delete(id);
+        renderGapFiles();
+        renderGapResults();
+    }
+}
+
+async function subscribeGapSeries(seriesId) {
+    const id = String(seriesId || '').trim();
+    const series = findGapSeries(id);
+    if (!series || gapState.subscribingSeries.has(id)) return;
+    const targets = seriesGapTargets(series);
+    if (!targets.length) {
+        showToast('warning', '没有缺失集数');
+        return;
+    }
+    if (!Number(series.tmdb_id || 0)) {
+        showToast('error', '订阅失败', '缺少 TMDB ID，MoviePilot 无法准确订阅');
+        return;
+    }
+    const first = targets[0];
+    gapState.subscribingSeries.add(id);
+    renderGapResults();
+    try {
+        const data = await gapApi('/api/gaps/subscribe_mp', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({
+                series_id: series.series_id || '',
+                series_name: series.series_name || '',
+                year: series.year || '',
+                season: Number(first.season || 0),
+                episodes: [...first.episodes],
+                targets,
+                tmdb_id: series.tmdb_id || 0,
+            }),
+        });
+        showToast('success', '订阅已提交', data.message || '已添加到 MoviePilot 订阅');
+    } catch (e) {
+        showToast('error', '订阅失败', e.message);
+    } finally {
+        gapState.subscribingSeries.delete(id);
+        renderGapResults();
+    }
+}
+
+function openGapSourceAll(seriesId) {
+    const series = findGapSeries(seriesId);
+    if (!series) return;
+    const targets = seriesGapTargets(series);
+    if (!targets.length) {
+        showToast('warning', '没有缺失集数');
+        return;
+    }
+    const first = targets[0];
+    gapState.pending = {
+        series,
+        season: Number(first.season || 0),
+        episodes: [...first.episodes],
+        targets,
+        targetLabel: gapTargetLabel(targets),
+    };
+    document.getElementById('gapSourceTarget').textContent = `${series.series_name} 全部缺失 ${gapState.pending.targetLabel}`;
+    showGapModal('gapSourceModal');
+}
+
+function openGapSourceSeason(seriesId, season) {
+    const series = findGapSeries(seriesId);
+    if (!series) return;
+    const target = { season: Number(season), episodes: [], season_missing: true };
+    gapState.pending = {
+        series,
+        season: target.season,
+        episodes: [],
+        targets: [target],
+        targetLabel: gapTargetLabel([target]),
+    };
+    document.getElementById('gapSourceTarget').textContent = `${series.series_name} ${gapState.pending.targetLabel}`;
+    showGapModal('gapSourceModal');
+}
+
 function openGapSource(seriesId, season, episodeCsv) {
     const series = findGapSeries(seriesId);
     if (!series) return;
     const episodes = String(episodeCsv || '').split(',').map(v => Number(v)).filter(Boolean);
-    gapState.pending = { series, season: Number(season), episodes };
-    document.getElementById('gapSourceTarget').textContent = `${series.series_name} S${String(season).padStart(2, '0')} ${episodes.map(e => `E${String(e).padStart(2, '0')}`).join(', ')}`;
+    const target = { season: Number(season), episodes };
+    gapState.pending = {
+        series,
+        season: target.season,
+        episodes,
+        targets: [target],
+        targetLabel: gapTargetLabel([target]),
+    };
+    document.getElementById('gapSourceTarget').textContent = `${series.series_name} ${gapState.pending.targetLabel}`;
     showGapModal('gapSourceModal');
 }
 
@@ -1006,12 +2064,15 @@ function closeGapSourceModal() {
 async function runGapSearch(source) {
     const pending = gapState.pending;
     if (!pending) return;
+    const resolverToken = gapState.resolverToken + 1;
+    gapState.resolverToken = resolverToken;
+    gapState.resolverOpen = true;
     gapState.source = source;
     hideGapModal('gapSourceModal');
     showGapModal('gapResolverModal');
     const sourceLabel = source === 'hdhive' ? '影巢' : 'MoviePilot';
     document.getElementById('gapResolverTitle').textContent = `${sourceLabel} 搜索结果`;
-    document.getElementById('gapResolverSub').textContent = `${pending.series.series_name} S${String(pending.season).padStart(2, '0')}`;
+    document.getElementById('gapResolverSub').textContent = `${pending.series.series_name} ${pending.fullSeries ? '全集重下' : (pending.targetLabel || gapTargetLabel(pending.targets || []))}`;
     document.getElementById('gapResolverBody').innerHTML = `
         <div class="text-center py-20 text-gray-400">
             <i class="fa-solid fa-circle-notch fa-spin text-3xl mb-4 text-brand-500"></i>
@@ -1026,22 +2087,54 @@ async function runGapSearch(source) {
             body: JSON.stringify({
                 series_id: pending.series.series_id,
                 series_name: pending.series.series_name,
+                year: pending.series.year || '',
                 season: pending.season,
                 episodes: pending.episodes,
+                targets: pending.targets || [],
                 tmdb_id: pending.series.tmdb_id || 0,
+                imdb_id: pending.series.imdb_id || '',
+                library_name: pending.series.library_name || '',
                 type: 'tv',
+                full_series: pending.fullSeries === true,
             }),
         });
+        if (gapState.resolverToken !== resolverToken || !gapState.resolverOpen) return;
         gapState.resolverResults = source === 'hdhive'
             ? ((data.data || {}).results || [])
             : ((data.data || {}).results || []);
         renderGapResolver();
+        if (source === 'moviepilot') {
+            refreshMoviePilotDownloadStatuses();
+        }
     } catch (e) {
+        if (gapState.resolverToken !== resolverToken || !gapState.resolverOpen) return;
         document.getElementById('gapResolverBody').innerHTML = `<div class="text-center py-16 text-red-400 font-bold">${escapeHtml(e.message)}</div>`;
     }
 }
 
+async function refreshMoviePilotDownloadStatuses() {
+    if (!gapState.resolverOpen || gapState.source !== 'moviepilot' || !Array.isArray(gapState.resolverResults) || !gapState.resolverResults.length) return;
+    const token = Date.now();
+    gapState.downloadStatusToken = token;
+    try {
+        const data = await gapApi('/api/gaps/download_status', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({results: gapState.resolverResults}),
+        });
+        if (!gapState.resolverOpen || gapState.downloadStatusToken !== token || gapState.source !== 'moviepilot') return;
+        const results = (data.data || {}).results || [];
+        if (Array.isArray(results) && results.length) {
+            gapState.resolverResults = results;
+            renderGapResolver();
+        }
+    } catch (e) {
+        console.warn('MoviePilot 下载状态读取失败', e);
+    }
+}
+
 function renderGapResolver() {
+    if (!gapState.resolverOpen) return;
     const body = document.getElementById('gapResolverBody');
     const results = gapState.resolverResults || [];
     if (!results.length) {
@@ -1061,11 +2154,137 @@ function shortDateTime(value) {
     return text.length >= 16 ? text.slice(0, 16) : text;
 }
 
+function safeHttpUrl(value) {
+    const text = String(value || '').trim();
+    if (!/^https?:\/\//i.test(text)) return '';
+    try {
+        const url = new URL(text);
+        return ['http:', 'https:'].includes(url.protocol) ? url.href : '';
+    } catch (_) {
+        return '';
+    }
+}
+
+function gapResolverPreviewUrl(item) {
+    for (const key of ['page_url', 'resource_url', 'url', 'detail_url', 'preview_url', 'slug']) {
+        const url = safeHttpUrl(item?.[key]);
+        if (url) return url;
+    }
+    return '';
+}
+
+function renderResolverTitle(title, item, previewLabel = '查看详情页') {
+    const previewUrl = gapResolverPreviewUrl(item);
+    if (!previewUrl) return `<div class="gap-resolver-title">${escapeHtml(title)}</div>`;
+    return `
+        <div class="gap-resolver-title">
+            <a href="${escapeHtml(previewUrl)}" target="_blank" rel="noopener noreferrer" title="${escapeHtml(previewLabel)}" class="gap-resolver-title-link">
+                <span>${escapeHtml(title)}</span><i class="fa-solid fa-arrow-up-right-from-square"></i>
+            </a>
+        </div>
+    `;
+}
+
+function seasonRangeText(seasons) {
+    const nums = [...new Set((seasons || []).map(v => Number(v)).filter(v => Number.isFinite(v) && v >= 0))]
+        .sort((a, b) => a - b);
+    const parts = [];
+    let start = null;
+    let prev = null;
+    nums.forEach(num => {
+        if (start === null) {
+            start = num;
+            prev = num;
+            return;
+        }
+        if (num === prev + 1) {
+            prev = num;
+            return;
+        }
+        parts.push(start === prev
+            ? `S${String(start).padStart(2, '0')}`
+            : `S${String(start).padStart(2, '0')}-S${String(prev).padStart(2, '0')}`);
+        start = num;
+        prev = num;
+    });
+    if (start !== null) {
+        parts.push(start === prev
+            ? `S${String(start).padStart(2, '0')}`
+            : `S${String(start).padStart(2, '0')}-S${String(prev).padStart(2, '0')}`);
+    }
+    return parts.join(' / ');
+}
+
+function resolverTargetBadge(item) {
+    const matchKind = String(item?.ui_episode_match_kind || '');
+    if (matchKind === 'none') return '';
+
+    const targets = Array.isArray(item?.ui_gap_targets)
+        ? item.ui_gap_targets.filter(target => target && String(target.match_kind || '') !== 'none')
+        : [];
+    if (targets.length) {
+        const seasonPackSeasons = [];
+        const episodeParts = [];
+        targets.forEach(target => {
+            const targetKind = String(target.match_kind || '');
+            const season = Number(target.season ?? target.ui_target_season ?? -1);
+            if (!Number.isFinite(season) || season < 0) return;
+            const episodes = Array.isArray(target.matched_episodes) && target.matched_episodes.length
+                ? target.matched_episodes
+                : (Array.isArray(target.episodes) ? target.episodes : []);
+            if ((targetKind === 'season_pack' || target.season_missing === true) && !episodes.length) {
+                seasonPackSeasons.push(season);
+                return;
+            }
+            if (episodes.length) {
+                const fileSeason = Number(target.file_season || season);
+                const fileText = fileSeason && fileSeason !== season ? ` · 文件 S${String(fileSeason).padStart(2, '0')}` : '';
+                episodeParts.push(`S${String(season).padStart(2, '0')} ${episodeListText(episodes)}${fileText}`);
+            }
+        });
+        const parts = [];
+        const seasonText = seasonRangeText(seasonPackSeasons);
+        if (seasonText) parts.push(`${seasonText} 整季`);
+        parts.push(...episodeParts);
+        if (parts.length) {
+            return `<span class="gap-resolver-pill gap-resolver-pill-match">${escapeHtml(`命中 ${parts.join(' / ')}`)}</span>`;
+        }
+    }
+
+    if (matchKind === 'full_series' || item?.ui_full_series === true) {
+        return '<span class="gap-resolver-pill gap-resolver-pill-match">命中全集</span>';
+    }
+
+    const season = Number(item?.ui_target_season || 0);
+    const episodes = Array.isArray(item?.ui_target_episodes) ? item.ui_target_episodes : [];
+    if (!episodes.length) {
+        if (matchKind === 'season_pack' && season >= 0) {
+            return `<span class="gap-resolver-pill gap-resolver-pill-match">命中 S${String(season).padStart(2, '0')} 整季</span>`;
+        }
+        return '';
+    }
+    const fileSeason = Number(item?.ui_file_season || season);
+    const text = `命中 S${String(season).padStart(2, '0')} ${episodeListText(episodes)}`;
+    const fileText = fileSeason && fileSeason !== season ? ` · 文件 S${String(fileSeason).padStart(2, '0')}` : '';
+    return `<span class="gap-resolver-pill gap-resolver-pill-match">${escapeHtml(text + fileText)}</span>`;
+}
+
+function resolverMatchText(item) {
+    const text = item?.ui_episode_match_text || '0/0';
+    if (item?.ui_full_series === false && item?.ui_download_blocked === true) {
+        return `类型 ${text}`;
+    }
+    return `匹配 ${text}`;
+}
+
 function renderResolverItem(item, idx) {
     const isHdhive = gapState.source === 'hdhive';
     const title = item.title || item.name || '未知资源';
     const ratio = Number(item.ui_episode_match_ratio || 0);
-    const matchClass = ratio > 0 ? 'gap-resolver-pill-match' : 'gap-resolver-pill-muted';
+    const matchKind = String(item.ui_episode_match_kind || '');
+    const matchClass = ['season_pack', 'episode_pack'].includes(matchKind)
+        ? 'gap-resolver-pill-pack'
+        : (ratio > 0 ? 'gap-resolver-pill-match' : 'gap-resolver-pill-muted');
     if (isHdhive) {
         const res = joinList(item.video_resolution);
         const src = joinList(item.source);
@@ -1083,13 +2302,14 @@ function renderResolverItem(item, idx) {
             <div class="gap-resolver-card">
                 <div class="gap-resolver-main">
                     <div class="min-w-0 flex-1">
-                        <div class="gap-resolver-title">${escapeHtml(title)}</div>
+                        ${renderResolverTitle(title, item, '查看解锁页面预览')}
                         <div class="gap-resolver-pills">
                             ${item.share_size ? `<span class="gap-resolver-pill">${escapeHtml(item.share_size)}</span>` : ''}
                             ${res ? `<span class="gap-resolver-pill">${escapeHtml(res)}</span>` : ''}
                             ${src ? `<span class="gap-resolver-pill">${escapeHtml(src)}</span>` : ''}
                             ${officialBadge}
-                            <span class="gap-resolver-pill ${matchClass}">匹配 ${escapeHtml(item.ui_episode_match_text || '0/0')}</span>
+                            <span class="gap-resolver-pill ${matchClass}">${escapeHtml(resolverMatchText(item))}</span>
+                            ${resolverTargetBadge(item)}
                             ${unlockBadge}
                         </div>
                         ${item.remark ? `<div class="gap-resolver-remark mac-scrollbar">${escapeHtml(item.remark)}</div>` : ''}
@@ -1101,29 +2321,32 @@ function renderResolverItem(item, idx) {
                             ${item.unlock_count !== undefined ? `<span class="gap-resolver-pill">解锁 ${escapeHtml(item.unlock_count)}</span>` : ''}
                         </div>
                     </div>
-                    <button onclick="downloadResolverResult(${idx})" ${action.disabled ? 'disabled' : ''} aria-busy="${item?.ui_transfer_pending === true ? 'true' : 'false'}" class="gap-resolver-action shrink-0 transition-colors ${action.className}">
+                    <button onclick="downloadResolverResult(${idx})" ${action.disabled ? 'disabled' : ''} title="${escapeHtml(action.title || '')}" aria-busy="${item?.ui_transfer_pending === true ? 'true' : 'false'}" class="gap-resolver-action shrink-0 transition-colors ${action.className}">
                         <i class="${action.icon}"></i><span>${action.label}</span>
                     </button>
                 </div>
             </div>
         `;
     }
+    const action = moviepilotResolverAction(item);
     return `
         <div class="gap-resolver-card">
             <div class="gap-resolver-main">
                 <div class="min-w-0">
-                    <div class="gap-resolver-title">${escapeHtml(title)}</div>
+                    ${renderResolverTitle(title, item, '查看种子详情页')}
                     <div class="gap-resolver-pills">
                         ${item.site_name ? `<span class="gap-resolver-pill">${escapeHtml(item.site_name)}</span>` : ''}
                         <span class="gap-resolver-pill">${formatBytes(item.size)}</span>
                         ${item.resolution ? `<span class="gap-resolver-pill">${escapeHtml(item.resolution)}</span>` : ''}
                         ${item.video_encode ? `<span class="gap-resolver-pill">${escapeHtml(item.video_encode)}</span>` : ''}
-                        <span class="gap-resolver-pill ${matchClass}">匹配 ${escapeHtml(item.ui_episode_match_text || '0/0')}</span>
+                        <span class="gap-resolver-pill ${matchClass}">${escapeHtml(resolverMatchText(item))}</span>
+                        ${resolverTargetBadge(item)}
                         ${item.seeders !== undefined ? `<span class="gap-resolver-pill">${escapeHtml(item.seeders)} 做种</span>` : ''}
+                        ${item.ui_download_blocked ? `<span class="gap-resolver-pill gap-resolver-pill-pack">${escapeHtml(item.ui_download_block_reason || '不会自动下载整包')}</span>` : ''}
                     </div>
                 </div>
-                <button onclick="downloadResolverResult(${idx})" class="gap-resolver-action bg-brand-500 hover:bg-brand-600 text-white shrink-0">
-                    <i class="fa-solid fa-download"></i><span>下载</span>
+                <button onclick="downloadResolverResult(${idx})" ${action.disabled ? 'disabled' : ''} title="${escapeHtml(action.title)}" class="gap-resolver-action shrink-0 ${action.className}">
+                    <i class="${action.icon}"></i><span>${action.label}</span>
                 </button>
             </div>
         </div>
@@ -1134,10 +2357,25 @@ async function downloadResolverResult(idx) {
     const result = gapState.resolverResults[idx];
     const pending = gapState.pending;
     if (!result || !pending) return;
+    const source = gapState.source;
+    const matchKind = String(result.ui_episode_match_kind || '');
+    const forceMismatch = result.ui_download_blocked === true || matchKind === 'none';
+    if (pending.fullSeries && matchKind !== 'full_series' && result.ui_full_series !== true) {
+        showToast('warning', '已拦截不匹配资源', result.ui_download_block_reason || '该资源不是全集/整季包');
+        return;
+    }
+    if (source === 'moviepilot' && result.ui_download_task === true) {
+        showToast('warning', result.ui_download_label || '下载任务已存在', result.ui_downloader ? `下载器: ${result.ui_downloader}` : '');
+        return;
+    }
+    if (forceMismatch) {
+        showToast('warning', '强制提交不匹配资源', result.ui_download_block_reason || '该资源没有命中当前缺失集数');
+    }
     result.ui_transfer_pending = true;
     renderGapResolver();
     try {
-        const path = gapState.source === 'hdhive' ? '/api/gaps/download_hdhive' : '/api/gaps/download';
+        const path = source === 'hdhive' ? '/api/gaps/download_hdhive' : '/api/gaps/download';
+        const forceTransfer = source === 'hdhive' && isGapTransferDone(result);
         const data = await gapApi(path, {
             method: 'POST',
             headers: {'Content-Type': 'application/json'},
@@ -1150,9 +2388,13 @@ async function downloadResolverResult(idx) {
                 series_name: pending.series.series_name || '',
                 season: pending.season,
                 episodes: pending.episodes,
+                targets: pending.targets || [],
+                full_series: pending.fullSeries === true,
+                force_transfer: forceTransfer,
+                force_mismatch: forceMismatch,
             }),
         });
-        if (gapState.source === 'hdhive') {
+        if (source === 'hdhive') {
             const status = gapTransferStatus(data.data || {});
             if (isGapTransferSuccess(status)) {
                 result.is_unlocked = true;
@@ -1164,7 +2406,10 @@ async function downloadResolverResult(idx) {
         }
         result.ui_transfer_pending = false;
         renderGapResolver();
-        showToast('success', gapState.source === 'hdhive' ? '转存已提交' : '下载已提交', data.message || '');
+        showToast('success', source === 'hdhive' ? '转存已提交' : '下载已提交', data.message || '');
+        if (source === 'moviepilot') {
+            setTimeout(refreshMoviePilotDownloadStatuses, 1500);
+        }
     } catch (e) {
         result.ui_transfer_pending = false;
         renderGapResolver();
@@ -1172,8 +2417,31 @@ async function downloadResolverResult(idx) {
     }
 }
 
+function resetGapResolverContent({resetChrome = false} = {}) {
+    const body = document.getElementById('gapResolverBody');
+    if (body) body.innerHTML = '';
+    if (!resetChrome) return;
+    const title = document.getElementById('gapResolverTitle');
+    const sub = document.getElementById('gapResolverSub');
+    if (title) title.textContent = '搜索结果';
+    if (sub) sub.textContent = '';
+}
+
 function closeGapResolver() {
-    hideGapModal('gapResolverModal');
+    const closeToken = gapState.resolverToken + 1;
+    gapState.resolverToken = closeToken;
+    gapState.resolverOpen = false;
+    gapState.downloadStatusToken = 0;
+    requestAnimationFrame(() => {
+        if (gapState.resolverToken !== closeToken || gapState.resolverOpen) return;
+        resetGapResolverContent();
+    });
+    hideGapModal('gapResolverModal', () => {
+        if (gapState.resolverToken !== closeToken || gapState.resolverOpen) return;
+        gapState.source = '';
+        gapState.resolverResults = [];
+        resetGapResolverContent({resetChrome: true});
+    });
 }
 
 async function ignoreGapSeries(seriesId, seriesName) {
@@ -1214,7 +2482,7 @@ async function ignoreGapEpisode(seriesId, seriesName, season, episode) {
         }).filter(series => (series.gaps || []).length > 0);
         renderGapResults();
         updateGapStats();
-        showToast('success', `已忽略 ${episodeLabel(season, episode)}`);
+        showToast('success', `已忽略 ${Number(episode || 0) <= 0 ? `S${String(season).padStart(2, '0')} 整季` : episodeLabel(season, episode)}`);
     } catch (e) {
         showToast('error', '忽略失败', e.message);
     }

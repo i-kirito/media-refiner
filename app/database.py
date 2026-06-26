@@ -982,6 +982,11 @@ def make_gap_episode_target_id(series_id: str, season_number: int, episode_numbe
     return f"{series_id}:S{int(season_number):02d}E{int(episode_number):02d}"
 
 
+def make_gap_season_target_id(series_id: str, season_number: int) -> str:
+    """生成整季缺失忽略 ID。"""
+    return f"{series_id}:S{int(season_number):02d}:season"
+
+
 async def add_gap_ignore_series(series_id: str, series_name: str):
     """忽略整部剧集。"""
     db = await get_db()
@@ -1011,6 +1016,24 @@ async def add_gap_ignore_episode(series_id: str, series_name: str, season_number
             VALUES ('episode', ?, ?, ?, ?, ?, datetime('now','localtime'))
             """,
             (target_id, series_id, series_name, int(season_number), int(episode_number)),
+        )
+        await db.commit()
+    finally:
+        await db.close()
+
+
+async def add_gap_ignore_season(series_id: str, series_name: str, season_number: int):
+    """忽略整季缺口。"""
+    target_id = make_gap_season_target_id(series_id, season_number)
+    db = await get_db()
+    try:
+        await db.execute(
+            """
+            INSERT OR REPLACE INTO gap_ignores
+            (target_type, target_id, series_id, series_name, season_number, episode_number, ignored_at)
+            VALUES ('season', ?, ?, ?, ?, 0, datetime('now','localtime'))
+            """,
+            (target_id, series_id, series_name, int(season_number)),
         )
         await db.commit()
     finally:

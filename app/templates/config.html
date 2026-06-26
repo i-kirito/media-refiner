@@ -127,6 +127,28 @@
             </div>
         </div>
 
+        <!-- CloudDrive2 -->
+        <div class="apple-card p-5 md:p-6">
+            <h3 class="font-bold text-sm mb-5 flex items-center gap-2 text-gray-800 dark:text-gray-200">
+                <i class="fa-solid fa-folder-tree text-emerald-500"></i> CloudDrive2（刷新挂载缓存）
+            </h3>
+            <div class="space-y-4">
+                <div>
+                    <label class="block text-xs font-bold text-gray-500 mb-1.5">CloudDrive2 地址</label>
+                    <input name="clouddrive_url" class="w-full px-4 py-3 rounded-xl bg-gray-100 dark:bg-apple-hoverDark border border-gray-200 dark:border-white/5 text-gray-700 dark:text-gray-300 font-medium focus:ring-2 focus:ring-brand-500 outline-none text-sm" placeholder="http://your-clouddrive2:19798" value="{{ config.clouddrive_url or '' }}">
+                    <p class="text-[11px] text-gray-400 mt-1.5">影巢转存成功或已转存后，会自动刷新 CD2 目录缓存</p>
+                </div>
+                <div>
+                    <label class="block text-xs font-bold text-gray-500 mb-1.5">API Token</label>
+                    <input name="clouddrive_token" class="w-full px-4 py-3 rounded-xl bg-gray-100 dark:bg-apple-hoverDark border border-gray-200 dark:border-white/5 text-gray-700 dark:text-gray-300 font-medium focus:ring-2 focus:ring-brand-500 outline-none text-sm" type="password" placeholder="输入 CloudDrive2 API Token" value="">
+                    <p class="text-[11px] text-gray-400 mt-1.5">当前: {{ config.clouddrive_token or '未设置' }}</p>
+                </div>
+                <button type="button" class="px-4 py-2 text-xs font-bold text-gray-600 dark:text-gray-300 bg-gray-100 dark:bg-apple-hoverDark hover:bg-gray-200 dark:hover:bg-[#3A3A3C] rounded-xl transition-colors border border-gray-200 dark:border-white/5" onclick="testConnection('clouddrive')">
+                    <i class="fa-solid fa-plug mr-1"></i> 测试连接
+                </button>
+            </div>
+        </div>
+
         <!-- 全局代理 -->
         <div class="apple-card p-5 md:p-6">
             <h3 class="font-bold text-sm mb-5 flex items-center gap-2 text-gray-800 dark:text-gray-200">
@@ -254,6 +276,7 @@
                 });
                 // 更新"当前:"状态文字
                 document.querySelectorAll('.apple-card p.text-\\[11px\\]').forEach(p => {
+                    if (!p.textContent.trim().startsWith('当前:')) return;
                     const prev = p.previousElementSibling;
                     if (prev && prev.name) {
                         const val = c[prev.name];

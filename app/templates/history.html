@@ -15,12 +15,22 @@
     </div>
 
     <!-- 分类 Tab -->
-    <div class="flex flex-wrap gap-1 mb-5 p-1 bg-gray-100 dark:bg-gray-800/80 rounded-2xl w-fit max-w-full">
-        <button id="tabAll" onclick="switchTab('all')" class="tab-btn px-4 py-2 text-[13px] font-bold rounded-xl transition-all">全部 <span id="cntAll" class="ml-1 text-[11px] opacity-60">0</span></button>
-        <button id="tabSuccess" onclick="switchTab('success')" class="tab-btn px-4 py-2 text-[13px] font-bold rounded-xl transition-all">✅ 成功 <span id="cntSuccess" class="ml-1 text-[11px] opacity-60">0</span></button>
-        <button id="tabFail" onclick="switchTab('fail')" class="tab-btn px-4 py-2 text-[13px] font-bold rounded-xl transition-all">❌ 失败 <span id="cntFail" class="ml-1 text-[11px] opacity-60">0</span></button>
-        <button id="tabReject" onclick="switchTab('reject')" class="tab-btn px-4 py-2 text-[13px] font-bold rounded-xl transition-all">🚫 拒绝 <span id="cntReject" class="ml-1 text-[11px] opacity-60">0</span></button>
-        <button id="tabIgnore" onclick="switchTab('ignore')" class="tab-btn px-4 py-2 text-[13px] font-bold rounded-xl transition-all">⏭ 忽略 <span id="cntIgnore" class="ml-1 text-[11px] opacity-60">0</span></button>
+    <div class="flex flex-wrap items-center justify-between gap-3 mb-5">
+        <div class="flex flex-wrap gap-1 p-1 bg-gray-100 dark:bg-gray-800/80 rounded-2xl w-fit max-w-full">
+            <button id="tabAll" onclick="switchTab('all')" class="tab-btn px-4 py-2 text-[13px] font-bold rounded-xl transition-all">全部 <span id="cntAll" class="ml-1 text-[11px] opacity-60">0</span></button>
+            <button id="tabDownloading" onclick="switchTab('downloading')" class="tab-btn px-4 py-2 text-[13px] font-bold rounded-xl transition-all">正在下载 <span id="cntDownloading" class="ml-1 text-[11px] opacity-60">0</span></button>
+            <button id="tabSuccess" onclick="switchTab('success')" class="tab-btn px-4 py-2 text-[13px] font-bold rounded-xl transition-all">✅ 成功 <span id="cntSuccess" class="ml-1 text-[11px] opacity-60">0</span></button>
+            <button id="tabFail" onclick="switchTab('fail')" class="tab-btn px-4 py-2 text-[13px] font-bold rounded-xl transition-all">❌ 失败 <span id="cntFail" class="ml-1 text-[11px] opacity-60">0</span></button>
+            <button id="tabReject" onclick="switchTab('reject')" class="tab-btn px-4 py-2 text-[13px] font-bold rounded-xl transition-all">🚫 拒绝 <span id="cntReject" class="ml-1 text-[11px] opacity-60">0</span></button>
+            <button id="tabIgnore" onclick="switchTab('ignore')" class="tab-btn px-4 py-2 text-[13px] font-bold rounded-xl transition-all">⏭ 忽略 <span id="cntIgnore" class="ml-1 text-[11px] opacity-60">0</span></button>
+        </div>
+        <div id="bulkHistoryActions" class="hidden ml-auto shrink-0 flex justify-end">
+            <button id="bulkDeleteHistoryBtn" onclick="showBulkDeleteConfirm()" class="inline-flex items-center gap-2 px-3.5 py-2 rounded-xl bg-red-50 dark:bg-red-900/20 text-red-500 hover:bg-red-500 dark:hover:bg-red-600 hover:text-white text-[12px] font-black transition-all active:scale-95">
+                <i class="fa-solid fa-trash-can"></i>
+                <span>全部删除</span>
+                <span id="bulkDeleteHistoryCount" class="px-1.5 py-0.5 rounded-full bg-white/80 dark:bg-white/10 text-[10px] leading-none">0</span>
+            </button>
+        </div>
     </div>
 
     <!-- 加载中 -->
@@ -30,7 +40,7 @@
     </div>
 
     <!-- 历史列表 -->
-    <div id="historyContainer" class="space-y-3">
+    <div id="historyContainer" class="space-y-2.5">
     </div>
 </div>
 
@@ -40,12 +50,12 @@
     <div class="relative bg-white dark:bg-gray-800 rounded-2xl shadow-2xl border border-gray-200 dark:border-gray-700 p-6 max-w-sm w-full mx-4 animate-in zoom-in-95">
         <div class="text-center">
             <div class="w-14 h-14 mx-auto mb-4 rounded-2xl bg-amber-50 dark:bg-amber-900/20 flex items-center justify-center text-2xl text-amber-500 border border-amber-200 dark:border-amber-800">
-                <i class="fa-solid fa-rotate-left"></i>
+                <i id="confirmIcon" class="fa-solid fa-rotate-left"></i>
             </div>
-            <h3 class="text-lg font-bold text-gray-900 dark:text-white mb-2">确认恢复搜索</h3>
-            <p class="text-sm text-gray-500 mb-1">将删除以下条目的所有历史记录：</p>
+            <h3 id="confirmTitle" class="text-lg font-bold text-gray-900 dark:text-white mb-2">确认恢复搜索</h3>
+            <p id="confirmDescription" class="text-sm text-gray-500 mb-1">将删除以下条目的所有历史记录：</p>
             <p id="confirmItemName" class="text-sm font-bold text-gray-700 dark:text-gray-300 mb-4 py-2 px-3 bg-gray-50 dark:bg-gray-700/50 rounded-xl"></p>
-            <p class="text-xs text-gray-400 mb-6">删除后，下次规则运行将重新搜索此条目</p>
+            <p id="confirmHint" class="text-xs text-gray-400 mb-6">删除后，下次规则运行将重新搜索此条目</p>
             <div class="flex gap-3">
                 <button onclick="closeConfirmModal()" class="flex-1 px-4 py-2.5 text-sm font-bold text-gray-600 dark:text-gray-300 bg-gray-100 dark:bg-gray-700 hover:bg-gray-200 dark:hover:bg-gray-600 rounded-xl transition-all">取消</button>
                 <button id="confirmDeleteBtn" onclick="confirmDelete()" class="flex-1 px-4 py-2.5 text-sm font-bold text-white bg-red-500 hover:bg-red-600 rounded-xl transition-all active:scale-95">确认删除</button>
@@ -59,8 +69,11 @@
 <script>
     let _pendingDeleteId = null;
     let _pendingDeleteName = '';
+    let _pendingDeleteMode = 'restore';
+    let _pendingBulkDeleteItems = [];
     let _allItems = [];
     let _currentTab = 'all';
+    const _busyDownloadItems = new Set();
 
     document.addEventListener('DOMContentLoaded', () => loadHistory());
 
@@ -83,7 +96,100 @@
         try { return JSON.parse(str); } catch { return {}; }
     }
 
+    function isActiveDownloadStatus(status) {
+        return ['downloading', 'queued', 'stalled', 'checking', 'paused', 'unknown'].includes(String(status || '').toLowerCase());
+    }
+
+    function formatPercent(value) {
+        const num = Number(value || 0);
+        if (!Number.isFinite(num)) return '';
+        return `${Math.max(0, Math.min(100, Math.round(num * 100)))}%`;
+    }
+
+    function formatSpeed(bytes) {
+        const value = Number(bytes || 0);
+        if (!Number.isFinite(value) || value <= 0) return '';
+        const units = ['B/s', 'KB/s', 'MB/s', 'GB/s'];
+        let size = value;
+        let idx = 0;
+        while (size >= 1024 && idx < units.length - 1) {
+            size /= 1024;
+            idx += 1;
+        }
+        return `${size >= 10 || idx === 0 ? size.toFixed(0) : size.toFixed(1)} ${units[idx]}`;
+    }
+
+    function projectDownloadDetail(brief, log) {
+        const text = String(brief || '');
+        const targetMatch = text.match(/·\s*([^·]*?(?:S\d{1,2}|全集重下)[^·]*?)\s*·\s*资源[:：]/i);
+        const resourceMatch = text.match(/资源[:：]\s*(.*?)(?:\s*·\s*(?:MoviePilot|状态|下载器)|$)/i);
+        const target = (targetMatch?.[1] || '').trim();
+        const resource = (resourceMatch?.[1] || log.download_name || '').trim();
+        if (target && resource) return `${target} · ${resource}`;
+        if (target) return target;
+        if (resource) return resource;
+        return text.replace(/\s*·\s*MoviePilot.*$/, '').trim();
+    }
+
+    function downloadProgressPanel(item) {
+        const progress = Math.max(0, Math.min(1, Number(item.downloadProgress || 0)));
+        const pct = Math.round(progress * 100);
+        const speed = formatSpeed(item.downloadSpeed);
+        const status = String(item.downloadStatus || '').toLowerCase();
+        const fillColor = status === 'paused'
+            ? 'from-amber-400 to-orange-400'
+            : status === 'stalled' || status === 'queued'
+                ? 'from-sky-400 to-cyan-400'
+                : 'from-brand-500 to-blue-500';
+        return `
+            <div class="mt-3 rounded-2xl bg-slate-50 dark:bg-white/5 border border-slate-100 dark:border-white/10 p-3">
+                <div class="flex items-center justify-between gap-3 mb-2">
+                    <div class="min-w-0 text-[11px] font-black text-slate-500 dark:text-slate-400 truncate">${escapeHtml(item.downloadName || item.downloadDownloader || '下载任务')}</div>
+                    <div class="text-[15px] font-black text-blue-600 dark:text-blue-300 tabular-nums">${pct}%</div>
+                </div>
+                <div class="h-3.5 rounded-full bg-slate-200 dark:bg-black/30 overflow-hidden shadow-inner">
+                    <div class="h-full rounded-full bg-gradient-to-r ${fillColor} shadow-sm transition-all" style="width:${Math.max(2, pct)}%"></div>
+                </div>
+                <div class="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-[10px] font-bold text-slate-400 dark:text-slate-500">
+                    ${item.downloadDownloader ? `<span><i class="fa-solid fa-hard-drive mr-1"></i>${escapeHtml(item.downloadDownloader)}</span>` : ''}
+                    ${speed ? `<span><i class="fa-solid fa-gauge-high mr-1"></i>${escapeHtml(speed)}</span>` : ''}
+                    ${item.downloadHash ? `<span class="font-mono truncate max-w-[180px]">${escapeHtml(item.downloadHash.slice(0, 12))}</span>` : ''}
+                </div>
+            </div>
+        `;
+    }
+
+    function downloadActionButton(item, action, icon, label, colorClass, disabled = false, title = '') {
+        const busy = _busyDownloadItems.has(item.itemId);
+        const locked = disabled || busy;
+        return `
+            <button onclick="controlDownloadTask(decodeURIComponent('${encodeURIComponent(item.itemId || '')}'), '${action}')" ${locked ? 'disabled' : ''} ${title ? `title="${escapeHtml(title)}"` : ''} class="px-3 py-2 rounded-xl text-[11px] font-black transition-all active:scale-95 flex items-center gap-1.5 ${locked ? 'bg-slate-100 dark:bg-white/5 text-slate-300 dark:text-slate-600 cursor-not-allowed' : colorClass}">
+                <i class="fa-solid ${busy ? 'fa-circle-notch fa-spin' : icon}"></i>${label}
+            </button>
+        `;
+    }
+
+    function downloadActions(item) {
+        const status = String(item.downloadStatus || '').toLowerCase();
+        const canPause = !['paused', 'completed', 'error'].includes(status);
+        const resumeState = {
+            paused: { label: '继续', icon: 'fa-play', disabled: false, title: '' },
+            stalled: { label: '等待中', icon: 'fa-hourglass-half', disabled: true, title: '任务已在下载器中运行，当前等待资源或连接，继续不会改变状态' },
+            queued: { label: '排队中', icon: 'fa-list-ol', disabled: true, title: '任务已在下载器队列中，继续不会改变状态' },
+            checking: { label: '校验中', icon: 'fa-rotate', disabled: true, title: '任务正在校验，暂时不能继续' },
+            downloading: { label: '运行中', icon: 'fa-play', disabled: true, title: '任务正在下载，无需继续' },
+        }[status] || { label: '继续', icon: 'fa-play', disabled: true, title: '当前状态不能继续' };
+        return `
+            <div class="flex flex-wrap sm:flex-nowrap gap-2 justify-start sm:justify-end">
+                ${downloadActionButton(item, 'pause', 'fa-pause', '暂停', 'bg-amber-50 dark:bg-amber-500/10 text-amber-600 dark:text-amber-300 hover:bg-amber-100 dark:hover:bg-amber-500/20', !canPause)}
+                ${downloadActionButton(item, 'resume', resumeState.icon, resumeState.label, 'bg-emerald-50 dark:bg-emerald-500/10 text-emerald-600 dark:text-emerald-300 hover:bg-emerald-100 dark:hover:bg-emerald-500/20', resumeState.disabled, resumeState.title)}
+                ${downloadActionButton(item, 'delete', 'fa-trash-can', '删除', 'bg-red-50 dark:bg-red-500/10 text-red-500 dark:text-red-300 hover:bg-red-500 dark:hover:bg-red-600 hover:text-white')}
+            </div>
+        `;
+    }
+
     function getItemCategory(item) {
+        if (item.downloadActive || item.status === 'downloading') return 'downloading';
         const s = item.status;
         if (s === 'approved' || s === 'auto_approved' || s === 'download' || s === 'transfer' || s === 'unlock') return 'success';
         if (s === 'failed' || s === 'error') return 'fail';
@@ -107,11 +213,35 @@
         renderItems();
     }
 
-    function renderItems() {
-        const container = document.getElementById('historyContainer');
-        const filtered = _currentTab === 'all'
+    function filteredHistoryItems() {
+        return _currentTab === 'all'
             ? _allItems
             : _allItems.filter(i => getItemCategory(i) === _currentTab);
+    }
+
+    function batchCleanupItems() {
+        if (_currentTab !== 'fail') return [];
+        return filteredHistoryItems().filter(i => (
+            i.itemId
+            && i.sourceKind === 'gapLog'
+            && getItemCategory(i) === 'fail'
+            && !i.downloadActive
+        ));
+    }
+
+    function updateBulkCleanupButton() {
+        const actions = document.getElementById('bulkHistoryActions');
+        const count = document.getElementById('bulkDeleteHistoryCount');
+        const items = batchCleanupItems();
+        if (!actions || !count) return;
+        count.textContent = items.length;
+        actions.classList.toggle('hidden', items.length === 0);
+    }
+
+    function renderItems() {
+        const container = document.getElementById('historyContainer');
+        const filtered = filteredHistoryItems();
+        updateBulkCleanupButton();
 
         if (filtered.length === 0) {
             container.innerHTML = `
@@ -125,8 +255,11 @@
 
         container.innerHTML = filtered.map(item => {
             const category = getItemCategory(item);
+            const isDownloading = category === 'downloading';
             const isSuccess = item.status === 'approved' || item.status === 'auto_approved' || item.status === 'download' || item.status === 'transfer' || item.status === 'unlock';
-            const iconColor = isSuccess
+            const iconColor = isDownloading
+                ? 'text-blue-500 bg-blue-50 dark:bg-blue-900/20'
+                : isSuccess
                 ? 'text-green-500 bg-green-50 dark:bg-green-900/20'
                 : category === 'fail'
                     ? 'text-red-500 bg-red-50 dark:bg-red-900/20'
@@ -135,7 +268,9 @@
                         : category === 'ignore'
                             ? 'text-gray-400 bg-gray-100 dark:bg-gray-800'
                             : 'text-gray-400 bg-gray-100 dark:bg-gray-800';
-            const badgeColor = isSuccess
+            const badgeColor = isDownloading
+                ? 'bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-300'
+                : isSuccess
                 ? 'bg-green-100 text-green-700 dark:bg-green-900/40 dark:text-green-300'
                 : category === 'fail'
                     ? 'bg-red-100 text-red-700 dark:bg-red-900/40 dark:text-red-300'
@@ -144,36 +279,48 @@
                         : category === 'ignore'
                             ? 'bg-gray-200 text-gray-600 dark:bg-gray-700 dark:text-gray-400'
                             : 'bg-gray-200 text-gray-600 dark:bg-gray-700 dark:text-gray-400';
-            const icon = isSuccess
+            const icon = isDownloading
+                ? 'fa-circle-down'
+                : isSuccess
                 ? 'fa-check-circle'
                 : category === 'fail'
                     ? 'fa-circle-xmark'
                     : category === 'reject'
                         ? 'fa-circle-minus'
                         : 'fa-ban';
-            const canRestore = !!item.itemId && item.sourceKind !== 'gapLog';
+            const isGapFailure = item.sourceKind === 'gapLog' && category === 'fail';
+            const canRestore = !!item.itemId && (item.sourceKind !== 'gapLog' || isGapFailure);
+            const actionLabel = isGapFailure ? '删除历史' : '恢复搜索';
+            const actionIcon = isGapFailure ? 'fa-trash-can' : 'fa-rotate-left';
+            const actionMode = isGapFailure ? 'cleanup' : 'restore';
+            const downloadPanel = isDownloading ? downloadProgressPanel(item) : '';
+            const downloadControls = isDownloading && item.itemId ? downloadActions(item) : '';
             return `
-                <div class="apple-card p-4 sm:p-5">
-                    <div class="flex items-center gap-4">
-                        <div class="w-12 h-12 rounded-2xl ${iconColor} flex items-center justify-center text-xl shrink-0">
+                <div class="apple-card p-3 sm:p-4">
+                    <div class="flex flex-col sm:flex-row sm:items-start gap-3">
+                        <div class="w-10 h-10 rounded-xl ${iconColor} flex items-center justify-center text-base shrink-0">
                             <i class="fa-solid ${icon}"></i>
                         </div>
                         <div class="flex-1 min-w-0">
                             <div class="flex items-center gap-2 flex-wrap">
-                                <span class="font-bold text-gray-900 dark:text-white">${escapeHtml(item.name)}</span>
+                                <span class="font-bold text-[14px] text-gray-900 dark:text-white">${escapeHtml(item.name)}</span>
                                 <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-[11px] font-bold ${badgeColor}">${escapeHtml(item.statusLabel)}</span>
                                 ${item.itemId ? `<span class="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold ${item.actionType === 'MP 下载' || item.actionType === '缺集下载' ? 'bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-300' : item.actionType === '影巢解锁' ? 'bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300' : item.actionType === 'plan' ? 'bg-gray-100 text-gray-600 dark:bg-gray-700 dark:text-gray-400' : 'bg-purple-100 text-purple-700 dark:bg-purple-900/40 dark:text-purple-300'}">${escapeHtml(item.actionType)}</span>` : ''}
                                 ${item.sourceKind === 'gapLog' ? `<span class="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300">缺集管理</span>` : ''}
                             </div>
-                            ${item.ruleName ? `<div class="text-[11px] text-gray-400 mt-0.5">${escapeHtml(item.ruleName)}</div>` : ''}
-                            <div class="flex items-center gap-2 mt-1 text-xs text-gray-500">
-                                ${item.detail ? `<span>${escapeHtml(item.detail)}</span>` : ''}
+                            <div class="flex items-center gap-2 mt-1 text-[11px] text-gray-500 min-w-0">
+                                ${item.detail ? `<span title="${escapeHtml(item.detailTitle || item.detail)}" class="truncate">${escapeHtml(item.detail)}</span>` : ''}
                             </div>
-                            <div class="text-[11px] text-gray-400 mt-1 font-mono">${item.time}</div>
+                            ${downloadPanel}
+                            <div class="text-[10px] text-gray-400 mt-1 font-mono">${item.time}</div>
                         </div>
-                        ${canRestore ? `
-                        <button onclick="showConfirm(decodeURIComponent('${encodeURIComponent(item.itemId)}'), decodeURIComponent('${encodeURIComponent(item.name)}'))" class="px-3 py-2 text-[11px] font-bold text-red-500 hover:text-white bg-red-50 dark:bg-red-900/20 hover:bg-red-500 dark:hover:bg-red-600 rounded-xl transition-all flex items-center gap-1.5 shrink-0 active:scale-95">
-                            <i class="fa-solid fa-rotate-left"></i> 恢复搜索
+                        ${downloadControls ? `
+                        <div class="sm:pt-0 sm:ml-auto shrink-0">
+                            ${downloadControls}
+                        </div>
+                        ` : canRestore ? `
+                        <button onclick="showHistoryConfirm(decodeURIComponent('${encodeURIComponent(item.itemId)}'), decodeURIComponent('${encodeURIComponent(item.name)}'), '${actionMode}')" class="px-3 py-2 text-[11px] font-bold text-red-500 hover:text-white bg-red-50 dark:bg-red-900/20 hover:bg-red-500 dark:hover:bg-red-600 rounded-xl transition-all flex items-center gap-1.5 shrink-0 active:scale-95">
+                            <i class="fa-solid ${actionIcon}"></i> ${actionLabel}
                         </button>
                         ` : ''}
                     </div>
@@ -259,9 +406,13 @@
                     'unlock': '已解锁',
                     'transfer': '转存完成',
                     'error': '失败',
-                };
-                const label = actionLabel[log.action] || log.action;
-                const brief = (log.message || '').split('\n')[0].substring(0, 120);
+	                };
+	                const label = actionLabel[log.action] || log.action;
+	                const brief = (log.message || '').split('\n')[0].substring(0, 120);
+	                const compactDetail = projectDownloadDetail(brief, log);
+	                const downloadStatus = String(log.download_status || '').toLowerCase();
+                const downloadActive = isActiveDownloadStatus(downloadStatus);
+                const downloadFailed = downloadStatus === 'error';
                 const actionType = log.action === 'download'
                     ? (isGapLog ? '缺集下载' : 'MP 下载')
                     : log.action === 'unlock'
@@ -273,14 +424,25 @@
                                 : '影巢转存';
                 _allItems.push({
                     name: log.item_name || '未知',
-                    status: log.action,
-                    statusLabel: label,
-                    actionType,
-                    detail: brief,
+                    status: downloadActive ? 'downloading' : (downloadFailed ? 'error' : log.action),
+                    statusLabel: downloadActive || downloadFailed ? (log.download_label || '正在下载') : label,
+	                    actionType,
+	                    detail: compactDetail || brief,
+	                    detailTitle: brief,
                     time: formatDate(log.created_at) || '',
                     itemId: log.item_id,
                     ruleName: log.rule_name || '',
                     sourceKind: isGapLog ? 'gapLog' : 'log',
+                    downloadActive,
+                    downloadStatus,
+                    downloadProgress: Number(log.download_progress || 0),
+                    downloadSpeed: Number(log.download_speed || 0),
+                    downloadName: log.download_name || '',
+                    downloadId: log.download_id || '',
+                    downloadHash: log.download_hash || '',
+                    downloadState: log.download_state || '',
+                    downloadDownloader: log.download_downloader || '',
+                    downloadDownloaderType: log.download_downloader_type || '',
                 });
             });
 
@@ -300,6 +462,7 @@
 
             // 更新计数
             document.getElementById('cntAll').textContent = _allItems.length;
+            document.getElementById('cntDownloading').textContent = countByCategory(_allItems, 'downloading');
             document.getElementById('cntSuccess').textContent = countByCategory(_allItems, 'success');
             document.getElementById('cntFail').textContent = countByCategory(_allItems, 'fail');
             document.getElementById('cntReject').textContent = countByCategory(_allItems, 'reject');
@@ -313,42 +476,143 @@
         }
     }
 
+    async function controlDownloadTask(itemId, action) {
+        if (!itemId || _busyDownloadItems.has(itemId)) return;
+        const activeTab = _currentTab;
+        const actionText = {
+            pause: '暂停',
+            resume: '继续',
+            delete: '删除',
+        }[action] || '操作';
+        _busyDownloadItems.add(itemId);
+        renderItems();
+        try {
+            const resp = await fetch(`/api/subscribe/history/${encodeURIComponent(itemId)}/download`, {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({ action, delete_files: action === 'delete' }),
+            });
+            const json = await resp.json().catch(() => ({}));
+            if (resp.ok && json.status === 'success') {
+                if (typeof showToast === 'function') showToast('success', `任务已${actionText}`, json.message || '');
+                await loadHistory({ activeTab });
+            } else {
+                const message = json.message || json.detail || resp.statusText;
+                if (typeof showToast === 'function') showToast('error', `${actionText}失败`, message);
+                else alert(`${actionText}失败: ${message}`);
+            }
+        } catch(e) {
+            if (typeof showToast === 'function') showToast('error', `${actionText}失败`, e.message);
+            else alert(`${actionText}失败: ${e.message}`);
+        } finally {
+            _busyDownloadItems.delete(itemId);
+            renderItems();
+        }
+    }
+
     // ── 确认对话框 ──
-    function showConfirm(itemId, itemName) {
+    function showHistoryConfirm(itemId, itemName, mode = 'restore') {
         _pendingDeleteId = itemId;
         _pendingDeleteName = itemName;
+        _pendingDeleteMode = mode;
+        _pendingBulkDeleteItems = [];
+        const cleanup = mode === 'cleanup';
+        document.getElementById('confirmIcon').className = `fa-solid ${cleanup ? 'fa-trash-can' : 'fa-rotate-left'}`;
+        document.getElementById('confirmTitle').textContent = cleanup ? '确认删除失败历史' : '确认恢复搜索';
+        document.getElementById('confirmDescription').textContent = cleanup
+            ? '将删除以下失败历史，并尝试联动删除下载器种子：'
+            : '将删除以下条目的所有历史记录：';
         document.getElementById('confirmItemName').textContent = itemName;
+        document.getElementById('confirmHint').textContent = cleanup
+            ? '如果种子已不存在，只删除历史记录，不影响其他任务'
+            : '删除后，下次规则运行将重新搜索此条目';
+        document.getElementById('confirmDeleteBtn').innerHTML = cleanup ? '删除历史' : '确认删除';
+        document.getElementById('confirmModal').classList.remove('hidden');
+    }
+
+    function showBulkDeleteConfirm() {
+        const items = batchCleanupItems();
+        if (!items.length) return;
+        _pendingDeleteId = null;
+        _pendingDeleteName = `${items.length} 条失败历史`;
+        _pendingDeleteMode = 'bulk-cleanup';
+        _pendingBulkDeleteItems = items;
+        document.getElementById('confirmIcon').className = 'fa-solid fa-trash-can';
+        document.getElementById('confirmTitle').textContent = '确认全部删除';
+        document.getElementById('confirmDescription').textContent = '将删除失败页中所有可删除历史，并尝试联动删除下载器种子：';
+        document.getElementById('confirmItemName').textContent = _pendingDeleteName;
+        document.getElementById('confirmHint').textContent = '会逐条执行安全删除；如果种子已不存在，只删除历史记录';
+        document.getElementById('confirmDeleteBtn').innerHTML = '全部删除';
         document.getElementById('confirmModal').classList.remove('hidden');
     }
 
     function closeConfirmModal() {
         _pendingDeleteId = null;
         _pendingDeleteName = '';
+        _pendingDeleteMode = 'restore';
+        _pendingBulkDeleteItems = [];
         document.getElementById('confirmModal').classList.add('hidden');
     }
 
     async function confirmDelete() {
-        if (!_pendingDeleteId) return;
+        if (!_pendingDeleteId && !_pendingBulkDeleteItems.length) return;
         const btn = document.getElementById('confirmDeleteBtn');
         btn.disabled = true;
         btn.innerHTML = '<i class="fa-solid fa-circle-notch fa-spin"></i> 删除中...';
 
         try {
-            const resp = await fetch(`/api/subscribe/history/${_pendingDeleteId}`, { method: 'DELETE' });
+            if (_pendingDeleteMode === 'bulk-cleanup') {
+                const activeTab = _currentTab;
+                const items = [..._pendingBulkDeleteItems];
+                let successCount = 0;
+                const errors = [];
+                for (const item of items) {
+                    try {
+                        const resp = await fetch(`/api/subscribe/history/${encodeURIComponent(item.itemId)}`, { method: 'DELETE' });
+                        const json = await resp.json().catch(() => ({}));
+                        if (resp.ok && json.status === 'success') {
+                            successCount += 1;
+                        } else {
+                            errors.push(`${item.name || item.itemId}: ${json.message || resp.statusText}`);
+                        }
+                    } catch(e) {
+                        errors.push(`${item.name || item.itemId}: ${e.message}`);
+                    }
+                }
+                closeConfirmModal();
+                if (typeof showToast === 'function') {
+                    if (errors.length) {
+                        showToast('warning', `已删除 ${successCount} 条，失败 ${errors.length} 条`, errors.slice(0, 2).join('；'));
+                    } else {
+                        showToast('success', `已删除 ${successCount} 条失败历史`, '');
+                    }
+                }
+                await loadHistory({ activeTab });
+                return;
+            }
+
+            const resp = await fetch(`/api/subscribe/history/${encodeURIComponent(_pendingDeleteId)}`, { method: 'DELETE' });
             const json = await resp.json();
             if (resp.ok && json.status === 'success') {
                 const activeTab = _currentTab;
+                if (typeof showToast === 'function') {
+                    showToast('success', _pendingDeleteMode === 'cleanup' ? '历史已删除' : '已恢复搜索', json.message || '');
+                }
                 closeConfirmModal();
                 // 重新加载列表
                 await loadHistory({ activeTab });
             } else {
-                alert('删除失败: ' + (json.message || resp.statusText));
+                if (typeof showToast === 'function') showToast('error', '删除失败', json.message || resp.statusText);
+                else alert('删除失败: ' + (json.message || resp.statusText));
             }
         } catch(e) {
-            alert('请求失败: ' + e.message);
+            if (typeof showToast === 'function') showToast('error', '请求失败', e.message);
+            else alert('请求失败: ' + e.message);
         } finally {
             btn.disabled = false;
-            btn.innerHTML = '确认删除';
+            btn.innerHTML = _pendingDeleteMode === 'bulk-cleanup'
+                ? '全部删除'
+                : _pendingDeleteMode === 'cleanup' ? '删除历史' : '确认删除';
         }
     }
 </script>

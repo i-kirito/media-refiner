@@ -1,29 +1,296 @@
 {% extends "base.html" %}
 {% block title %}订阅洗版{% endblock %}
+{% block head %}
+<style>
+    .plans-page,
+    #rule-modal {
+        --plans-border: rgba(226, 232, 240, 0.56);
+        --plans-panel: #fff;
+        --plans-soft: rgba(248, 250, 252, 0.78);
+        --plans-muted: #6b7280;
+        max-width: 1680px;
+    }
+    html.dark .plans-page,
+    html.dark #rule-modal {
+        --plans-border: rgba(255, 255, 255, 0.06);
+        --plans-panel: rgba(255, 255, 255, 0.04);
+        --plans-soft: rgba(255, 255, 255, 0.05);
+        --plans-muted: #9ca3af;
+    }
+    .plans-page .apple-card {
+        border-color: var(--plans-border);
+    }
+    .plans-head-icon {
+        background: #ecfdf5;
+        border: 1px solid #d1fae5;
+        color: #10b981;
+    }
+    html.dark .plans-head-icon {
+        background: rgba(16, 185, 129, 0.15);
+        border-color: rgba(16, 185, 129, 0.22);
+        color: #34d399;
+    }
+    .plans-stat-strip {
+        display: grid;
+        grid-template-columns: repeat(4, minmax(0, 1fr));
+        gap: 8px;
+    }
+    .plans-stat-strip > div {
+        border-radius: 14px;
+        background: var(--plans-soft);
+    }
+    .plans-action {
+        min-height: 36px;
+        border: 1px solid var(--plans-border);
+        box-shadow: none;
+        transition: background-color 160ms ease, color 160ms ease, border-color 160ms ease, opacity 160ms ease;
+    }
+    .plans-action.bg-brand-500,
+    .plans-action.bg-emerald-500 {
+        border-color: transparent;
+    }
+    .plans-action:active,
+    .review-action-btn:active,
+    .plan-icon-btn:active {
+        transform: scale(0.96);
+    }
+    .plan-rule-card,
+    .review-card {
+        border: 1px solid var(--plans-border);
+        border-color: transparent;
+        background: var(--plans-panel);
+        box-shadow: 0 1px 3px rgba(15, 23, 42, 0.05);
+    }
+    .plans-section-title {
+        color: var(--plans-muted);
+        letter-spacing: 0;
+    }
+    .plan-rule-card {
+        position: relative;
+        overflow: hidden;
+        border-radius: 16px;
+        transition: border-color 160ms ease, box-shadow 160ms ease, background-color 160ms ease;
+    }
+    .plan-rule-card::before {
+        content: "";
+        position: absolute;
+        inset: 0 auto 0 0;
+        width: 4px;
+        background: #10b981;
+    }
+    .plan-rule-card.is-disabled::before {
+        background: #cbd5e1;
+    }
+    .rule-meta-strip,
+    .review-compare-card {
+        background: var(--plans-soft);
+        border-color: transparent;
+    }
+    .plan-rule-card:hover,
+    .review-card:hover {
+        box-shadow: 0 10px 26px -22px rgba(15, 23, 42, 0.44);
+    }
+    .plan-pill {
+        border: 0;
+    }
+    .review-card {
+        border-left-width: 4px;
+        border-radius: 16px;
+        transition: border-color 160ms ease, box-shadow 160ms ease, background-color 160ms ease;
+    }
+    .review-card.is-mp {
+        border-left-color: #2563eb;
+    }
+    .review-card.is-hdhive {
+        border-left-color: #8b5cf6;
+    }
+    .review-compare-card {
+        border: 1px solid transparent;
+        border-radius: 12px;
+        display: grid;
+        grid-template-rows: 18px 34px 14px minmax(22px, auto);
+        min-height: 98px;
+        align-content: start;
+        overflow: hidden;
+    }
+    .review-compare-grid {
+        position: relative;
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 14px;
+        align-items: stretch;
+    }
+    .review-compare-grid::before {
+        content: "";
+        position: absolute;
+        left: 50%;
+        top: 8px;
+        bottom: 8px;
+        width: 1px;
+        background: rgba(203, 213, 225, 0.72);
+        transform: translateX(-0.5px);
+        pointer-events: none;
+    }
+    html.dark .review-compare-grid::before {
+        background: rgba(255, 255, 255, 0.08);
+    }
+    .review-compare-label {
+        height: 18px;
+        display: flex;
+        align-items: center;
+    }
+    .review-compare-title {
+        height: 34px;
+        line-height: 17px;
+        overflow: hidden;
+        display: -webkit-box;
+        -webkit-line-clamp: 2;
+        -webkit-box-orient: vertical;
+        word-break: break-word;
+    }
+    .review-compare-note {
+        height: 14px;
+        line-height: 14px;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+    }
+    .review-badges-row {
+        min-height: 22px;
+        align-content: start;
+    }
+    .review-current {
+        background: var(--plans-soft);
+    }
+    .review-target {
+        background: var(--plans-soft);
+    }
+    .dark .review-current {
+        background: var(--plans-soft);
+    }
+    .dark .review-target {
+        background: var(--plans-soft);
+    }
+    .review-action-btn {
+        min-width: 28px;
+        height: 28px;
+        border-radius: 9px;
+        transition: background-color 150ms ease, color 150ms ease, opacity 150ms ease, transform 150ms ease;
+    }
+    .plans-modal-panel {
+        max-height: min(90dvh, 48rem);
+    }
+    .plans-modal-section {
+        border: 1px solid transparent;
+        background: #f9fafb;
+        border-radius: 14px;
+        padding: 12px;
+    }
+    html.dark .plans-modal-section {
+        background: rgba(255, 255, 255, 0.04);
+    }
+    .plans-modal-section-title {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        margin-bottom: 8px;
+        color: #6b7280;
+        font-size: 11px;
+        font-weight: 800;
+    }
+    .plans-modal-section-title::before {
+        content: "";
+        width: 3px;
+        height: 14px;
+        border-radius: 999px;
+        background: #007aff;
+    }
+    .plans-form-control {
+        border: 1px solid rgba(226, 232, 240, 0.62);
+        background: #fff;
+    }
+    html.dark .plans-form-control {
+        border-color: rgba(255, 255, 255, 0.1);
+        background: #2c2c2e;
+    }
+    .plans-drag-handle {
+        color: #9ca3af;
+        font-size: 13px;
+        line-height: 1;
+    }
+    @media (prefers-reduced-motion: reduce) {
+        .plans-page *,
+        #rule-modal {
+            transition-duration: 0.01ms !important;
+            animation-duration: 0.01ms !important;
+            animation-iteration-count: 1 !important;
+        }
+    }
+    @media (max-width: 640px) {
+        .plans-stat-strip {
+            grid-template-columns: repeat(2, minmax(0, 1fr));
+        }
+        .plan-rule-card,
+        .review-card {
+            border-radius: 14px;
+        }
+        .review-compare-grid {
+            grid-template-columns: 1fr;
+        }
+        .review-compare-grid::before {
+            display: none;
+        }
+    }
+</style>
+{% endblock %}
 {% block content %}
-<div class="max-w-7xl mx-auto w-full px-4 md:px-8 py-6 pb-24 relative">
+<div class="plans-page mx-auto w-full px-4 md:px-8 py-5 pb-24 relative">
 
     <!-- 标题 + 操作栏 -->
-    <div class="flex flex-col md:flex-row justify-between items-center mb-6 gap-4 bg-white dark:bg-gray-800 p-4 rounded-2xl shadow-sm border border-gray-100 dark:border-gray-700">
-        <div class="flex items-center gap-3">
-            <div class="w-12 h-12 bg-emerald-50 dark:bg-emerald-900/30 rounded-xl flex items-center justify-center border border-emerald-100 dark:border-emerald-800">
-                <i class="fa-solid fa-bell text-emerald-500 text-xl"></i>
+    <div class="apple-card p-4 mb-3">
+        <div class="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
+            <div class="flex items-center gap-3 min-w-0">
+                <div class="plans-head-icon w-10 h-10 rounded-xl flex items-center justify-center shrink-0">
+                    <i class="fa-solid fa-bell text-lg"></i>
+                </div>
+                <div class="min-w-0">
+                    <h1 class="text-lg font-black text-gray-900 dark:text-white">订阅洗版</h1>
+                    <div class="flex flex-wrap items-center gap-2 mt-1 text-[11px] text-gray-500 dark:text-gray-400 font-medium">
+                        <span id="planCacheTime">等待质量缓存</span>
+                        <span class="w-1 h-1 rounded-full bg-gray-300 dark:bg-gray-600"></span>
+                        <span id="planRuleSummary">规则 0</span>
+                    </div>
+                </div>
             </div>
-            <div>
-                <h1 class="text-xl font-black text-gray-900 dark:text-white">订阅洗版</h1>
-                <p class="text-xs text-gray-500 mt-0.5">设置规则，自动对低画质媒体搜索高质量版本并推送下载</p>
+            <div class="flex flex-wrap lg:flex-nowrap lg:justify-end items-center gap-2">
+                <button onclick="toggleLogPanel()" class="plans-action px-3 py-2 rounded-xl bg-gray-100 dark:bg-apple-hoverDark hover:bg-gray-200 dark:hover:bg-[#3A3A3C] text-gray-600 dark:text-gray-300 text-xs font-bold flex items-center gap-2">
+                    <i class="fa-solid fa-clock-rotate-left"></i><span>活动日志</span>
+                </button>
+                <button onclick="runRules()" id="runBtn" class="plans-action px-4 py-2 rounded-xl bg-brand-500 hover:bg-brand-600 text-white text-xs font-bold shadow-sm flex items-center gap-2">
+                    <i class="fa-solid fa-play"></i><span>运行规则</span>
+                </button>
+                <button onclick="openRuleEditor()" class="plans-action px-4 py-2 rounded-xl bg-emerald-500 hover:bg-emerald-600 text-white text-xs font-bold shadow-sm flex items-center gap-2">
+                    <i class="fa-solid fa-plus"></i><span>新建规则</span>
+                </button>
             </div>
         </div>
-        <div class="flex items-center gap-1.5 sm:gap-3">
-            <button onclick="toggleLogPanel()" class="px-3 sm:px-4 py-2 text-xs font-bold text-gray-600 dark:text-gray-300 bg-gray-100 dark:bg-apple-hoverDark hover:bg-gray-200 dark:hover:bg-[#3A3A3C] rounded-xl transition-colors shadow-sm border border-gray-200 dark:border-white/5 flex items-center gap-1 sm:gap-2">
-                <i class="fa-solid fa-clock-rotate-left"></i> <span class="hidden sm:inline">活动日志</span>
-            </button>
-            <button onclick="runRules()" id="runBtn" class="px-3 sm:px-4 py-2 text-xs font-bold text-white bg-brand-500 hover:bg-brand-600 rounded-xl transition-all active:scale-95 shadow-sm flex items-center gap-1 sm:gap-2">
-                <i class="fa-solid fa-play"></i> <span class="hidden sm:inline">运行规则</span>
-            </button>
-            <button onclick="openRuleEditor()" class="px-3 sm:px-4 py-2 text-xs font-bold text-white bg-emerald-500 hover:bg-emerald-600 rounded-xl transition-all active:scale-95 shadow-sm flex items-center gap-1 sm:gap-2">
-                <i class="fa-solid fa-plus"></i> <span class="hidden sm:inline">新建规则</span>
-            </button>
+        <div class="plans-stat-strip mt-4">
+            <div class="px-4 py-3">
+                <div class="text-[10px] font-black text-gray-400 dark:text-gray-500 mb-0.5">订阅规则</div>
+                <div id="planRuleCount" class="text-xl font-black text-gray-900 dark:text-white leading-none">0</div>
+            </div>
+            <div class="px-4 py-3">
+                <div class="text-[10px] font-black text-gray-400 dark:text-gray-500 mb-0.5">已启用</div>
+                <div id="planEnabledCount" class="text-xl font-black text-emerald-500 leading-none">0</div>
+            </div>
+            <div class="px-4 py-3">
+                <div class="text-[10px] font-black text-gray-400 dark:text-gray-500 mb-0.5">待审核</div>
+                <div id="planPendingCount" class="text-xl font-black text-amber-500 leading-none">0</div>
+            </div>
+            <div class="px-4 py-3">
+                <div class="text-[10px] font-black text-gray-400 dark:text-gray-500 mb-0.5">运行状态</div>
+                <div id="planRunState" class="text-sm font-black text-gray-900 dark:text-white truncate">空闲</div>
+            </div>
         </div>
     </div>
 
@@ -59,13 +326,13 @@
     </div>
 
     <!-- 规则列表 -->
-    <div id="rulesContainer" class="space-y-3">
+    <div id="rulesContainer" class="space-y-2.5">
     </div>
 
     <!-- 审核列表 -->
     <div id="reviewSection" class="hidden mt-6">
         <div class="flex items-center justify-between mb-3 cursor-pointer select-none" onclick="toggleReviewCollapse()">
-            <h2 class="font-bold text-[15px] flex items-center gap-2">
+            <h2 class="plans-section-title font-black text-[13px] uppercase flex items-center gap-2">
                 <i id="reviewChevron" class="fa-solid fa-chevron-down text-gray-400 text-[10px] transition-transform duration-200"></i>
                 <i class="fa-solid fa-clipboard-list text-amber-500"></i> 待审核 <span id="reviewBadge" class="text-[11px] bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300 px-2 py-0.5 rounded-full font-bold">0</span>
                 <span id="reviewCollapsedHint" class="text-[11px] text-gray-400 hidden">（已折叠）</span>
@@ -79,7 +346,7 @@
                 </button>
             </div>
         </div>
-        <div id="reviewContainer" class="space-y-2 transition-all duration-200">
+        <div id="reviewContainer" class="space-y-1.5 transition-all duration-200">
             <div class="text-center py-8 text-gray-400 text-sm">暂无待审核项</div>
         </div>
     </div>
@@ -106,28 +373,26 @@
 <!-- 规则编辑器 Modal -->
 <div id="rule-modal" class="fixed inset-0 z-[110] hidden opacity-0 transition-opacity duration-200">
     <div class="absolute inset-0 bg-black/50 backdrop-blur-sm" onclick="closeRuleEditor()"></div>
-    <div class="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[95%] max-w-xl bg-white dark:bg-apple-cardDark rounded-[24px] shadow-2xl border border-gray-200 dark:border-white/5 overflow-hidden flex flex-col max-h-[90vh]">
-        <div class="px-4 py-3 border-b border-gray-100 dark:border-white/5 flex justify-between items-center bg-gradient-to-r from-brand-50/80 to-transparent dark:from-brand-900/10 shrink-0">
+    <div class="plans-modal-panel absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[95%] max-w-xl bg-white dark:bg-apple-cardDark rounded-[24px] shadow-2xl border border-gray-200 dark:border-white/5 overflow-hidden flex flex-col">
+        <div class="px-5 py-4 border-b border-gray-100 dark:border-white/5 flex justify-between items-center shrink-0">
             <h3 class="font-bold text-[15px] flex items-center gap-2"> <span id="rule-modal-title">新建规则</span></h3>
             <button onclick="closeRuleEditor()" class="text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 transition-colors w-7 h-7 rounded-full flex items-center justify-center bg-gray-100 dark:bg-white/5 hover:bg-gray-200 dark:hover:bg-white/10 text-sm"><i class="fa-solid fa-xmark"></i></button>
         </div>
-        <div class="p-4 overflow-y-auto mac-scrollbar flex-1 space-y-2 text-sm">
+        <div class="p-4 overflow-y-auto mac-scrollbar flex-1 space-y-2.5 text-sm bg-gray-50/70 dark:bg-black/10">
             <input type="hidden" id="editRuleId" value="">
 
             <!-- 基本信息 -->
-            <div class="rounded-xl bg-gradient-to-r from-brand-50/30 to-transparent dark:from-brand-900/5 p-3">
-                <div class="flex items-center gap-1.5 mb-2">
-                    <span class="w-0.5 h-3 rounded-full bg-brand-400"></span>
-                    <span class="text-[11px] font-bold text-gray-500 dark:text-gray-400 tracking-wide">基本信息</span>
+            <div class="plans-modal-section">
+                <div class="plans-modal-section-title">
+                    <span>基本信息</span>
                 </div>
                 <input id="ruleName" class="w-full px-3 py-2 rounded-xl bg-white dark:bg-apple-hoverDark border border-gray-200 dark:border-white/10 text-gray-700 dark:text-gray-300 font-medium focus:ring-2 focus:ring-brand-500 outline-none text-sm placeholder:text-gray-400" placeholder="例如: 升级到1080p HEVC" value="默认规则">
             </div>
 
             <!-- 触发条件 -->
-            <div class="rounded-xl bg-gradient-to-r from-orange-50/30 to-transparent dark:from-orange-900/5 p-3">
-                <div class="flex items-center gap-1.5 mb-2">
-                    <span class="w-0.5 h-3 rounded-full bg-orange-400"></span>
-                    <span class="text-[11px] font-bold text-gray-500 dark:text-gray-400 tracking-wide">🔄 触发条件</span>
+            <div class="plans-modal-section">
+                <div class="plans-modal-section-title">
+                    <span>触发条件</span>
                     <span class="text-[10px] text-gray-400 ml-auto">满足以下条件的条目执行升级</span>
                 </div>
                 <div class="grid grid-cols-2 gap-2">
@@ -152,10 +417,9 @@
             </div>
 
             <!-- 目标要求 -->
-            <div class="rounded-xl bg-gradient-to-r from-purple-50/30 to-transparent dark:from-purple-900/5 p-3">
-                <div class="flex items-center gap-1.5 mb-2">
-                    <span class="w-0.5 h-3 rounded-full bg-purple-400"></span>
-                    <span class="text-[11px] font-bold text-gray-500 dark:text-gray-400 tracking-wide">🎯 目标要求</span>
+            <div class="plans-modal-section">
+                <div class="plans-modal-section-title">
+                    <span>目标要求</span>
                     <span class="text-[10px] text-gray-400 ml-auto">搜索什么质量的资源</span>
                 </div>
                 <div class="grid grid-cols-3 gap-2">
@@ -190,10 +454,9 @@
             </div>
 
             <!-- 来源 + 调度 -->
-            <div class="rounded-xl bg-gradient-to-r from-blue-50/30 to-transparent dark:from-blue-900/5 p-3">
-                <div class="flex items-center gap-1.5 mb-2">
-                    <span class="w-0.5 h-3 rounded-full bg-blue-400"></span>
-                    <span class="text-[11px] font-bold text-gray-500 dark:text-gray-400 tracking-wide">⚙️ 来源与调度</span>
+            <div class="plans-modal-section">
+                <div class="plans-modal-section-title">
+                    <span>来源与调度</span>
                 </div>
                 <div class="grid grid-cols-3 gap-2">
                     <div>
@@ -224,38 +487,39 @@
             </div>
 
             <!-- 排序偏好 — 拖拽排序 -->
-            <div class="rounded-xl bg-gradient-to-r from-amber-50/30 to-transparent dark:from-amber-900/5 p-3">
-                <div class="flex items-center gap-1.5 mb-2">
-                    <span class="w-0.5 h-3 rounded-full bg-amber-400"></span>
-                    <span class="text-[11px] font-bold text-gray-500 dark:text-gray-400 tracking-wide">🏷️ 排序偏好</span>
+            <div class="plans-modal-section">
+                <div class="plans-modal-section-title">
+                    <span>排序偏好</span>
                     <span class="text-[10px] text-gray-400 ml-auto">拖拽调整优先级</span>
                 </div>
                 <div id="preferSortable" class="flex flex-col gap-1">
                     <div class="prefer-item flex items-center gap-2 px-3 py-2 rounded-xl bg-white dark:bg-apple-hoverDark border border-gray-200 dark:border-white/10 cursor-grab active:cursor-grabbing select-none transition-all hover:border-brand-300 text-sm" data-key="remux">
-                        <span class="drag-handle text-gray-400 cursor-grab active:cursor-grabbing select-none text-sm leading-none">⠿</span>
+                        <span class="drag-handle plans-drag-handle cursor-grab active:cursor-grabbing select-none"><i class="fa-solid fa-grip-vertical"></i></span>
+                        <span class="w-4 text-center text-gray-400"><i class="fa-solid fa-film text-[11px]"></i></span>
                         <span class="text-sm text-gray-700 dark:text-gray-300">Remux 优先</span>
-                        <button type="button" class="prefer-remove ml-auto w-4 h-4 flex items-center justify-center rounded-full text-gray-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-500/10 transition-colors text-[10px]" title="移除此条件">✕</button>
+                        <button type="button" class="prefer-remove ml-auto w-4 h-4 flex items-center justify-center rounded-full text-gray-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-500/10 transition-colors text-[10px]" title="移除此条件"><i class="fa-solid fa-xmark"></i></button>
                     </div>
                     <div class="prefer-item flex items-center gap-2 px-3 py-2 rounded-xl bg-white dark:bg-apple-hoverDark border border-gray-200 dark:border-white/10 cursor-grab active:cursor-grabbing select-none transition-all hover:border-brand-300 text-sm" data-key="4k">
-                        <span class="drag-handle text-gray-400 cursor-grab active:cursor-grabbing select-none text-sm leading-none">⠿</span>
+                        <span class="drag-handle plans-drag-handle cursor-grab active:cursor-grabbing select-none"><i class="fa-solid fa-grip-vertical"></i></span>
+                        <span class="w-4 text-center text-gray-400"><i class="fa-solid fa-tv text-[11px]"></i></span>
                         <span class="text-sm text-gray-700 dark:text-gray-300">4K 优先</span>
-                        <button type="button" class="prefer-remove ml-auto w-4 h-4 flex items-center justify-center rounded-full text-gray-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-500/10 transition-colors text-[10px]" title="移除此条件">✕</button>
+                        <button type="button" class="prefer-remove ml-auto w-4 h-4 flex items-center justify-center rounded-full text-gray-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-500/10 transition-colors text-[10px]" title="移除此条件"><i class="fa-solid fa-xmark"></i></button>
                     </div>
                     <div class="prefer-item flex items-center gap-2 px-3 py-2 rounded-xl bg-white dark:bg-apple-hoverDark border border-gray-200 dark:border-white/10 cursor-grab active:cursor-grabbing select-none transition-all hover:border-brand-300 text-sm" data-key="subtitle">
-                        <span class="drag-handle text-gray-400 cursor-grab active:cursor-grabbing select-none text-sm leading-none">⠿</span>
+                        <span class="drag-handle plans-drag-handle cursor-grab active:cursor-grabbing select-none"><i class="fa-solid fa-grip-vertical"></i></span>
+                        <span class="w-4 text-center text-gray-400"><i class="fa-solid fa-closed-captioning text-[11px]"></i></span>
                         <span class="text-sm text-gray-700 dark:text-gray-300">特效字幕优先</span>
-                        <button type="button" class="prefer-remove ml-auto w-4 h-4 flex items-center justify-center rounded-full text-gray-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-500/10 transition-colors text-[10px]" title="移除此条件">✕</button>
+                        <button type="button" class="prefer-remove ml-auto w-4 h-4 flex items-center justify-center rounded-full text-gray-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-500/10 transition-colors text-[10px]" title="移除此条件"><i class="fa-solid fa-xmark"></i></button>
                     </div>
                 </div>
                 <div id="preferAddArea" class="flex flex-wrap gap-1 mt-1.5 min-h-[22px]"></div>
-                <p class="text-[10px] text-gray-400 mt-1">拖拽调序，✕ 移除，灰色 <span class="text-brand-500 font-medium">+</span> 加回</p>
+                <p class="text-[10px] text-gray-400 mt-1">拖拽调序，移除后可从下方加回</p>
             </div>
 
             <!-- 自动审核 -->
-            <div class="rounded-xl bg-gradient-to-r from-emerald-50/30 to-transparent dark:from-emerald-900/5 p-3">
-                <div class="flex items-center gap-1.5 mb-2">
-                    <span class="w-0.5 h-3 rounded-full bg-emerald-400"></span>
-                    <span class="text-[11px] font-bold text-gray-500 dark:text-gray-400 tracking-wide">🤖 自动审核</span>
+            <div class="plans-modal-section">
+                <div class="plans-modal-section-title">
+                    <span>自动审核</span>
                 </div>
                 <label class="flex items-center gap-2.5 px-3 py-2 rounded-xl bg-white dark:bg-apple-hoverDark border border-emerald-200 dark:border-emerald-800/20 cursor-pointer select-none has-[:checked]:ring-2 has-[:checked]:ring-emerald-500 has-[:checked]:border-emerald-400 transition-all">
                     <input type="checkbox" id="ruleAutoApprove" class="accent-emerald-500 w-4 h-4">
@@ -267,25 +531,24 @@
                 <div id="autoApproveConditions" class="mt-2 flex flex-wrap gap-1.5 transition-all">
                     <label class="flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-white dark:bg-apple-hoverDark border border-gray-200 dark:border-white/10 cursor-pointer select-none has-[:checked]:ring-2 has-[:checked]:ring-emerald-400 has-[:checked]:border-emerald-300 has-[:checked]:bg-emerald-50/50 dark:has-[:checked]:bg-emerald-900/10 transition-all text-xs shadow-sm">
                         <input type="checkbox" id="autoCondRemux" class="accent-emerald-500 w-3 h-3">
-                        <span class="font-medium text-gray-600 dark:text-gray-400 text-[11px]">🎬 Remux</span>
+                        <span class="font-medium text-gray-600 dark:text-gray-400 text-[11px]">Remux</span>
                     </label>
                     <label class="flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-white dark:bg-apple-hoverDark border border-gray-200 dark:border-white/10 cursor-pointer select-none has-[:checked]:ring-2 has-[:checked]:ring-emerald-400 has-[:checked]:border-emerald-300 has-[:checked]:bg-emerald-50/50 dark:has-[:checked]:bg-emerald-900/10 transition-all text-xs shadow-sm">
                         <input type="checkbox" id="autoCond4k" class="accent-emerald-500 w-3 h-3">
-                        <span class="font-medium text-gray-600 dark:text-gray-400 text-[11px]">📺 4K</span>
+                        <span class="font-medium text-gray-600 dark:text-gray-400 text-[11px]">4K</span>
                     </label>
                     <label class="flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-white dark:bg-apple-hoverDark border border-gray-200 dark:border-white/10 cursor-pointer select-none has-[:checked]:ring-2 has-[:checked]:ring-emerald-400 has-[:checked]:border-emerald-300 has-[:checked]:bg-emerald-50/50 dark:has-[:checked]:bg-emerald-900/10 transition-all text-xs shadow-sm">
                         <input type="checkbox" id="autoCondSubtitle" class="accent-emerald-500 w-3 h-3">
-                        <span class="font-medium text-gray-600 dark:text-gray-400 text-[11px]">📝 特效字幕</span>
+                        <span class="font-medium text-gray-600 dark:text-gray-400 text-[11px]">特效字幕</span>
                     </label>
                 </div>
                 <p id="autoApproveHint" class="text-[10px] text-gray-400 mt-1">未勾选任何条件时，自动审核不生效</p>
             </div>
 
             <!-- 定时调度 -->
-            <div class="rounded-xl bg-gradient-to-r from-rose-50/30 to-transparent dark:from-rose-900/5 p-3">
-                <div class="flex items-center gap-1.5 mb-2">
-                    <span class="w-0.5 h-3 rounded-full bg-rose-400"></span>
-                    <span class="text-[11px] font-bold text-gray-500 dark:text-gray-400 tracking-wide">⏰ 定时调度</span>
+            <div class="plans-modal-section">
+                <div class="plans-modal-section-title">
+                    <span>定时调度</span>
                     <span class="text-[10px] text-gray-400 ml-auto">留空则不自动执行</span>
                 </div>
                 <input id="ruleCron" class="w-full px-3 py-2 rounded-xl bg-white dark:bg-apple-hoverDark border border-gray-200 dark:border-white/10 text-gray-700 dark:text-gray-300 font-mono text-sm focus:ring-2 focus:ring-brand-500 outline-none placeholder:text-gray-400" placeholder="0 3 * * *  (每日凌晨3点)">
@@ -296,9 +559,9 @@
                 </p>
             </div>
         </div>
-        <div class="px-4 py-3 border-t border-gray-100 dark:border-white/5 flex justify-end gap-2.5 shrink-0 bg-gradient-to-r from-transparent to-gray-50/80 dark:to-white/[0.02]">
+        <div class="px-4 py-3 border-t border-gray-100 dark:border-white/5 flex justify-end gap-2.5 shrink-0 bg-white dark:bg-apple-cardDark">
             <button onclick="closeRuleEditor()" class="px-4 py-2 text-sm font-bold text-gray-600 dark:text-gray-300 bg-gray-100 dark:bg-apple-hoverDark hover:bg-gray-200 dark:hover:bg-[#3A3A3C] rounded-xl transition-colors active:scale-95">取消</button>
-            <button onclick="saveRule()" class="px-5 py-2 text-sm font-bold text-white bg-gradient-to-r from-brand-500 to-purple-600 hover:from-brand-600 hover:to-purple-700 rounded-xl transition-all active:scale-95 shadow-md shadow-brand-500/20">保存规则</button>
+            <button onclick="saveRule()" class="px-5 py-2 text-sm font-bold text-white bg-brand-500 hover:bg-brand-600 rounded-xl transition-all active:scale-95 shadow-sm">保存规则</button>
         </div>
     </div>
 </div>
@@ -308,9 +571,24 @@
 <script>
     let editingRuleId = '';
     let _reviewCollapsed = false;
+    const _busyReviewIds = new Set();
+    let _busyBatchApprove = false;
 
     let embyBaseUrl = '';
     let embyServerId = '';
+
+    function setPlanText(id, value) {
+        const el = document.getElementById(id);
+        if (el) el.textContent = value;
+    }
+
+    function updatePlanRuleStats(rules) {
+        const list = Array.isArray(rules) ? rules : [];
+        const enabled = list.filter(r => r.enabled !== false).length;
+        setPlanText('planRuleCount', list.length);
+        setPlanText('planEnabledCount', enabled);
+        setPlanText('planRuleSummary', `规则 ${list.length}`);
+    }
 
     document.addEventListener('DOMContentLoaded', async () => {
         try {
@@ -374,6 +652,7 @@
             if (json.status !== 'success') throw new Error(json.message);
             const rules = json.data || [];
             loading.classList.add('hidden');
+            updatePlanRuleStats(rules);
 
             if (rules.length === 0) {
                 empty.classList.remove('hidden');
@@ -384,6 +663,7 @@
             container.innerHTML = rules.map(r => renderRuleCard(r)).join('');
         } catch(e) {
             loading.classList.add('hidden');
+            updatePlanRuleStats([]);
             container.innerHTML = `<div class="apple-card p-12 text-center text-red-400">加载失败: ${e.message}</div>`;
         }
     }
@@ -422,9 +702,9 @@
             : null);
 
         return `
-            <div class="apple-card overflow-hidden ${isEnabled ? '' : 'opacity-60'}">
+            <div class="plan-rule-card ${isEnabled ? '' : 'is-disabled opacity-60'}">
                 <!-- 顶部：名称 + 开关 -->
-                <div class="px-4 pt-3 pb-2 flex items-center justify-between gap-2">
+                <div class="pl-5 pr-4 pt-3 pb-2 flex items-center justify-between gap-2">
                     <div class="flex items-center gap-2.5 min-w-0 flex-1">
                         <div class="min-w-0">
                             <div class="font-bold text-sm text-gray-900 dark:text-white truncate">${escapeHtml(r.name || '未命名')}</div>
@@ -442,18 +722,18 @@
                 </div>
 
                 <!-- 中间：条件标签 -->
-                <div class="px-4 pb-2 flex flex-wrap items-center gap-1">
-                    <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-brand-50 dark:bg-brand-900/20 text-brand-600 dark:text-brand-400 text-[10px] font-bold"><i class="fa-solid fa-gauge-high text-[9px]"></i> ≤${maxScore}分</span>
-                    <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-purple-50 dark:bg-purple-900/20 text-purple-600 dark:text-purple-400 text-[10px] font-bold"><i class="fa-solid fa-bullseye text-[9px]"></i> ${targetResLabel}</span>
-                    <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-blue-50 dark:bg-blue-900/20 text-blue-600 dark:text-blue-400 text-[10px]"><i class="fa-solid fa-cloud text-[9px]"></i> ${sourceLabel}</span>
-                    ${source === 'both' ? `<span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-amber-50 dark:bg-amber-900/20 text-amber-600 dark:text-amber-400 text-[10px] font-bold"><i class="fa-solid fa-arrow-up-wide-short text-[9px]"></i> ${priorityLabel}</span>` : ''}
-                    <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-gray-100 dark:bg-gray-700 text-gray-500 dark:text-gray-400 text-[10px]"><i class="fa-solid fa-layer-group text-[9px]"></i> ${batchSize}条</span>
-                    ${r.auto_approve ? `<span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-emerald-50 dark:bg-emerald-900/20 text-emerald-600 dark:text-emerald-400 text-[10px] font-bold"><i class="fa-solid fa-robot text-[9px]"></i> 自动${autoCondStr ? ': ' + autoCondStr : ''}</span>` : ''}
-                    ${r.cron_expression ? `<span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-rose-50 dark:bg-rose-900/20 text-rose-600 dark:text-rose-400 text-[10px] font-mono"><i class="fa-solid fa-clock text-[9px]"></i> ${r.cron_expression}</span>` : ''}
+                <div class="pl-5 pr-4 pb-2 flex flex-wrap items-center gap-1">
+                    <span class="plan-pill inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-brand-50 dark:bg-brand-900/20 text-brand-600 dark:text-brand-400 text-[10px] font-bold"><i class="fa-solid fa-gauge-high text-[9px]"></i> ≤${maxScore}分</span>
+                    <span class="plan-pill inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-purple-50 dark:bg-purple-900/20 text-purple-600 dark:text-purple-400 text-[10px] font-bold"><i class="fa-solid fa-bullseye text-[9px]"></i> ${targetResLabel}</span>
+                    <span class="plan-pill inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-blue-50 dark:bg-blue-900/20 text-blue-600 dark:text-blue-400 text-[10px]"><i class="fa-solid fa-cloud text-[9px]"></i> ${sourceLabel}</span>
+                    ${source === 'both' ? `<span class="plan-pill inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-amber-50 dark:bg-amber-900/20 text-amber-600 dark:text-amber-400 text-[10px] font-bold"><i class="fa-solid fa-arrow-up-wide-short text-[9px]"></i> ${priorityLabel}</span>` : ''}
+                    <span class="plan-pill inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-gray-100 dark:bg-gray-700 text-gray-500 dark:text-gray-400 text-[10px]"><i class="fa-solid fa-layer-group text-[9px]"></i> ${batchSize}条</span>
+                    ${r.auto_approve ? `<span class="plan-pill inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-emerald-50 dark:bg-emerald-900/20 text-emerald-600 dark:text-emerald-400 text-[10px] font-bold"><i class="fa-solid fa-robot text-[9px]"></i> 自动${autoCondStr ? ': ' + autoCondStr : ''}</span>` : ''}
+                    ${r.cron_expression ? `<span class="plan-pill inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-rose-50 dark:bg-rose-900/20 text-rose-600 dark:text-rose-400 text-[10px] font-mono"><i class="fa-solid fa-clock text-[9px]"></i> ${r.cron_expression}</span>` : ''}
                 </div>
 
                 <!-- 底部：排序偏好 + 操作按钮 -->
-                <div class="px-4 py-2 bg-gray-50/50 dark:bg-white/[0.02] border-t border-gray-100 dark:border-white/5 flex items-center justify-between gap-2">
+                <div class="rule-meta-strip pl-5 pr-4 py-2 flex items-center justify-between gap-2">
                     <div class="flex items-center gap-1 flex-wrap min-w-0">
                         ${renderPreferOrderTags(prefOrder)}
                         ${!prefOrder || prefOrder.length === 0 ? '<span class="text-[10px] text-gray-400 italic">无排序偏好</span>' : ''}
@@ -471,32 +751,33 @@
     // ─── 拖拽排序（偏好优先级） ───
 
     const PREFER_META = {
-        remux:   { label: 'Remux 优先', icon: '🎬' },
-        '4k':    { label: '4K 优先',    icon: '📺' },
-        subtitle:{ label: '特效字幕优先', icon: '📝' },
+        remux:   { label: 'Remux 优先', iconClass: 'fa-solid fa-film' },
+        '4k':    { label: '4K 优先',    iconClass: 'fa-solid fa-tv' },
+        subtitle:{ label: '特效字幕优先', iconClass: 'fa-solid fa-closed-captioning' },
     };
 
     function createPreferItem(key) {
-        const meta = PREFER_META[key] || { label: key, icon: '🏷️' };
+        const meta = PREFER_META[key] || { label: key, iconClass: 'fa-solid fa-tag' };
         const div = document.createElement('div');
         div.className = 'prefer-item flex items-center gap-2 px-3 py-2 rounded-xl bg-white dark:bg-apple-hoverDark border border-gray-200 dark:border-white/10 cursor-grab active:cursor-grabbing select-none transition-all hover:border-brand-300 text-sm';
         div.dataset.key = key;
         div.draggable = true;
         div.innerHTML = `
-            <span class="drag-handle text-gray-400 cursor-grab active:cursor-grabbing select-none text-sm leading-none">⠿</span>
-            <span class="text-sm text-gray-700 dark:text-gray-300">${meta.icon} ${meta.label}</span>
-            <button type="button" class="prefer-remove ml-auto w-4 h-4 flex items-center justify-center rounded-full text-gray-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-500/10 transition-colors text-[10px]" title="移除此条件">✕</button>
+            <span class="drag-handle plans-drag-handle cursor-grab active:cursor-grabbing select-none"><i class="fa-solid fa-grip-vertical"></i></span>
+            <span class="w-4 text-center text-gray-400"><i class="${meta.iconClass} text-[11px]"></i></span>
+            <span class="text-sm text-gray-700 dark:text-gray-300">${meta.label}</span>
+            <button type="button" class="prefer-remove ml-auto w-4 h-4 flex items-center justify-center rounded-full text-gray-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-500/10 transition-colors text-[10px]" title="移除此条件"><i class="fa-solid fa-xmark"></i></button>
         `;
         return div;
     }
 
     function createPreferAddBadge(key) {
-        const meta = PREFER_META[key] || { label: key, icon: '🏷️' };
+        const meta = PREFER_META[key] || { label: key, iconClass: 'fa-solid fa-tag' };
         const btn = document.createElement('button');
         btn.type = 'button';
         btn.className = 'prefer-add-btn inline-flex items-center gap-1 px-3 py-1.5 rounded-lg bg-gray-50 dark:bg-white/5 border border-dashed border-gray-300 dark:border-white/10 text-gray-500 dark:text-gray-400 hover:border-brand-400 hover:text-brand-500 transition-all text-xs font-medium';
         btn.dataset.key = key;
-        btn.innerHTML = `+ ${meta.icon} ${meta.label}`;
+        btn.innerHTML = `<i class="fa-solid fa-plus text-[10px]"></i><i class="${meta.iconClass} text-[10px]"></i>${meta.label}`;
         return btn;
     }
 
@@ -549,7 +830,7 @@
             });
         });
 
-        // ✕ 按钮 → 移到添加区
+        // 移除按钮 → 移到添加区
         container.addEventListener('click', (e) => {
             const btn = e.target.closest('.prefer-remove');
             if (!btn || !addArea) return;
@@ -763,8 +1044,12 @@
                 headers: {'Content-Type': 'application/json'},
                 body: JSON.stringify({ enabled }),
             });
+            const json = await resp.json().catch(() => ({}));
+            if (!resp.ok || json.status !== 'success') {
+                throw new Error(json.message || json.detail || '切换失败');
+            }
         } catch(e) {
-            showToast('error', '切换失败');
+            showToast('error', e.message || '切换失败');
             loadRules();
         }
     }
@@ -816,6 +1101,7 @@
     async function _runWithParam(ruleId) {
         const btn = document.getElementById('runBtn');
         btn.disabled = true;
+        setPlanText('planRunState', '启动中');
         btn.innerHTML = '<i class="fa-solid fa-circle-notch fa-spin"></i> 运行中...';
 
         try {
@@ -842,9 +1128,11 @@
                 }, 2000);
             } else {
                 showToast('error', json.message || '启动失败');
+                setPlanText('planRunState', '空闲');
             }
         } catch(e) {
             showToast('error', '请求失败');
+            setPlanText('planRunState', '空闲');
         } finally {
             btn.disabled = false;
             btn.innerHTML = '<i class="fa-solid fa-play"></i> 运行规则';
@@ -862,17 +1150,20 @@
             const text = document.getElementById('cacheText');
             if (!cache) {
                 el.classList.add('hidden');
+                setPlanText('planCacheTime', '等待质量缓存');
                 return;
             }
-            el.classList.remove('hidden');
+            el.classList.add('hidden');
             if (cache.is_fresh) {
                 icon.className = 'fa-solid fa-database text-emerald-500';
                 text.textContent = `质量数据 ${cache.age_minutes} 分钟前已扫描（新鲜）· ${cache.created_at}`;
                 text.className = 'text-emerald-600 dark:text-emerald-400 font-medium';
+                setPlanText('planCacheTime', `质量数据 ${cache.age_minutes} 分钟前已扫描`);
             } else {
                 icon.className = 'fa-solid fa-database text-amber-500';
                 text.textContent = `质量数据 ${cache.age_minutes} 分钟前已扫描（已超过 1h，建议重新盘点）· ${cache.created_at}`;
                 text.className = 'text-amber-600 dark:text-amber-400 font-medium';
+                setPlanText('planCacheTime', `质量数据 ${cache.age_minutes} 分钟前已扫描（偏旧）`);
             }
         } catch(e) {}
     }
@@ -886,21 +1177,25 @@
             const statusDiv = document.getElementById('runStatus');
 
             if (s.running) {
+                setPlanText('planRunState', `${Math.round(s.progress || 0)}%`);
                 statusDiv.classList.remove('hidden');
                 document.getElementById('runStatusText').textContent = s.current || '运行规则匹配...';
                 document.getElementById('runProgressBar').style.width = s.progress + '%';
                 document.getElementById('runProgressText').textContent = `${s.processed}/${s.total}`;
-            } else if (!statusDiv.classList.contains('hidden')) {
-                statusDiv.classList.add('hidden');
-                // 运行完成，刷新规则列表 + 停止日志轮询
-                loadRules();
-                if (window._logPollTimer) {
-                    clearInterval(window._logPollTimer);
-                    window._logPollTimer = null;
-                }
-                // 如果日志面板开着，刷新最后一条日志
-                if (!document.getElementById('logPanel').classList.contains('hidden')) {
-                    await loadLogs();
+            } else {
+                setPlanText('planRunState', '空闲');
+                if (!statusDiv.classList.contains('hidden')) {
+                    statusDiv.classList.add('hidden');
+                    // 运行完成，刷新规则列表 + 停止日志轮询
+                    loadRules();
+                    if (window._logPollTimer) {
+                        clearInterval(window._logPollTimer);
+                        window._logPollTimer = null;
+                    }
+                    // 如果日志面板开着，刷新最后一条日志
+                    if (!document.getElementById('logPanel').classList.contains('hidden')) {
+                        await loadLogs();
+                    }
                 }
             }
         } catch(e) {
@@ -1122,6 +1417,7 @@
 
             section.classList.remove('hidden');
             badge.textContent = pendingCount;
+            setPlanText('planPendingCount', pendingCount);
             batchBtn.classList[pendingCount > 1 ? 'remove' : 'add']('hidden');
             clearBtn.classList[pendingCount > 0 ? 'remove' : 'add']('hidden');
 
@@ -1147,7 +1443,15 @@
                 const curRange = cq.video_range || '';
                 const curSize = cq.size_bytes || 0;
                 const curPath = cq.path || '';
-                const curFileName = curPath.split('/').pop() || r.item_name || '';
+                const curContainer = (cq.container || '').toLowerCase();
+                const curIsBluray = curContainer.includes('bluray') || curRes === '蓝光目录' || curCodec === '原盘目录';
+                const curTitleName = cq.name || r.item_name || '';
+                const curYear = cq.year || '';
+                const curEmbyName = `${curTitleName}${curYear ? ` (${curYear})` : ''}`;
+                const curRawName = curPath.split('/').pop() || r.item_name || '';
+                const curFileName = curIsBluray ? (curEmbyName || curRawName) : (curRawName || curEmbyName);
+                const curMetaNote = cq.metadata_note || '';
+                const curSizeLabel = curSize ? fmtSize(curSize) : (curIsBluray ? '目录' : '未知');
                 const isMp = src === 'moviepilot';
                 const scoreColor = curScore <= 30 ? 'text-red-500' : curScore <= 50 ? 'text-yellow-500' : curScore <= 80 ? 'text-blue-500' : 'text-green-500';
 
@@ -1217,71 +1521,74 @@
                     return gb >= 1 ? gb.toFixed(1) + ' GB' : (bytes / 1048576).toFixed(0) + ' MB';
                 }
 
-                // 公共辅助：渲染徽章列表（统一 text-[11px] px-2 py-0.5 尺寸）
+                // 公共辅助：渲染徽章列表（紧凑尺寸）
                 function renderBadges(list) {
                     return list.map(b => {
                         if (b.rawHtml) return b.rawHtml;
-                        return `<span class="inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-bold ${b.cls}">${escapeHtml(b.label)}</span>`;
+                        return `<span class="inline-flex items-center px-1.5 py-0.5 rounded-full text-[10px] font-bold ${b.cls}">${escapeHtml(b.label)}</span>`;
                     }).join('');
                 }
 
+                const isBusy = _busyReviewIds.has(String(r.id));
+                const busyAttrs = isBusy ? 'disabled aria-busy="true"' : '';
+                const busyClass = isBusy ? 'opacity-50 cursor-not-allowed pointer-events-none' : '';
+
                 return `
-                    <div class="apple-card p-4 border-l-4 ${isMp ? 'border-l-blue-500' : 'border-l-purple-500'} review-card">
-                        <div class="flex flex-col gap-2">
-                            <!-- 标题行：电影名 + 分数 + 来源 + Emby链接 -->
-                            <div class="flex items-center justify-between">
+                    <div class="review-card ${isMp ? 'is-mp' : 'is-hdhive'} px-3 py-2.5">
+                        <div class="flex flex-col gap-1.5">
+                            <!-- 标题行：电影名 + 分数 + 来源 + 操作 -->
+                            <div class="flex items-center justify-between gap-2">
                                 <div class="flex items-center gap-2 min-w-0">
                                     <span class="font-bold text-sm text-gray-900 dark:text-white">${escapeHtml(r.item_name || '')}</span>
                                     <span class="text-xs font-mono font-bold ${scoreColor}">${curScore}分</span>
-                                    <span class="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold ${isMp ? 'bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-300' : 'bg-purple-100 text-purple-700 dark:bg-purple-900/40 dark:text-purple-300'}">${isMp ? 'MP' : '影巢'}</span>
+                                    <span class="plan-pill inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold ${isMp ? 'bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-300' : 'bg-purple-100 text-purple-700 dark:bg-purple-900/40 dark:text-purple-300'}">${isMp ? 'MP' : '影巢'}</span>
                                     <a href="${embyBaseUrl}/web/index.html#!/item?id=${r.item_id}&serverId=${embyServerId}" target="_blank" rel="noopener" class="inline-flex items-center justify-center w-5 h-5 rounded-full text-gray-400 hover:text-brand-500 hover:bg-brand-50 dark:hover:bg-brand-900/20 transition-all" title="在 Emby 中打开">
                                         <i class="fa-solid fa-external-link text-[10px]"></i>
                                     </a>
                                 </div>
+                                <div class="flex items-center justify-end gap-1.5 shrink-0">
+                                    <button onclick="approveReview(${r.id})" ${busyAttrs} class="review-action-btn px-2.5 text-xs font-bold text-white bg-emerald-500 hover:bg-emerald-600 active:scale-95 shadow-sm shadow-emerald-500/20 flex items-center justify-center gap-1 ${busyClass}">
+                                        <i class="fa-solid ${isBusy ? 'fa-circle-notch fa-spin' : 'fa-check'} text-[10px]"></i> <span class="hidden sm:inline">${isBusy ? '处理中' : '批准'}</span>
+                                    </button>
+                                    <button onclick="rejectReview(${r.id})" ${busyAttrs} class="review-action-btn px-2 text-xs font-bold text-gray-500 dark:text-gray-400 bg-gray-100 dark:bg-apple-hoverDark hover:bg-gray-200 dark:hover:bg-[#3A3A3C] flex items-center justify-center gap-1 ${busyClass}" title="拒绝此次结果，下次跳过">
+                                        <i class="fa-solid fa-xmark text-[10px]"></i> <span class="hidden sm:inline">拒绝</span>
+                                    </button>
+                                    <button onclick="ignoreReview(${r.id})" ${busyAttrs} class="review-action-btn px-2 text-xs font-bold text-amber-600 dark:text-amber-400 bg-amber-50 dark:bg-amber-900/20 hover:bg-amber-100 dark:hover:bg-amber-900/30 flex items-center justify-center gap-1 ${busyClass}" title="忽略，以后不再扫描">
+                                        <i class="fa-solid fa-ban text-[10px]"></i> <span class="hidden sm:inline">忽略</span>
+                                    </button>
+                                </div>
                             </div>
 
                             <!-- 左右对比区：移动端竖排，平板+横排 -->
-                            <div class="grid grid-cols-1 sm:grid-cols-2 gap-2 sm:gap-3 mt-1">
+                            <div class="review-compare-grid">
                                 <!-- 当前文件 -->
-                                <div class="bg-red-50/40 dark:bg-red-900/10 rounded-xl p-3 border border-red-100 dark:border-red-900/30">
-                                    <div class="text-[10px] font-bold text-red-500 uppercase tracking-wider mb-1.5">
+                                <div class="review-compare-card review-current px-2.5 py-2">
+                                    <div class="review-compare-label text-[10px] font-bold text-red-500">
                                         <i class="fa-solid fa-folder-open mr-1"></i>当前
                                     </div>
-                                    <div class="text-[11px] font-mono text-gray-800 dark:text-gray-200 break-all leading-relaxed">${escapeHtml(curFileName)}</div>
-                                    <div class="flex flex-wrap items-center gap-1.5 mt-1.5">
+                                    <div class="review-compare-title text-[11px] font-mono text-gray-800 dark:text-gray-200">${escapeHtml(curFileName)}</div>
+                                    <div class="review-compare-note text-[10px] text-gray-500 dark:text-gray-400">${curMetaNote ? escapeHtml(curMetaNote) : '&nbsp;'}</div>
+                                    <div class="review-badges-row flex flex-wrap items-center gap-1 mt-1">
                                         ${curRes ? badgeRes(curRes) : '<span class="text-[10px] text-gray-400">无分辨率</span>'}
                                         ${curCodec ? badgeCodec(curCodec) : ''}
                                         ${curRange ? `<span class="inline-flex items-center px-1.5 py-0.5 rounded text-[9px] font-bold bg-gray-100 dark:bg-gray-800 text-gray-500 dark:text-gray-400">${escapeHtml(curRange)}</span>` : ''}
-                                        <span class="text-[10px] text-gray-400">${fmtSize(curSize)}</span>
+                                        <span class="text-[10px] text-gray-400">${curSizeLabel}</span>
                                     </div>
                                 </div>
 
                                 <!-- 目标文件 -->
-                                <div class="bg-emerald-50/40 dark:bg-emerald-900/10 rounded-xl p-3 border border-emerald-100 dark:border-emerald-900/30">
-                                    <div class="text-[10px] font-bold text-emerald-600 dark:text-emerald-400 uppercase tracking-wider mb-1.5">
+                                <div class="review-compare-card review-target px-2.5 py-2">
+                                    <div class="review-compare-label text-[10px] font-bold text-emerald-600 dark:text-emerald-400">
                                         <i class="fa-solid fa-arrow-down mr-1"></i>${isMp ? 'MP搜索' : '影巢资源'}
                                     </div>
-                                    <div class="text-[11px] font-mono text-gray-800 dark:text-gray-200 break-all leading-relaxed">${escapeHtml(newTitle)}</div>
-                                    ${newSubtitle ? `<div class="text-[10px] text-gray-500 dark:text-gray-400 mt-0.5 leading-tight">${escapeHtml(newSubtitle)}</div>` : ''}
-                                    <div class="flex flex-wrap items-center gap-1.5 mt-1.5">
+                                    <div class="review-compare-title text-[11px] font-mono text-gray-800 dark:text-gray-200">${escapeHtml(newTitle)}</div>
+                                    <div class="review-compare-note text-[10px] text-gray-500 dark:text-gray-400">${newSubtitle ? escapeHtml(newSubtitle) : '&nbsp;'}</div>
+                                    <div class="review-badges-row flex flex-wrap items-center gap-1 mt-1">
                                         ${newRes ? badgeRes(newRes) : '<span class="text-[10px] text-gray-400">无分辨率</span>'}
                                         ${badgeList.length ? renderBadges(badgeList) : ''}
                                         <span class="text-[10px] text-gray-400">${newSizeLabel}</span>
                                     </div>
                                 </div>
-                            </div>
-
-                            <!-- 按钮区：移动端紧凑，桌面端宽松 -->
-                            <div class="flex items-center justify-end gap-1.5 sm:gap-2 mt-1">
-                                <button onclick="approveReview(${r.id})" class="px-3 sm:px-4 py-2 text-xs font-bold text-white bg-emerald-500 hover:bg-emerald-600 rounded-xl transition-all active:scale-95 shadow-sm flex items-center gap-1">
-                                    <i class="fa-solid fa-check"></i> <span class="hidden sm:inline">批准</span>
-                                </button>
-                                <button onclick="rejectReview(${r.id})" class="px-2 sm:px-3 py-2 text-xs font-bold text-gray-500 dark:text-gray-400 bg-gray-100 dark:bg-apple-hoverDark hover:bg-gray-200 dark:hover:bg-[#3A3A3C] rounded-xl transition-colors flex items-center gap-1" title="拒绝此次结果，下次跳过">
-                                    <i class="fa-solid fa-xmark"></i> <span class="hidden sm:inline">拒绝</span>
-                                </button>
-                                <button onclick="ignoreReview(${r.id})" class="px-2 sm:px-3 py-2 text-xs font-bold text-amber-600 dark:text-amber-400 bg-amber-50 dark:bg-amber-900/20 hover:bg-amber-100 dark:hover:bg-amber-900/30 rounded-xl transition-colors flex items-center gap-1" title="忽略，以后不再扫描">
-                                    <i class="fa-solid fa-ban"></i> <span class="hidden sm:inline">忽略</span>
-                                </button>
                             </div>
                         </div>
                     </div>
@@ -1293,6 +1600,10 @@
     }
 
     async function approveReview(id) {
+        const key = String(id);
+        if (_busyReviewIds.has(key)) return;
+        _busyReviewIds.add(key);
+        loadReviews();
         try {
             const resp = await fetch(`/api/subscribe/reviews/${id}/approve`, { method: 'POST' });
             const json = await resp.json();
@@ -1305,10 +1616,17 @@
             }
         } catch(e) {
             showToast('error', '请求失败');
+        } finally {
+            _busyReviewIds.delete(key);
+            loadReviews();
         }
     }
 
     async function rejectReview(id) {
+        const key = String(id);
+        if (_busyReviewIds.has(key)) return;
+        _busyReviewIds.add(key);
+        loadReviews();
         try {
             const resp = await fetch(`/api/subscribe/reviews/${id}/reject`, { method: 'POST' });
             const json = await resp.json();
@@ -1316,10 +1634,19 @@
                 showToast('info', '已拒绝，下次跳过此结果');
                 loadReviews();
             }
-        } catch(e) {}
+        } catch(e) {
+            showToast('error', '请求失败');
+        } finally {
+            _busyReviewIds.delete(key);
+            loadReviews();
+        }
     }
 
     async function ignoreReview(id) {
+        const key = String(id);
+        if (_busyReviewIds.has(key)) return;
+        _busyReviewIds.add(key);
+        loadReviews();
         try {
             const resp = await fetch(`/api/subscribe/reviews/${id}/ignore`, { method: 'POST' });
             const json = await resp.json();
@@ -1331,6 +1658,9 @@
             }
         } catch(e) {
             showToast('error', '请求失败');
+        } finally {
+            _busyReviewIds.delete(key);
+            loadReviews();
         }
     }
 
@@ -1380,6 +1710,7 @@
     }
 
     async function batchApprove() {
+        if (_busyBatchApprove) return;
         const confirmed = await showConfirm({
             type: 'info',
             title: '批量批准',
@@ -1387,6 +1718,7 @@
             confirmText: '全部批准'
         });
         if (!confirmed) return;
+        _busyBatchApprove = true;
         try {
             const resp = await fetch('/api/subscribe/reviews/batch-approve', { method: 'POST' });
             const json = await resp.json();
@@ -1399,6 +1731,8 @@
             }
         } catch(e) {
             showToast('error', '请求失败');
+        } finally {
+            _busyBatchApprove = false;
         }
     }
 </script>

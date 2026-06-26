@@ -116,6 +116,8 @@ class ConfigModel(BaseModel):
     symedia_parent_id: str = ""
     cloud115_cookie: str = ""
     cloud115_folder_id: str = "0"   # 115 转存目录 ID
+    clouddrive_url: str = ""         # CloudDrive2 地址
+    clouddrive_token: str = ""       # CloudDrive2 API Token
     exclude_library_ids: str = ""
     scan_schedule: str = "0"  # 定时扫描间隔（小时），0=禁用
     # 全局代理（影巢 + Telegram 共用）

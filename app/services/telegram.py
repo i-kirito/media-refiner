@@ -6,6 +6,7 @@ import json
 import logging
 import time
 from app.config import settings
+from app.services.transfer_verify import verify_hdhive_transfer_visible
 
 logger = logging.getLogger(__name__)
 
@@ -942,6 +943,12 @@ class TelegramNotifier:
                     if not resp:
                         raise ValueError("转存失败（HDHive API 无响应）")
                     status = resp.get("status", "")
+                    if status in ("transferred", "already_owned"):
+                        verify = await verify_hdhive_transfer_visible(result, resp)
+                        if isinstance(resp, dict):
+                            resp["cloud115_verify"] = verify
+                        if not verify.get("ok"):
+                            raise ValueError(verify.get("message") or "115 目标目录未确认转存文件")
                     if status == "transferred":
                         await update_subscribe_review(review_id, "approved", "✅ TG 批准 - 转存成功")
                         await add_subscribe_log(

@@ -4,9 +4,14 @@ from __future__ import annotations
 import asyncio
 import uuid
 import logging
+import os
 import re
+import time
 from datetime import datetime
-from fastapi import APIRouter, HTTPException
+from urllib.parse import unquote, urlparse
+from fastapi import APIRouter, HTTPException, Body
+from app.config import settings
+from pydantic import BaseModel
 from app.models.schemas import SubscribeRule
 from app.database import (
     save_subscribe_rule, list_subscribe_rules, get_subscribe_rule,
@@ -27,6 +32,14 @@ logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/subscribe", tags=["订阅洗版"])
 
 _run_status = {"running": False, "progress": 0, "current": "", "total": 0, "processed": 0}
+_path_size_cache: dict[str, tuple[float, int]] = {}
+_PATH_SIZE_CACHE_TTL = 600.0
+_STRM_READ_LIMIT = 8192
+
+
+class HistoryDownloadControlPayload(BaseModel):
+    action: str
+    delete_files: bool = True
 
 
 def _review_already_handled_response(review: dict) -> dict:
@@ -45,6 +58,199 @@ def _review_already_handled_response(review: dict) -> dict:
         "message": text,
         "data": {"already_handled": True, "review_status": status},
     }
+
+
+def _should_cleanup_history_download_task(logs: list[dict]) -> bool:
+    """失败的缺集下载历史删除时，同步尝试清理下载器任务。"""
+    markers = (
+        "缺集 MP 下载失败",
+        "拆包筛选未确认",
+        "qBittorrent",
+        "Transmission",
+        "downloader=",
+        "hash=",
+        "torrent_id=",
+        "未在种子文件中识别到目标集",
+    )
+    for log in logs or []:
+        if log.get("rule_name") != "缺集管理" or log.get("action") != "error":
+            continue
+        message = str(log.get("message") or "")
+        if any(marker in message for marker in markers):
+            return True
+    return False
+
+
+def _history_resource_title(message: str) -> str:
+    match = re.search(r"资源[:：]\s*(.*?)(?:\s+·\s+|$)", str(message or ""))
+    return match.group(1).strip() if match else ""
+
+
+def _history_seasons(text: str) -> set[int]:
+    value = str(text or "")
+    seasons: set[int] = set()
+    for match in re.finditer(r"(?<![a-z0-9])s0?(\d{1,2})\s*(?:-|~|至|到)\s*s?0?(\d{1,2})(?![a-z0-9])", value, re.I):
+        start = int(match.group(1))
+        end = int(match.group(2))
+        seasons.update(range(min(start, end), max(start, end) + 1))
+    for match in re.finditer(r"(?<![a-z0-9])s0?(\d{1,2})(?![a-z0-9])", value, re.I):
+        seasons.add(int(match.group(1)))
+    for match in re.finditer(r"第\s*0?(\d{1,2})\s*季", value, re.I):
+        seasons.add(int(match.group(1)))
+    return seasons
+
+
+def _history_download_match_consistent(item: dict) -> bool:
+    expected = _history_seasons(
+        " ".join([
+            str(item.get("_history_item_name") or ""),
+            str(item.get("_history_resource_title") or item.get("title") or item.get("name") or ""),
+        ])
+    )
+    actual = _history_seasons(str(item.get("ui_download_name") or ""))
+    return not expected or not actual or bool(expected & actual)
+
+
+def _transfer_match_text(value: str) -> str:
+    return re.sub(r"[^0-9a-zA-Z\u4e00-\u9fff]+", "", str(value or "")).lower()
+
+
+def _transfer_candidate_names(result: dict, resp: dict | None) -> list[str]:
+    names: list[str] = []
+    for source in (result or {}, (resp or {}).get("data") if isinstance(resp, dict) else {}):
+        if not isinstance(source, dict):
+            continue
+        for key in ("title", "name", "file_name", "resource_title", "slug", "_resource_url"):
+            value = str(source.get(key) or "").strip()
+            if value and not value.startswith(("http://", "https://")):
+                names.append(value)
+    return list(dict.fromkeys(names))
+
+
+def _transfer_names_match(target_names: list[str], candidate_names: list[str]) -> bool:
+    normalized_targets = [_transfer_match_text(name) for name in target_names if _transfer_match_text(name)]
+    normalized_candidates = [_transfer_match_text(name) for name in candidate_names if _transfer_match_text(name)]
+    for target in normalized_targets:
+        for candidate in normalized_candidates:
+            if len(candidate) >= 4 and (candidate in target or target in candidate):
+                return True
+    return False
+
+
+async def _verify_hdhive_transfer_visible(result: dict, resp: dict | None) -> dict:
+    """订阅转存只在 115 目标目录能看到资源时才算成功。"""
+    if not settings.cloud115_cookie:
+        return {"ok": False, "message": "未配置 115 Cookie，无法确认转存文件已落地"}
+    if not isinstance(resp, dict):
+        return {"ok": False, "message": "缺少转存响应，无法确认 115 文件"}
+
+    data = resp.get("data") if isinstance(resp.get("data"), dict) else {}
+    folder_id = str(data.get("_target_folder") or settings.symedia_parent_id or settings.cloud115_folder_id or "0")
+    candidate_names = _transfer_candidate_names(result, resp)
+
+    from app.services.cloud115 import Cloud115Client
+
+    c115 = Cloud115Client()
+    try:
+        share_code = str(data.get("_share_code") or "").strip()
+        if share_code:
+            share = await c115.list_share_files(
+                share_code,
+                str(data.get("_receive_code") or ""),
+                recursive=False,
+            )
+            if isinstance(share, dict) and share.get("state"):
+                for item in share.get("data") or []:
+                    if isinstance(item, dict):
+                        name = str(item.get("n") or item.get("name") or item.get("file_name") or "").strip()
+                        if name:
+                            candidate_names.append(name)
+
+        candidate_names = list(dict.fromkeys(candidate_names))
+        if not candidate_names:
+            return {"ok": False, "message": "缺少资源名称，无法确认 115 文件"}
+
+        last_names: list[str] = []
+        for attempt in range(5):
+            listing = await c115.list_files(folder_id, limit=115)
+            if isinstance(listing, dict) and listing.get("state"):
+                last_names = [
+                    str(item.get("n") or item.get("name") or item.get("file_name") or "").strip()
+                    for item in (listing.get("data") or [])
+                    if isinstance(item, dict)
+                ]
+                if _transfer_names_match(last_names, candidate_names):
+                    return {
+                        "ok": True,
+                        "message": "115 目标目录已确认资源文件",
+                        "folder_id": folder_id,
+                        "matched_names": last_names[:8],
+                        "attempts": attempt + 1,
+                    }
+            await asyncio.sleep(2)
+        return {
+            "ok": False,
+            "message": "115 目标目录未找到刚转存的资源文件",
+            "folder_id": folder_id,
+            "candidate_names": candidate_names[:8],
+            "sample_names": last_names[:8],
+        }
+    finally:
+        await c115.close()
+
+
+async def _annotate_project_download_logs(logs: list[dict]) -> list[dict]:
+    """只给本项目历史里的下载日志关联下载器状态，不展示外部手动任务。"""
+    probes: list[dict] = []
+    indexes: list[int] = []
+    for idx, log in enumerate(logs or []):
+        if log.get("action") != "download" or not log.get("item_id"):
+            continue
+        title = _history_resource_title(str(log.get("message") or "")) or str(log.get("item_name") or "")
+        if not title:
+            continue
+        probes.append({
+            "title": title,
+            "name": title,
+            "_history_item_name": str(log.get("item_name") or ""),
+            "_history_resource_title": title,
+        })
+        indexes.append(idx)
+
+    if not probes:
+        return logs
+
+    annotated: list[dict] = []
+    mp = MoviePilotClient()
+    try:
+        annotated = await mp.annotate_downloader_statuses(probes[:120])
+    except Exception:
+        logger.exception("[Subscribe] 读取项目下载状态失败")
+        return logs
+    finally:
+        await mp.close()
+
+    updated = [dict(log) for log in logs]
+    for idx, item in zip(indexes[:len(annotated)], annotated):
+        if not item.get("ui_download_task"):
+            continue
+        if not _history_download_match_consistent(item):
+            continue
+        updated[idx].update({
+            "download_task": True,
+            "download_status": item.get("ui_download_status") or "",
+            "download_label": item.get("ui_download_label") or "",
+            "download_progress": item.get("ui_download_progress", 0),
+            "download_speed": item.get("ui_download_speed", 0),
+            "download_eta": item.get("ui_download_eta", 0),
+            "download_name": item.get("ui_download_name") or "",
+            "download_id": item.get("ui_download_id") or "",
+            "download_hash": item.get("ui_download_hash") or "",
+            "download_state": item.get("ui_download_state") or "",
+            "download_downloader": item.get("ui_downloader") or "",
+            "download_downloader_type": item.get("ui_downloader_type") or "",
+        })
+    return updated
 
 
 def _normalise_codec(value: str) -> str:
@@ -183,6 +389,152 @@ def _is_bluray_directory(current: dict) -> bool:
     return "bluray" in str(current.get("container") or "").lower()
 
 
+def _positive_int(value: object) -> int:
+    try:
+        number = int(value or 0)
+    except (TypeError, ValueError):
+        return 0
+    return number if number > 0 else 0
+
+
+def _local_media_path_size(path: str) -> int:
+    """Emby 对蓝光目录常给 0，这里在本容器能访问路径时按文件求和。"""
+    path = str(path or "").strip()
+    if not path or "\0" in path:
+        return 0
+
+    now = time.monotonic()
+    cached = _path_size_cache.get(path)
+    if cached and now - cached[0] < _PATH_SIZE_CACHE_TTL:
+        return cached[1]
+
+    total = 0
+    try:
+        if os.path.isfile(path):
+            total = _file_size_with_strm_target(path, set())
+        elif os.path.isdir(path):
+            top_level_strm_size = _top_level_strm_targets_size(path)
+            if top_level_strm_size:
+                _path_size_cache[path] = (now, top_level_strm_size)
+                return top_level_strm_size
+
+            stack = [path]
+            seen_dirs: set[tuple[int, int]] = set()
+            seen_files: set[tuple[int, int] | str] = set()
+            while stack:
+                root = stack.pop()
+                try:
+                    root_stat = os.stat(root)
+                except OSError:
+                    continue
+                root_key = (root_stat.st_dev, root_stat.st_ino)
+                if root_key in seen_dirs:
+                    continue
+                seen_dirs.add(root_key)
+                try:
+                    with os.scandir(root) as entries:
+                        for entry in entries:
+                            try:
+                                if entry.is_dir(follow_symlinks=True):
+                                    stack.append(entry.path)
+                                elif entry.is_file(follow_symlinks=True):
+                                    total += _file_size_with_strm_target(entry.path, seen_files)
+                            except OSError:
+                                continue
+                except OSError:
+                    continue
+    except OSError:
+        total = 0
+
+    _path_size_cache[path] = (now, total)
+    return total
+
+
+def _read_strm_target(path: str) -> str:
+    if not path.lower().endswith(".strm"):
+        return ""
+    try:
+        with open(path, "r", encoding="utf-8", errors="ignore") as file:
+            text = file.read(_STRM_READ_LIMIT)
+    except OSError:
+        return ""
+    for raw in text.splitlines():
+        line = raw.strip()
+        if not line:
+            continue
+        parsed = urlparse(line)
+        if parsed.scheme in {"http", "https", "rtsp", "rtmp", "magnet"}:
+            return ""
+        if parsed.scheme == "file":
+            return unquote(parsed.path or "")
+        if parsed.scheme and len(parsed.scheme) > 1:
+            return ""
+        return line
+    return ""
+
+
+def _file_identity(path: str) -> tuple[int, int] | str:
+    try:
+        stat = os.stat(path)
+        return (stat.st_dev, stat.st_ino)
+    except OSError:
+        return os.path.realpath(path)
+
+
+def _file_size_with_strm_target(path: str, seen_files: set[tuple[int, int] | str]) -> int:
+    target = _read_strm_target(path)
+    media_path = target if target and os.path.exists(target) else path
+    identity = _file_identity(media_path)
+    if identity in seen_files:
+        return 0
+    seen_files.add(identity)
+    try:
+        if os.path.isdir(media_path):
+            return _local_media_path_size(media_path)
+        return os.path.getsize(media_path)
+    except OSError:
+        return 0
+
+
+def _top_level_strm_targets_size(path: str) -> int:
+    total = 0
+    seen_files: set[tuple[int, int] | str] = set()
+    try:
+        with os.scandir(path) as entries:
+            for entry in entries:
+                try:
+                    if not entry.is_file(follow_symlinks=True) or not entry.name.lower().endswith(".strm"):
+                        continue
+                    target = _read_strm_target(entry.path)
+                    if target and os.path.exists(target):
+                        total += _file_size_with_strm_target(target, seen_files)
+                except OSError:
+                    continue
+    except OSError:
+        return 0
+    return total
+
+
+async def _resolve_current_size_bytes(current: dict, item: dict, source: dict) -> int:
+    size = (
+        _positive_int(source.get("Size") if source else 0)
+        or _positive_int(item.get("Size") if item else 0)
+        or _positive_int(current.get("size_bytes"))
+    )
+    if size:
+        return size
+
+    path = str(
+        (source or {}).get("Path")
+        or (item or {}).get("Path")
+        or current.get("path")
+        or ""
+    )
+    if not path:
+        return 0
+    return await asyncio.to_thread(_local_media_path_size, path)
+
+
 async def _hydrate_current_quality_from_emby(current: dict) -> dict:
     """缺关键质量字段时，尝试从 Emby 实时拉取媒体流信息。"""
     emby_id = str(current.get("emby_id") or "").strip()
@@ -193,8 +545,11 @@ async def _hydrate_current_quality_from_emby(current: dict) -> dict:
     try:
         item = await emby.get_item(
             emby_id,
-            fields="MediaSources,Path,MediaStreams,ProviderIds,ProductionYear,DateCreated,MediaSourceCount,ChildCount"
+            fields="MediaSources,Path,MediaStreams,ProviderIds,ProductionYear,DateCreated,MediaSourceCount,ChildCount,Size,Container,OriginalTitle,SortName"
         )
+        if not item:
+            current["emby_missing"] = True
+            return current
         playback = await emby.get_playback_info(emby_id)
     except Exception as exc:
         logger.warning("[Subscribe] hydrate current quality failed for %s: %s", emby_id, exc)
@@ -202,8 +557,16 @@ async def _hydrate_current_quality_from_emby(current: dict) -> dict:
     finally:
         await emby.close()
 
-    item = item or {}
     playback = playback or {}
+    current["metadata_source"] = "emby"
+    current["name"] = item.get("Name") or current.get("name") or ""
+    if item.get("ProductionYear") and not current.get("year"):
+        current["year"] = item.get("ProductionYear")
+    if item.get("Path") and not current.get("path"):
+        current["path"] = item.get("Path")
+    if item.get("ProviderIds") and not current.get("provider_ids"):
+        current["provider_ids"] = item.get("ProviderIds")
+
     item_sources = item.get("MediaSources") or []
     playback_sources = playback.get("MediaSources") or []
     source, video_stream = _pick_video_stream(item_sources)
@@ -218,13 +581,19 @@ async def _hydrate_current_quality_from_emby(current: dict) -> dict:
         video_stream = pb_video_stream
 
     if source:
+        current["media_source_name"] = source.get("Name") or current.get("media_source_name") or ""
         current["container"] = source.get("Container") or current.get("container") or ""
-        size = source.get("Size")
-        if size:
-            current["size_bytes"] = size
         source_path = source.get("Path") or item.get("Path") or current.get("path") or ""
         if source_path:
             current["path"] = source_path
+
+    size = await _resolve_current_size_bytes(current, item, source)
+    if size:
+        current["size_bytes"] = size
+        if _positive_int(source.get("Size") if source else 0) or _positive_int(item.get("Size")):
+            current["size_source"] = "emby"
+        else:
+            current["size_source"] = "filesystem"
 
     if video_stream:
         width = int(video_stream.get("Width") or 0)
@@ -238,12 +607,17 @@ async def _hydrate_current_quality_from_emby(current: dict) -> dict:
         if video_range:
             current["video_range"] = video_range
 
+    if _is_bluray_directory(current) and not video_stream and not current.get("size_bytes"):
+        current["metadata_note"] = "Emby 元数据：蓝光目录未提供视频流/大小"
+
     return current
 
 
 async def _normalise_current_quality_for_display(review: dict) -> dict:
     """修正审核卡片里的当前质量，兼容旧缓存、STRM 与蓝光目录条目。"""
     current = dict((review.get("current_quality") or {}))
+    if not current.get("emby_id") and review.get("item_id"):
+        current["emby_id"] = str(review.get("item_id") or "")
     current = await _hydrate_current_quality_from_emby(current)
 
     path = current.get("path", "")
@@ -264,6 +638,8 @@ async def _normalise_current_quality_for_display(review: dict) -> dict:
         current["video_codec"] = "原盘目录"
     if not current.get("size_bytes"):
         current["size_bytes"] = 0
+    if _is_bluray_directory(current) and not current.get("metadata_note") and not current.get("size_bytes"):
+        current["metadata_note"] = "Emby 元数据：蓝光目录未提供视频流/大小"
     review = dict(review)
     review["current_quality"] = current
     return review
@@ -670,12 +1046,15 @@ async def get_rule(rule_id: str):
 
 
 @router.put("/rules/{rule_id}")
-async def update_rule(rule_id: str, rule: SubscribeRule):
+async def update_rule(rule_id: str, payload: dict = Body(...)):
     """更新订阅规则"""
     existing = await get_subscribe_rule(rule_id)
     if not existing:
         raise HTTPException(404, "规则不存在")
-    data = rule.model_dump()
+    merged = dict(existing)
+    merged.update(payload or {})
+    merged["id"] = rule_id
+    data = SubscribeRule(**merged).model_dump()
     data["id"] = rule_id
     data["updated_at"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     await save_subscribe_rule(data)
@@ -800,6 +1179,12 @@ async def approve_review(review_id: int):
                 if not resp:
                     raise ValueError("转存失败（HDHive API 无响应）")
                 status = resp.get("status", "")
+                if status in ("transferred", "already_owned"):
+                    verify = await _verify_hdhive_transfer_visible(result, resp)
+                    if isinstance(resp, dict):
+                        resp["cloud115_verify"] = verify
+                    if not verify.get("ok"):
+                        raise ValueError(verify.get("message") or "115 目标目录未确认转存文件")
                 if status == "transferred":
                     await update_subscribe_review(review_id, "approved", "转存成功")
                     await add_subscribe_log(review.get("rule_id", ""), review.get("rule_name", ""), "transfer", item_name, review.get("item_id", ""), f"审核通过 - HDHive 转存成功")
@@ -893,11 +1278,66 @@ async def unignore_item(rule_id: str, item_id: str):
 @router.delete("/history/{item_id}")
 async def delete_item_history(item_id: str):
     """删除指定条目的所有历史记录（日志+审核+忽略），恢复可搜索状态"""
+    logs = await get_subscribe_logs_for_item(item_id)
+    cleanup = {"deleted": 0, "matched": 0, "message": ""}
+    if _should_cleanup_history_download_task(logs):
+        mp = MoviePilotClient()
+        try:
+            cleanup = await mp.cleanup_history_download_tasks(
+                item_name=str((logs[0] or {}).get("item_name") or "") if logs else "",
+                item_id=item_id,
+                logs=logs,
+                delete_files=False,
+            )
+        except Exception as e:
+            logger.exception("[Subscribe] 删除历史联动清理下载器失败: %s", item_id)
+            cleanup = {"deleted": 0, "matched": 0, "message": f"下载器清理失败: {e}"}
+        finally:
+            await mp.close()
+
     result = await delete_subscribe_history(item_id)
+    cleanup_message = cleanup.get("message") or ""
+    suffix = f"，{cleanup_message}" if cleanup_message else ""
     return {
         "status": "success",
-        "message": f"已删除 {result['logs']} 条日志、{result['reviews']} 条审核、{result['ignores']} 条忽略",
-        "data": result
+        "message": f"已删除 {result['logs']} 条日志、{result['reviews']} 条审核、{result['ignores']} 条忽略{suffix}",
+        "data": {**result, "download_cleanup": cleanup},
+    }
+
+
+@router.post("/history/{item_id}/download")
+async def control_history_download(item_id: str, payload: HistoryDownloadControlPayload):
+    """控制本项目历史记录关联的下载器任务。"""
+    action = str(payload.action or "").strip().lower()
+    if action not in {"pause", "resume", "delete"}:
+        raise HTTPException(status_code=400, detail="不支持的下载器操作")
+
+    logs = await get_subscribe_logs_for_item(item_id)
+    download_logs = [log for log in logs or [] if log.get("action") == "download"]
+    if not download_logs:
+        raise HTTPException(status_code=404, detail="未找到该条目的下载历史")
+
+    mp = MoviePilotClient()
+    try:
+        result = await mp.control_history_download_tasks(
+            item_name=str((download_logs[0] or {}).get("item_name") or ""),
+            item_id=item_id,
+            logs=download_logs,
+            action=action,
+            delete_files=bool(payload.delete_files),
+        )
+    except Exception as e:
+        logger.exception("[Subscribe] 控制历史下载器任务失败: %s", item_id)
+        raise HTTPException(status_code=500, detail=f"下载器操作失败: {e}") from e
+    finally:
+        await mp.close()
+
+    if not result.get("success"):
+        raise HTTPException(status_code=404 if not result.get("matched") else 400, detail=result.get("message") or "下载器操作失败")
+    return {
+        "status": "success",
+        "message": result.get("message") or "下载器操作已提交",
+        "data": result,
     }
 
 
@@ -962,6 +1402,8 @@ async def list_history():
             "created_at": mark.get("updated_at"),
         })
 
+    unique_logs = await _annotate_project_download_logs(unique_logs)
+
     return {
         "status": "success",
         "data": {
@@ -1022,6 +1464,11 @@ async def batch_approve():
                         raise ValueError("转存提交失败")
                     st = resp.get("status", "")
                     if st in ("transferred", "already_owned"):
+                        verify = await _verify_hdhive_transfer_visible(result, resp)
+                        if isinstance(resp, dict):
+                            resp["cloud115_verify"] = verify
+                        if not verify.get("ok"):
+                            raise ValueError(verify.get("message") or "115 目标目录未确认转存文件")
                         await update_subscribe_review(rev["id"], "approved", "批量批准 - 转存成功")
                         await add_subscribe_log(rev.get("rule_id",""), rev.get("rule_name",""), "transfer", rev.get("item_name",""), rev.get("item_id",""), "批量批准")
                         results["success"] += 1
@@ -1523,6 +1970,12 @@ async def _run_matching(rules: list[dict]):
                                                 raise ValueError("转存接口无响应")
                                             st = resp.get("status", "")
                                             detail = resp.get("message", "转存成功")
+                                            if st in ("transferred", "already_owned"):
+                                                verify = await _verify_hdhive_transfer_visible(candidate, resp)
+                                                if isinstance(resp, dict):
+                                                    resp["cloud115_verify"] = verify
+                                                if not verify.get("ok"):
+                                                    raise ValueError(verify.get("message") or "115 目标目录未确认转存文件")
                                             if st == "transferred":
                                                 transfer_ok = True
                                                 transfer_detail = detail

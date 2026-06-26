@@ -15,6 +15,12 @@ class EmbyClient:
         self._user_id = user_id
         self._client = httpx.AsyncClient(timeout=60.0, verify=False)
 
+    def _safe_error(self, error: Exception) -> str:
+        text = str(error)
+        if self.api_key:
+            text = text.replace(self.api_key, f"••••{self.api_key[-4:]}")
+        return text
+
     async def _get(self, path: str, params: dict = None) -> dict | list | None:
         """GET 请求"""
         if params is None:
@@ -26,7 +32,7 @@ class EmbyClient:
             resp.raise_for_status()
             return resp.json()
         except Exception as e:
-            print(f"[Emby] GET {path} failed: {e}")
+            print(f"[Emby] GET {path} failed: {self._safe_error(e)}")
             return None
 
     async def _post(self, path: str, data: Any = None) -> dict | None:
@@ -37,7 +43,7 @@ class EmbyClient:
             resp.raise_for_status()
             return resp.json() if resp.content else {"status": "ok"}
         except Exception as e:
-            print(f"[Emby] POST {path} failed: {e}")
+            print(f"[Emby] POST {path} failed: {self._safe_error(e)}")
             return None
 
     async def _delete(self, path: str) -> bool:
@@ -48,7 +54,7 @@ class EmbyClient:
             resp.raise_for_status()
             return True
         except Exception as e:
-            print(f"[Emby] DELETE {path} failed: {e}")
+            print(f"[Emby] DELETE {path} failed: {self._safe_error(e)}")
             return False
 
     async def _ensure_user_id(self) -> str:

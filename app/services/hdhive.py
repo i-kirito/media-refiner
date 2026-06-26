@@ -11,6 +11,33 @@ import httpx
 from app.config import settings
 
 
+def _response_text(value) -> str:
+    if value is None:
+        return ""
+    if isinstance(value, dict):
+        return " ".join(_response_text(item) for item in value.values())
+    if isinstance(value, list):
+        return " ".join(_response_text(item) for item in value)
+    return str(value)
+
+
+def _is_already_transferred_response(data, message: str = "") -> bool:
+    text = f"{message or ''} {_response_text(data)}".lower()
+    return any(
+        marker in text
+        for marker in (
+            "你已经转存过该文件",
+            "已经转存过",
+            "已转存过",
+            "已在 115",
+            "已在115",
+            "already transferred",
+            "already exists",
+            "already owned",
+        )
+    )
+
+
 class HDHiveClient:
     """
     影巢资源中心 API 客户端
@@ -261,13 +288,13 @@ class HDHiveClient:
             data["folder_id"] = folder_id
         return await self._post("/transfer", data)
 
-    async def unlock_and_transfer(self, slug: str, folder_id: str = "") -> dict | None:
+    async def unlock_and_transfer(self, slug: str, folder_id: str = "", force_transfer: bool = False) -> dict | None:
         """解锁并转存到 115
         1. 调用 HDHive unlock 获取 115 分享链接
         2. 如果资源尚未拥有，通过 115 API 转存到目标文件夹
         """
         if self.mode == "symedia":
-            return await self._symedia_transfer(slug, folder_id)
+            return await self._symedia_transfer(slug, folder_id, force_transfer=force_transfer)
 
         slug = self._normalize_openapi_slug(slug)
         unlock_result = await self.unlock(slug)
@@ -275,11 +302,13 @@ class HDHiveClient:
             return {"status": "error", "message": "HDHive unlock 返回空", "data": None}
 
         data = unlock_result.get("data") or {}
-        if data.get("already_owned"):
+        if data.get("already_owned") and not force_transfer:
             return {"status": "already_owned", "message": "资源已在 115 中", "data": data}
 
         full_url = data.get("full_url") or data.get("url", "")
         if not full_url:
+            if data.get("already_owned") and force_transfer:
+                return {"status": "error", "message": "资源已在 115 中，但解锁结果没有分享链接，无法强制重新转存", "data": unlock_result}
             return {"status": "error", "message": "HDHive 解锁结果无分享链接", "data": unlock_result}
 
         from app.services.cloud115 import Cloud115Client
@@ -297,9 +326,13 @@ class HDHiveClient:
                 target_folder
             )
             if result:
+                if isinstance(result, dict):
+                    result.setdefault("_share_code", parsed["share_code"])
+                    result.setdefault("_receive_code", parsed.get("receive_code", ""))
+                    result.setdefault("_target_folder", target_folder)
                 state = result.get("state")
                 if state is True:
-                    return {"status": "transferred", "data": result}
+                    return {"status": "transferred", "message": "115 转存已提交，等待落地校验", "data": result}
                 err = result.get("error") or ""
                 if "已经转存过" in err or "already" in err.lower():
                     return {"status": "already_owned", "message": "资源已在 115 中", "data": result}
@@ -429,7 +462,7 @@ class HDHiveClient:
         print(f"[HDHive] Symedia 搜索 tmdb_id={tmdb_id} 返回 {len(results)} 条结果")
         return results
 
-    async def _symedia_transfer(self, resource_url: str, folder_id: str = "") -> dict | None:
+    async def _symedia_transfer(self, resource_url: str, folder_id: str = "", force_transfer: bool = False) -> dict | None:
         if not self.is_configured:
             return {"status": "error", "message": "未配置 Symedia：请设置 URL 和 Token/Cookie", "data": None}
         if not resource_url:
@@ -441,6 +474,9 @@ class HDHiveClient:
             "parent_id": parent_id,
             "url": resource_url,
         }
+        if force_transfer:
+            payload["force"] = True
+            payload["force_transfer"] = True
         resp = await self._client.post(
             self._symedia_api_url("/telegramsearch/transfer"),
             json=payload,
@@ -452,8 +488,16 @@ class HDHiveClient:
             data = resp.json()
         except Exception:
             data = {"text": resp.text[:500]}
+        if isinstance(data, dict):
+            data.setdefault("_target_folder", parent_id)
+            data.setdefault("_resource_url", resource_url)
+        message = data.get("message") if isinstance(data, dict) else ""
+        if _is_already_transferred_response(data, message):
+            return {"status": "already_owned", "message": "资源已在 115 中（已转存过该文件）", "data": data}
         if resp.is_error:
             return {"status": "error", "message": f"Symedia 转存失败: HTTP {resp.status_code}", "data": data}
         if isinstance(data, dict) and data.get("success") is False:
-            return {"status": "error", "message": data.get("message") or "Symedia 转存失败", "data": data}
-        return {"status": "transferred", "message": "已提交 Symedia 转存", "data": data}
+            return {"status": "error", "message": message or "Symedia 转存失败", "data": data}
+        if isinstance(data, dict) and data.get("success") is True:
+            return {"status": "transferred", "message": message or "Symedia 转存已提交，等待落地校验", "data": data}
+        return {"status": "submitted", "message": message or "已提交 Symedia 转存，等待落地确认", "data": data}

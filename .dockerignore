@@ -1,0 +1,48 @@
+# Git metadata
+.git/
+.gitignore
+
+# Environment/config secrets
+config/.env
+*.env
+!config/.env.example
+
+# Runtime data and logs
+data/
+*.db
+*.log
+
+# Backups
+config/env_backups/
+config/.env.bak*
+
+# Python cache/build output
+__pycache__/
+*.py[cod]
+*$py.class
+*.egg-info/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+dist/
+build/
+.venv/
+venv/
+*.egg
+
+# IDE/OS files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+Thumbs.db
+
+# Docker/export artifacts
+*.tar
+
+# Local agent/deploy helper files
+CLAUDE.md
+deploy.sh
+backup_env.sh

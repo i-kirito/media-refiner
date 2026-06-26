@@ -28,6 +28,10 @@ class Settings(BaseSettings):
     cloud115_cookie: str = ""
     cloud115_folder_id: str = "0"  # 115 转存目标目录 ID，0=根目录
 
+    # CloudDrive2（用于转存后刷新挂载目录缓存）
+    clouddrive_url: str = ""
+    clouddrive_token: str = ""
+
     # 本服务
     host: str = "0.0.0.0"
     port: int = 10308
