@@ -1291,6 +1291,11 @@ async function refreshGapSeries(seriesId) {
     if (!id || gapState.refreshingSeries.has(id)) return;
     gapState.refreshingSeries.add(id);
     renderGapResults();
+    const slowHintTimer = setTimeout(() => {
+        if (gapState.refreshingSeries.has(id)) {
+            showToast('info', '仍在刷新', '正在等待 Emby / MoviePilot 返回，请稍候');
+        }
+    }, 8000);
     try {
         const data = await gapApi('/api/gaps/refresh_series', {
             method: 'POST',
@@ -1307,6 +1312,7 @@ async function refreshGapSeries(seriesId) {
     } catch (e) {
         showToast('error', '刷新失败', e.message);
     } finally {
+        clearTimeout(slowHintTimer);
         gapState.refreshingSeries.delete(id);
         renderGapResults();
     }
@@ -1569,8 +1575,9 @@ function renderGapCard(series) {
                                     <button title="查看集数文件名" onclick='openGapFiles(${jsString(series.series_id)})' class="w-7 h-7 rounded-lg bg-slate-50 dark:bg-white/5 text-slate-500 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-white/10 hover:text-cyan-500 transition-colors">
                                         <i class="fa-solid fa-list-ul text-[11px]"></i>
                                     </button>
-                                    <button title="刷新此剧缺集数据" ${isRefreshing ? 'disabled' : ''} onclick='refreshGapSeries(${jsString(series.series_id)})' class="w-7 h-7 rounded-lg ${isRefreshing ? 'bg-brand-500 text-white cursor-wait' : 'bg-brand-50 dark:bg-brand-500/10 text-brand-500 hover:bg-brand-100 dark:hover:bg-brand-500/20'} transition-colors">
+                                    <button title="${isRefreshing ? '正在刷新此剧缺集数据' : '刷新此剧缺集数据'}" ${isRefreshing ? 'disabled' : ''} onclick='refreshGapSeries(${jsString(series.series_id)})' class="${isRefreshing ? 'w-auto px-2' : 'w-7'} h-7 rounded-lg ${isRefreshing ? 'bg-brand-500 text-white cursor-wait' : 'bg-brand-50 dark:bg-brand-500/10 text-brand-500 hover:bg-brand-100 dark:hover:bg-brand-500/20'} transition-colors inline-flex items-center justify-center gap-1">
                                         <i class="fa-solid fa-rotate ${isRefreshing ? 'fa-spin' : ''} text-[11px]"></i>
+                                        ${isRefreshing ? '<span class="text-[10px] font-black">刷新中</span>' : ''}
                                     </button>
                                     <span title="${escapeHtml(missingLabel)}" class="px-2 py-1 rounded-lg bg-cyan-50 dark:bg-cyan-500/10 text-cyan-600 dark:text-cyan-300 text-[11px] leading-none font-black">${missingCount}</span>
                                 </div>

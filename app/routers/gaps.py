@@ -1307,6 +1307,7 @@ async def _fetch_expected_season_map(
     mp: MoviePilotClient | None,
     series: dict,
     season_cache: dict[str, dict[int, dict]] | None = None,
+    timeout: float | None = None,
 ) -> dict[int, dict]:
     tmdb_id = _series_tmdb_id(series)
     if tmdb_id <= 0 or not mp or not mp.is_configured:
@@ -1317,7 +1318,18 @@ async def _fetch_expected_season_map(
 
     season_map: dict[int, dict] = {}
     try:
-        season_map = _tmdb_season_map(await mp.get_tmdb_seasons(tmdb_id))
+        if timeout and timeout > 0:
+            seasons = await asyncio.wait_for(mp.get_tmdb_seasons(tmdb_id), timeout=timeout)
+        else:
+            seasons = await mp.get_tmdb_seasons(tmdb_id)
+        season_map = _tmdb_season_map(seasons)
+    except asyncio.TimeoutError:
+        logger.info(
+            "[Gaps] 读取 TMDB 季信息超时，降级用 Emby 本地推断: %s tmdb=%s timeout=%.1fs",
+            series.get("Name") or series.get("Id") or "",
+            tmdb_id,
+            timeout or 0,
+        )
     except Exception as e:
         logger.info(
             "[Gaps] 读取 TMDB 季信息失败: %s tmdb=%s: %s",
@@ -1750,6 +1762,7 @@ async def _scan_one_series(
     ignored: set[str],
     mp: MoviePilotClient | None = None,
     season_cache: dict[str, dict[int, dict]] | None = None,
+    tmdb_timeout: float | None = None,
 ) -> dict | None:
     series_id = str(series.get("Id") or "")
     if not series_id or series_id in ignored:
@@ -1793,7 +1806,7 @@ async def _scan_one_series(
         else:
             slot["present"] = True
 
-    expected_season_map = await _fetch_expected_season_map(mp, series, season_cache)
+    expected_season_map = await _fetch_expected_season_map(mp, series, season_cache, timeout=tmdb_timeout)
     expected_season_nums = set(expected_season_map)
     existing_season_numbers = {num for num in season_numbers if num > 0} | {num for num in seasons if num > 0}
 
@@ -2361,7 +2374,7 @@ async def refresh_gap_series(payload: GapRefreshSeriesPayload):
                 fallback_name=(existing or {}).get("library_name") or "",
             )
             ignored = await get_gap_ignore_targets()
-            refreshed = await _scan_one_series(emby, series, library, ignored, mp=mp, season_cache={})
+            refreshed = await _scan_one_series(emby, series, library, ignored, mp=mp, season_cache={}, tmdb_timeout=3.0)
 
             results = [item for item in results if str(item.get("series_id") or "") != series_id]
             if refreshed:
