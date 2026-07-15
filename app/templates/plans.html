@@ -242,19 +242,20 @@
         }
     }
 </style>
+<link rel="stylesheet" href="/static/plans.css?v=20260714-4">
 {% endblock %}
 {% block content %}
-<div class="plans-page mx-auto w-full px-4 md:px-8 py-5 pb-24 relative">
+<div class="plans-page mx-auto w-full px-4 md:px-7 xl:px-8 py-5 pb-24 relative">
 
     <!-- 标题 + 操作栏 -->
-    <div class="apple-card p-4 mb-3">
-        <div class="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
+    <div class="plans-overview mb-3">
+        <div class="plans-overview-main flex flex-col lg:flex-row lg:items-center justify-between gap-4">
             <div class="flex items-center gap-3 min-w-0">
-                <div class="plans-head-icon w-10 h-10 rounded-xl flex items-center justify-center shrink-0">
-                    <i class="fa-solid fa-bell text-lg"></i>
+                <div class="plans-head-icon flex items-center justify-center shrink-0">
+                    <i class="fa-solid fa-bell text-base"></i>
                 </div>
                 <div class="min-w-0">
-                    <h1 class="text-lg font-black text-gray-900 dark:text-white">订阅洗版</h1>
+                    <h1 class="text-xl font-black text-gray-900 dark:text-white">订阅洗版</h1>
                     <div class="flex flex-wrap items-center gap-2 mt-1 text-[11px] text-gray-500 dark:text-gray-400 font-medium">
                         <span id="planCacheTime">等待质量缓存</span>
                         <span class="w-1 h-1 rounded-full bg-gray-300 dark:bg-gray-600"></span>
@@ -262,34 +263,46 @@
                     </div>
                 </div>
             </div>
-            <div class="flex flex-wrap lg:flex-nowrap lg:justify-end items-center gap-2">
-                <button onclick="toggleLogPanel()" class="plans-action px-3 py-2 rounded-xl bg-gray-100 dark:bg-apple-hoverDark hover:bg-gray-200 dark:hover:bg-[#3A3A3C] text-gray-600 dark:text-gray-300 text-xs font-bold flex items-center gap-2">
+            <div class="plans-actions lg:justify-end">
+                <button onclick="toggleLogPanel()" class="plans-action plans-action-secondary px-3 py-2 text-xs font-bold flex items-center gap-2">
                     <i class="fa-solid fa-clock-rotate-left"></i><span>活动日志</span>
                 </button>
-                <button onclick="runRules()" id="runBtn" class="plans-action px-4 py-2 rounded-xl bg-brand-500 hover:bg-brand-600 text-white text-xs font-bold shadow-sm flex items-center gap-2">
+                <button onclick="runRules()" id="runBtn" class="plans-action plans-action-primary px-4 py-2 text-xs font-bold flex items-center gap-2">
                     <i class="fa-solid fa-play"></i><span>运行规则</span>
                 </button>
-                <button onclick="openRuleEditor()" class="plans-action px-4 py-2 rounded-xl bg-emerald-500 hover:bg-emerald-600 text-white text-xs font-bold shadow-sm flex items-center gap-2">
+                <button onclick="openRuleEditor()" class="plans-action plans-action-secondary plans-action-create px-4 py-2 text-xs font-bold flex items-center gap-2">
                     <i class="fa-solid fa-plus"></i><span>新建规则</span>
                 </button>
             </div>
         </div>
-        <div class="plans-stat-strip mt-4">
-            <div class="px-4 py-3">
-                <div class="text-[10px] font-black text-gray-400 dark:text-gray-500 mb-0.5">订阅规则</div>
-                <div id="planRuleCount" class="text-xl font-black text-gray-900 dark:text-white leading-none">0</div>
+        <div class="plans-stat-strip">
+            <div class="plans-stat-item">
+                <span class="plans-stat-symbol"><i class="fa-solid fa-list-check"></i></span>
+                <div class="min-w-0">
+                    <div class="plans-stat-label">订阅规则</div>
+                    <div id="planRuleCount" class="plans-stat-value">0</div>
+                </div>
             </div>
-            <div class="px-4 py-3">
-                <div class="text-[10px] font-black text-gray-400 dark:text-gray-500 mb-0.5">已启用</div>
-                <div id="planEnabledCount" class="text-xl font-black text-emerald-500 leading-none">0</div>
+            <div class="plans-stat-item">
+                <span class="plans-stat-symbol"><i class="fa-solid fa-toggle-on"></i></span>
+                <div class="min-w-0">
+                    <div class="plans-stat-label">已启用</div>
+                    <div id="planEnabledCount" class="plans-stat-value text-emerald-600 dark:text-emerald-400">0</div>
+                </div>
             </div>
-            <div class="px-4 py-3">
-                <div class="text-[10px] font-black text-gray-400 dark:text-gray-500 mb-0.5">待审核</div>
-                <div id="planPendingCount" class="text-xl font-black text-amber-500 leading-none">0</div>
+            <div class="plans-stat-item">
+                <span class="plans-stat-symbol"><i class="fa-solid fa-inbox"></i></span>
+                <div class="min-w-0">
+                    <div class="plans-stat-label">待审核</div>
+                    <div id="planPendingCount" class="plans-stat-value text-orange-600 dark:text-orange-400">0</div>
+                </div>
             </div>
-            <div class="px-4 py-3">
-                <div class="text-[10px] font-black text-gray-400 dark:text-gray-500 mb-0.5">运行状态</div>
-                <div id="planRunState" class="text-sm font-black text-gray-900 dark:text-white truncate">空闲</div>
+            <div class="plans-stat-item">
+                <span class="plans-stat-symbol"><i class="fa-solid fa-wave-square"></i></span>
+                <div class="min-w-0">
+                    <div class="plans-stat-label">运行状态</div>
+                    <div id="planRunState" class="plans-stat-value text-sm truncate">空闲</div>
+                </div>
             </div>
         </div>
     </div>
@@ -319,37 +332,66 @@
         </div>
     </div>
 
-    <!-- 加载中 -->
-    <div id="rules-loading" class="text-center py-24 text-gray-400">
-        <i class="fa-solid fa-circle-notch fa-spin text-3xl mb-4 text-brand-500"></i>
-        <p class="text-sm font-bold">正在加载订阅规则...</p>
-    </div>
+    <section class="plans-rules-section" aria-labelledby="plansRulesHeading">
+        <div class="plans-section-header">
+            <h2 id="plansRulesHeading" class="plans-section-heading">
+                <span class="plans-section-heading-icon"><i class="fa-solid fa-sliders"></i></span>
+                <span>订阅规则</span>
+            </h2>
+            <span id="planRuleSectionMeta" class="plans-section-meta">0 条规则</span>
+        </div>
 
-    <!-- 规则列表 -->
-    <div id="rulesContainer" class="space-y-2.5">
-    </div>
+        <!-- 加载中 -->
+        <div id="rules-loading" class="text-center py-20 text-gray-400">
+            <i class="fa-solid fa-circle-notch fa-spin text-2xl mb-3 text-brand-500"></i>
+            <p class="text-sm font-bold">正在加载订阅规则...</p>
+        </div>
+
+        <!-- 规则列表 -->
+        <div id="rulesContainer" class="rules-grid"></div>
+    </section>
 
     <!-- 审核列表 -->
-    <div id="reviewSection" class="hidden mt-6">
-        <div class="flex items-center justify-between mb-3 cursor-pointer select-none" onclick="toggleReviewCollapse()">
-            <h2 class="plans-section-title font-black text-[13px] uppercase flex items-center gap-2">
-                <i id="reviewChevron" class="fa-solid fa-chevron-down text-gray-400 text-[10px] transition-transform duration-200"></i>
-                <i class="fa-solid fa-clipboard-list text-amber-500"></i> 待审核 <span id="reviewBadge" class="text-[11px] bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300 px-2 py-0.5 rounded-full font-bold">0</span>
-                <span id="reviewCollapsedHint" class="text-[11px] text-gray-400 hidden">（已折叠）</span>
-            </h2>
-            <div class="flex items-center gap-2">
-                <button onclick="clearReviews(); event.stopPropagation()" id="clearReviewsBtn" class="px-3 py-2 text-xs font-bold text-red-500 hover:text-white bg-red-50 dark:bg-red-900/20 hover:bg-red-500 dark:hover:bg-red-600 rounded-xl transition-all hidden items-center gap-1.5">
+    <section id="reviewSection" class="hidden mt-6" aria-labelledby="reviewHeading">
+        <div class="review-section-toolbar">
+            <div class="review-toolbar-main">
+                <button id="reviewCollapseBtn" type="button" class="review-collapse-button select-none" onclick="toggleReviewCollapse()" aria-expanded="true" aria-controls="reviewListBody">
+                    <span class="review-collapse-icon"><i class="fa-solid fa-clipboard-list"></i></span>
+                    <span class="review-heading-copy">
+                        <span id="reviewHeading" class="review-heading-title">待审核</span>
+                        <span id="reviewBadge" class="review-heading-count">0</span>
+                        <span id="reviewCollapsedHint" class="text-[10px] text-gray-400 hidden">已折叠</span>
+                    </span>
+                    <i id="reviewChevron" class="fa-solid fa-chevron-down text-gray-400 text-[9px] transition-transform duration-200"></i>
+                </button>
+                <div id="reviewSourceFilter" class="review-source-filter" role="group" aria-label="按资源来源筛选">
+                    <button type="button" class="review-source-filter-btn is-active" data-review-filter="all" onclick="setReviewSourceFilter('all')" aria-pressed="true">
+                        <span class="review-filter-dot is-all"></span><span>全部</span><span id="reviewFilterAllCount" class="review-filter-count">0</span>
+                    </button>
+                    <button type="button" class="review-source-filter-btn" data-review-filter="moviepilot" onclick="setReviewSourceFilter('moviepilot')" aria-pressed="false">
+                        <span class="review-filter-dot is-mp"></span><span>MP</span><span id="reviewFilterMpCount" class="review-filter-count">0</span>
+                    </button>
+                    <button type="button" class="review-source-filter-btn" data-review-filter="hdhive" onclick="setReviewSourceFilter('hdhive')" aria-pressed="false">
+                        <span class="review-filter-dot is-hdhive"></span><span>影巢</span><span id="reviewFilterHdhiveCount" class="review-filter-count">0</span>
+                    </button>
+                </div>
+            </div>
+            <div class="review-toolbar-actions">
+                <button onclick="clearReviews()" id="clearReviewsBtn" class="review-toolbar-btn is-clear hidden items-center" title="清空全部来源的待审核记录">
                     <i class="fa-solid fa-trash-can"></i> 清空记录
                 </button>
-                <button onclick="batchApprove(); event.stopPropagation()" id="batchApproveBtn" class="px-4 py-2 text-xs font-bold text-white bg-brand-500 hover:bg-brand-600 rounded-xl transition-all active:scale-95 shadow-sm hidden items-center gap-1.5">
+                <button onclick="batchApprove()" id="batchApproveBtn" class="review-toolbar-btn is-approve hidden items-center" title="批准全部来源的待审核项">
                     <i class="fa-solid fa-check-double"></i> 全部批准
                 </button>
             </div>
         </div>
-        <div id="reviewContainer" class="space-y-1.5 transition-all duration-200">
-            <div class="text-center py-8 text-gray-400 text-sm">暂无待审核项</div>
+        <div id="reviewListBody" class="transition-all duration-200">
+            <div id="reviewContainer" class="review-list">
+                <div class="text-center py-8 text-gray-400 text-sm">暂无待审核项</div>
+            </div>
+            <div id="reviewFilterEmpty" class="review-filter-empty hidden"></div>
         </div>
-    </div>
+    </section>
 
     <!-- 活动日志面板 -->
     <div id="logPanel" class="hidden mt-6 apple-card overflow-hidden">
@@ -571,6 +613,8 @@
 <script>
     let editingRuleId = '';
     let _reviewCollapsed = false;
+    let _reviewSourceFilter = 'all';
+    let _reviewTotalCount = 0;
     const _busyReviewIds = new Set();
     let _busyBatchApprove = false;
 
@@ -588,6 +632,7 @@
         setPlanText('planRuleCount', list.length);
         setPlanText('planEnabledCount', enabled);
         setPlanText('planRuleSummary', `规则 ${list.length}`);
+        setPlanText('planRuleSectionMeta', `${list.length} 条规则 · ${enabled} 已启用`);
     }
 
     document.addEventListener('DOMContentLoaded', async () => {
@@ -671,10 +716,9 @@
     const PREFER_LABELS = { remux: 'Remux', '4k': '4K', subtitle: '字幕' };
     function renderPreferOrderTags(order) {
         if (!order || order.length === 0) return '';
-        const nums = ['①','②','③','④','⑤'];
         return order.map((k, i) => {
             const label = PREFER_LABELS[k] || k;
-            return `<span class="inline-flex items-center px-2 py-0.5 rounded-full bg-amber-50 dark:bg-amber-900/20 text-amber-600 dark:text-amber-400 font-bold text-[10px]">${nums[i]||''}${label}</span>`;
+            return `<span class="plan-preference-pill">${i + 1}. ${label}</span>`;
         }).join('');
     }
 
@@ -702,49 +746,48 @@
             : null);
 
         return `
-            <div class="plan-rule-card ${isEnabled ? '' : 'is-disabled opacity-60'}">
-                <!-- 顶部：名称 + 开关 -->
-                <div class="pl-5 pr-4 pt-3 pb-2 flex items-center justify-between gap-2">
-                    <div class="flex items-center gap-2.5 min-w-0 flex-1">
-                        <div class="min-w-0">
-                            <div class="font-bold text-sm text-gray-900 dark:text-white truncate">${escapeHtml(r.name || '未命名')}</div>
-                            <div class="text-[10px] text-gray-400 flex items-center gap-1.5">
-                                <span>${lastRun}</span>
-                                <span class="text-gray-300 dark:text-gray-600">·</span>
-                                <span>已升级 <strong class="text-emerald-500 font-bold">${totalUpgraded}</strong> 条</span>
-                            </div>
+            <article class="plan-rule-card ${isEnabled ? '' : 'is-disabled opacity-60'}">
+                <div class="plan-rule-main">
+                    <div class="min-w-0 flex-1">
+                        <div class="plan-rule-title-row">
+                            <h3 class="plan-rule-title">${escapeHtml(r.name || '未命名')}</h3>
+                            <span class="plan-rule-status">${isEnabled ? '已启用' : '已停用'}</span>
+                        </div>
+                        <div class="plan-rule-subline">
+                            <span><i class="fa-regular fa-clock mr-1"></i>${escapeHtml(lastRun)}</span>
+                            <span aria-hidden="true">·</span>
+                            <span>已升级 <strong class="text-emerald-600 dark:text-emerald-400">${totalUpgraded}</strong> 条</span>
                         </div>
                     </div>
-                    <label class="relative inline-flex items-center cursor-pointer shrink-0">
-                        <input type="checkbox" class="sr-only peer" ${isEnabled ? 'checked' : ''} onchange="toggleRule('${r.id}', this.checked)">
-                        <div class="w-8 h-[18px] bg-gray-200 rounded-full peer peer-checked:bg-emerald-500 peer-checked:after:translate-x-full after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-3.5 after:w-3.5 after:transition-all"></div>
+                    <label class="plan-toggle" title="${isEnabled ? '停用规则' : '启用规则'}">
+                        <input type="checkbox" class="sr-only" aria-label="${isEnabled ? '停用' : '启用'} ${escapeHtml(r.name || '未命名')}" ${isEnabled ? 'checked' : ''} onchange="toggleRule('${r.id}', this.checked)">
+                        <span class="plan-toggle-track"></span>
                     </label>
                 </div>
 
-                <!-- 中间：条件标签 -->
-                <div class="pl-5 pr-4 pb-2 flex flex-wrap items-center gap-1">
-                    <span class="plan-pill inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-brand-50 dark:bg-brand-900/20 text-brand-600 dark:text-brand-400 text-[10px] font-bold"><i class="fa-solid fa-gauge-high text-[9px]"></i> ≤${maxScore}分</span>
-                    <span class="plan-pill inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-purple-50 dark:bg-purple-900/20 text-purple-600 dark:text-purple-400 text-[10px] font-bold"><i class="fa-solid fa-bullseye text-[9px]"></i> ${targetResLabel}</span>
-                    <span class="plan-pill inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-blue-50 dark:bg-blue-900/20 text-blue-600 dark:text-blue-400 text-[10px]"><i class="fa-solid fa-cloud text-[9px]"></i> ${sourceLabel}</span>
-                    ${source === 'both' ? `<span class="plan-pill inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-amber-50 dark:bg-amber-900/20 text-amber-600 dark:text-amber-400 text-[10px] font-bold"><i class="fa-solid fa-arrow-up-wide-short text-[9px]"></i> ${priorityLabel}</span>` : ''}
-                    <span class="plan-pill inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-gray-100 dark:bg-gray-700 text-gray-500 dark:text-gray-400 text-[10px]"><i class="fa-solid fa-layer-group text-[9px]"></i> ${batchSize}条</span>
-                    ${r.auto_approve ? `<span class="plan-pill inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-emerald-50 dark:bg-emerald-900/20 text-emerald-600 dark:text-emerald-400 text-[10px] font-bold"><i class="fa-solid fa-robot text-[9px]"></i> 自动${autoCondStr ? ': ' + autoCondStr : ''}</span>` : ''}
-                    ${r.cron_expression ? `<span class="plan-pill inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-rose-50 dark:bg-rose-900/20 text-rose-600 dark:text-rose-400 text-[10px] font-mono"><i class="fa-solid fa-clock text-[9px]"></i> ${r.cron_expression}</span>` : ''}
+                <div class="plan-rule-pills">
+                    <span class="plan-pill plan-pill-score"><i class="fa-solid fa-gauge-high"></i> ≤${maxScore}分</span>
+                    <span class="plan-pill plan-pill-target"><i class="fa-solid fa-bullseye"></i> ${targetResLabel}</span>
+                    <span class="plan-pill plan-pill-source"><i class="fa-solid fa-cloud"></i> ${sourceLabel}</span>
+                    ${source === 'both' ? `<span class="plan-pill plan-pill-priority"><i class="fa-solid fa-arrow-up-wide-short"></i> ${priorityLabel}优先</span>` : ''}
+                    <span class="plan-pill plan-pill-batch"><i class="fa-solid fa-layer-group"></i> ${batchSize}条</span>
+                    ${r.auto_approve ? `<span class="plan-pill plan-pill-auto"><i class="fa-solid fa-robot"></i> 自动${autoCondStr ? ': ' + autoCondStr : ''}</span>` : ''}
+                    ${r.cron_expression ? `<span class="plan-pill plan-pill-cron font-mono"><i class="fa-regular fa-clock"></i> ${escapeHtml(r.cron_expression)}</span>` : ''}
                 </div>
 
-                <!-- 底部：排序偏好 + 操作按钮 -->
-                <div class="rule-meta-strip pl-5 pr-4 py-2 flex items-center justify-between gap-2">
-                    <div class="flex items-center gap-1 flex-wrap min-w-0">
+                <div class="rule-meta-strip">
+                    <div class="plan-preference-row">
+                        <span class="plan-meta-label">排序</span>
                         ${renderPreferOrderTags(prefOrder)}
-                        ${!prefOrder || prefOrder.length === 0 ? '<span class="text-[10px] text-gray-400 italic">无排序偏好</span>' : ''}
+                        ${!prefOrder || prefOrder.length === 0 ? '<span class="text-[10px] text-gray-400">无偏好</span>' : ''}
                     </div>
-                    <div class="flex items-center gap-0.5 shrink-0">
-                        <button onclick="runRule('${r.id}')" class="w-7 h-7 flex items-center justify-center text-gray-400 hover:text-emerald-500 hover:bg-emerald-50 dark:hover:bg-emerald-900/20 rounded-lg transition-all" title="单独运行此规则"><i class="fa-solid fa-play text-[9px]"></i></button>
-                        <button onclick="editRule('${r.id}')" class="w-7 h-7 flex items-center justify-center text-gray-400 hover:text-brand-500 hover:bg-brand-50 dark:hover:bg-brand-900/20 rounded-lg transition-all" title="编辑"><i class="fa-solid fa-pen text-[10px]"></i></button>
-                        <button onclick="deleteRule('${r.id}')" class="w-7 h-7 flex items-center justify-center text-gray-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-500/10 rounded-lg transition-all" title="删除"><i class="fa-solid fa-trash-can text-[10px]"></i></button>
+                    <div class="plan-rule-actions">
+                        <button onclick="runRule('${r.id}')" class="plan-icon-btn is-run" title="单独运行此规则" aria-label="运行 ${escapeHtml(r.name || '未命名')}"><i class="fa-solid fa-play text-[9px]"></i></button>
+                        <button onclick="editRule('${r.id}')" class="plan-icon-btn is-edit" title="编辑规则" aria-label="编辑 ${escapeHtml(r.name || '未命名')}"><i class="fa-solid fa-pen text-[10px]"></i></button>
+                        <button onclick="deleteRule('${r.id}')" class="plan-icon-btn is-delete" title="删除规则" aria-label="删除 ${escapeHtml(r.name || '未命名')}"><i class="fa-solid fa-trash-can text-[10px]"></i></button>
                     </div>
                 </div>
-            </div>
+            </article>
         `;
     }
 
@@ -1382,19 +1425,62 @@
 
     // ─── 审核列表 ───
 
+    function setReviewSourceFilter(source) {
+        if (!['all', 'moviepilot', 'hdhive'].includes(source)) return;
+        _reviewSourceFilter = source;
+        applyReviewSourceFilter();
+    }
+
+    function updateReviewSourceFilterCounts(reviews) {
+        const list = Array.isArray(reviews) ? reviews : [];
+        const mpCount = list.filter(review => review.source === 'moviepilot').length;
+        const hdhiveCount = list.filter(review => review.source === 'hdhive').length;
+        setPlanText('reviewFilterAllCount', list.length);
+        setPlanText('reviewFilterMpCount', mpCount);
+        setPlanText('reviewFilterHdhiveCount', hdhiveCount);
+    }
+
+    function applyReviewSourceFilter() {
+        document.querySelectorAll('[data-review-filter]').forEach(button => {
+            const active = button.dataset.reviewFilter === _reviewSourceFilter;
+            button.classList.toggle('is-active', active);
+            button.setAttribute('aria-pressed', active ? 'true' : 'false');
+        });
+
+        let visibleCount = 0;
+        document.querySelectorAll('#reviewContainer .review-card').forEach(card => {
+            const visible = _reviewSourceFilter === 'all' || card.dataset.reviewSource === _reviewSourceFilter;
+            card.classList.toggle('hidden', !visible);
+            if (visible) visibleCount += 1;
+        });
+
+        const empty = document.getElementById('reviewFilterEmpty');
+        if (!empty) return;
+        const showEmpty = _reviewTotalCount > 0 && visibleCount === 0;
+        const labels = {
+            moviepilot: '暂无 MoviePilot 待审核项',
+            hdhive: '暂无影巢待审核项',
+        };
+        empty.textContent = labels[_reviewSourceFilter] || '暂无待审核项';
+        empty.classList.toggle('hidden', !showEmpty);
+    }
+
     function toggleReviewCollapse() {
         _reviewCollapsed = !_reviewCollapsed;
-        const container = document.getElementById('reviewContainer');
+        const container = document.getElementById('reviewListBody');
         const chevron = document.getElementById('reviewChevron');
         const hint = document.getElementById('reviewCollapsedHint');
+        const button = document.getElementById('reviewCollapseBtn');
         if (_reviewCollapsed) {
             container.classList.add('hidden');
             chevron.style.transform = 'rotate(-90deg)';
             hint.classList.remove('hidden');
+            button?.setAttribute('aria-expanded', 'false');
         } else {
             container.classList.remove('hidden');
             chevron.style.transform = 'rotate(0deg)';
             hint.classList.add('hidden');
+            button?.setAttribute('aria-expanded', 'true');
         }
     }
 
@@ -1408,6 +1494,8 @@
             const cntJson = await cntResp.json();
             const reviews = listJson.data || [];
             const pendingCount = cntJson.data?.pending || 0;
+            _reviewTotalCount = reviews.length;
+            updateReviewSourceFilterCounts(reviews);
 
             const section = document.getElementById('reviewSection');
             const container = document.getElementById('reviewContainer');
@@ -1421,16 +1509,17 @@
             batchBtn.classList[pendingCount > 1 ? 'remove' : 'add']('hidden');
             clearBtn.classList[pendingCount > 0 ? 'remove' : 'add']('hidden');
 
-            if (pendingCount === 0) {
-                container.innerHTML = `
-                    <div class="apple-card p-6 text-center text-sm text-gray-400 dark:text-gray-500">
-                        <i class="fa-solid fa-clipboard-check text-2xl mb-2 opacity-40"></i>
-                        <div class="font-bold text-gray-500 dark:text-gray-400">暂无待审核项</div>
-                        <div class="text-xs mt-1">运行订阅规则后，匹配到的洗版资源会出现在这里。</div>
-                    </div>
-                `;
-                return;
-            }
+                if (pendingCount === 0) {
+                    container.innerHTML = `
+                        <div class="review-empty-state">
+                            <span class="review-empty-icon"><i class="fa-solid fa-clipboard-check"></i></span>
+                            <div class="font-bold text-gray-500 dark:text-gray-400">暂无待审核项</div>
+                            <div class="text-xs mt-1 text-gray-400 dark:text-gray-500">运行订阅规则后，匹配到的洗版资源会出现在这里。</div>
+                        </div>
+                    `;
+                    applyReviewSourceFilter();
+                    return;
+                }
 
              container.innerHTML = reviews.map(r => {
                 const cq = r.current_quality || {};
@@ -1453,7 +1542,7 @@
                 const curMetaNote = cq.metadata_note || '';
                 const curSizeLabel = curSize ? fmtSize(curSize) : (curIsBluray ? '目录' : '未知');
                 const isMp = src === 'moviepilot';
-                const scoreColor = curScore <= 30 ? 'text-red-500' : curScore <= 50 ? 'text-yellow-500' : curScore <= 80 ? 'text-blue-500' : 'text-green-500';
+                const scoreTone = curScore <= 30 ? 'is-critical' : curScore <= 50 ? 'is-low' : curScore <= 80 ? 'is-medium' : 'is-good';
 
                 // ── MP / HDHive 分别解析 ──
                 let newTitle = sr.title || r.item_name || '';
@@ -1534,66 +1623,65 @@
                 const busyClass = isBusy ? 'opacity-50 cursor-not-allowed pointer-events-none' : '';
 
                 return `
-                    <div class="review-card ${isMp ? 'is-mp' : 'is-hdhive'} px-3 py-2.5">
-                        <div class="flex flex-col gap-1.5">
-                            <!-- 标题行：电影名 + 分数 + 来源 + 操作 -->
-                            <div class="flex items-center justify-between gap-2">
-                                <div class="flex items-center gap-2 min-w-0">
-                                    <span class="font-bold text-sm text-gray-900 dark:text-white">${escapeHtml(r.item_name || '')}</span>
-                                    <span class="text-xs font-mono font-bold ${scoreColor}">${curScore}分</span>
-                                    <span class="plan-pill inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold ${isMp ? 'bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-300' : 'bg-purple-100 text-purple-700 dark:bg-purple-900/40 dark:text-purple-300'}">${isMp ? 'MP' : '影巢'}</span>
-                                    <a href="${embyBaseUrl}/web/index.html#!/item?id=${r.item_id}&serverId=${embyServerId}" target="_blank" rel="noopener" class="inline-flex items-center justify-center w-5 h-5 rounded-full text-gray-400 hover:text-brand-500 hover:bg-brand-50 dark:hover:bg-brand-900/20 transition-all" title="在 Emby 中打开">
-                                        <i class="fa-solid fa-external-link text-[10px]"></i>
-                                    </a>
+                    <article class="review-card ${isMp ? 'is-mp' : 'is-hdhive'}" data-review-id="${r.id}" data-review-source="${escapeHtml(src)}">
+                        <div class="review-card-head">
+                            <div class="review-identity">
+                                <h3 class="review-item-title">${escapeHtml(r.item_name || '')}</h3>
+                                <span class="review-score ${scoreTone}">${curScore}<small>分</small></span>
+                                <span class="review-source-badge ${isMp ? 'is-mp' : 'is-hdhive'}">${isMp ? 'MP' : '影巢'}</span>
+                                <a href="${embyBaseUrl}/web/index.html#!/item?id=${r.item_id}&serverId=${embyServerId}" target="_blank" rel="noopener" class="review-emby-link" title="在 Emby 中打开" aria-label="在 Emby 中打开 ${escapeHtml(r.item_name || '')}">
+                                    <i class="fa-solid fa-arrow-up-right-from-square text-[9px]"></i>
+                                </a>
+                            </div>
+                            <div class="review-card-actions">
+                                <button onclick="approveReview(${r.id})" ${busyAttrs} class="review-action-btn is-approve ${busyClass}" aria-label="批准 ${escapeHtml(r.item_name || '')}">
+                                    <i class="fa-solid ${isBusy ? 'fa-circle-notch fa-spin' : 'fa-check'} text-[9px]"></i><span>${isBusy ? '处理中' : '批准'}</span>
+                                </button>
+                                <button onclick="rejectReview(${r.id})" ${busyAttrs} class="review-action-btn is-reject ${busyClass}" title="拒绝此次结果，下次跳过" aria-label="拒绝 ${escapeHtml(r.item_name || '')}">
+                                    <i class="fa-solid fa-xmark text-[9px]"></i><span>拒绝</span>
+                                </button>
+                                <button onclick="ignoreReview(${r.id})" ${busyAttrs} class="review-action-btn is-ignore ${busyClass}" title="忽略，以后不再扫描" aria-label="忽略 ${escapeHtml(r.item_name || '')}">
+                                    <i class="fa-solid fa-ban text-[9px]"></i><span>忽略</span>
+                                </button>
+                            </div>
+                        </div>
+
+                        <div class="review-compare-grid">
+                            <div class="review-compare-card review-current">
+                                <div class="review-compare-label">
+                                    <i class="fa-solid fa-file-video mr-1"></i>当前文件
                                 </div>
-                                <div class="flex items-center justify-end gap-1.5 shrink-0">
-                                    <button onclick="approveReview(${r.id})" ${busyAttrs} class="review-action-btn px-2.5 text-xs font-bold text-white bg-emerald-500 hover:bg-emerald-600 active:scale-95 shadow-sm shadow-emerald-500/20 flex items-center justify-center gap-1 ${busyClass}">
-                                        <i class="fa-solid ${isBusy ? 'fa-circle-notch fa-spin' : 'fa-check'} text-[10px]"></i> <span class="hidden sm:inline">${isBusy ? '处理中' : '批准'}</span>
-                                    </button>
-                                    <button onclick="rejectReview(${r.id})" ${busyAttrs} class="review-action-btn px-2 text-xs font-bold text-gray-500 dark:text-gray-400 bg-gray-100 dark:bg-apple-hoverDark hover:bg-gray-200 dark:hover:bg-[#3A3A3C] flex items-center justify-center gap-1 ${busyClass}" title="拒绝此次结果，下次跳过">
-                                        <i class="fa-solid fa-xmark text-[10px]"></i> <span class="hidden sm:inline">拒绝</span>
-                                    </button>
-                                    <button onclick="ignoreReview(${r.id})" ${busyAttrs} class="review-action-btn px-2 text-xs font-bold text-amber-600 dark:text-amber-400 bg-amber-50 dark:bg-amber-900/20 hover:bg-amber-100 dark:hover:bg-amber-900/30 flex items-center justify-center gap-1 ${busyClass}" title="忽略，以后不再扫描">
-                                        <i class="fa-solid fa-ban text-[10px]"></i> <span class="hidden sm:inline">忽略</span>
-                                    </button>
+                                <div class="review-compare-title" title="${escapeHtml(curFileName)}">${escapeHtml(curFileName)}</div>
+                                <div class="review-compare-note">${curMetaNote ? escapeHtml(curMetaNote) : '&nbsp;'}</div>
+                                <div class="review-badges-row">
+                                    ${curRes ? badgeRes(curRes) : '<span class="text-[10px] text-gray-400">无分辨率</span>'}
+                                    ${curCodec ? badgeCodec(curCodec) : ''}
+                                    ${curRange ? `<span class="inline-flex items-center px-1.5 py-0.5 rounded text-[9px] font-bold bg-gray-100 dark:bg-gray-800 text-gray-500 dark:text-gray-400">${escapeHtml(curRange)}</span>` : ''}
+                                    <span class="text-[10px] text-gray-400">${curSizeLabel}</span>
                                 </div>
                             </div>
 
-                            <!-- 左右对比区：移动端竖排，平板+横排 -->
-                            <div class="review-compare-grid">
-                                <!-- 当前文件 -->
-                                <div class="review-compare-card review-current px-2.5 py-2">
-                                    <div class="review-compare-label text-[10px] font-bold text-red-500">
-                                        <i class="fa-solid fa-folder-open mr-1"></i>当前
-                                    </div>
-                                    <div class="review-compare-title text-[11px] font-mono text-gray-800 dark:text-gray-200">${escapeHtml(curFileName)}</div>
-                                    <div class="review-compare-note text-[10px] text-gray-500 dark:text-gray-400">${curMetaNote ? escapeHtml(curMetaNote) : '&nbsp;'}</div>
-                                    <div class="review-badges-row flex flex-wrap items-center gap-1 mt-1">
-                                        ${curRes ? badgeRes(curRes) : '<span class="text-[10px] text-gray-400">无分辨率</span>'}
-                                        ${curCodec ? badgeCodec(curCodec) : ''}
-                                        ${curRange ? `<span class="inline-flex items-center px-1.5 py-0.5 rounded text-[9px] font-bold bg-gray-100 dark:bg-gray-800 text-gray-500 dark:text-gray-400">${escapeHtml(curRange)}</span>` : ''}
-                                        <span class="text-[10px] text-gray-400">${curSizeLabel}</span>
-                                    </div>
-                                </div>
+                            <div class="review-flow-indicator" aria-hidden="true">
+                                <i class="fa-solid fa-arrow-right"></i>
+                            </div>
 
-                                <!-- 目标文件 -->
-                                <div class="review-compare-card review-target px-2.5 py-2">
-                                    <div class="review-compare-label text-[10px] font-bold text-emerald-600 dark:text-emerald-400">
-                                        <i class="fa-solid fa-arrow-down mr-1"></i>${isMp ? 'MP搜索' : '影巢资源'}
-                                    </div>
-                                    <div class="review-compare-title text-[11px] font-mono text-gray-800 dark:text-gray-200">${escapeHtml(newTitle)}</div>
-                                    <div class="review-compare-note text-[10px] text-gray-500 dark:text-gray-400">${newSubtitle ? escapeHtml(newSubtitle) : '&nbsp;'}</div>
-                                    <div class="review-badges-row flex flex-wrap items-center gap-1 mt-1">
-                                        ${newRes ? badgeRes(newRes) : '<span class="text-[10px] text-gray-400">无分辨率</span>'}
-                                        ${badgeList.length ? renderBadges(badgeList) : ''}
-                                        <span class="text-[10px] text-gray-400">${newSizeLabel}</span>
-                                    </div>
+                            <div class="review-compare-card review-target">
+                                <div class="review-compare-label">
+                                    <i class="fa-solid fa-arrow-trend-up mr-1"></i>${isMp ? 'MP 搜索结果' : '影巢候选资源'}
+                                </div>
+                                <div class="review-compare-title" title="${escapeHtml(newTitle)}">${escapeHtml(newTitle)}</div>
+                                <div class="review-compare-note">${newSubtitle ? escapeHtml(newSubtitle) : '&nbsp;'}</div>
+                                <div class="review-badges-row">
+                                    ${newRes ? badgeRes(newRes) : '<span class="text-[10px] text-gray-400">无分辨率</span>'}
+                                    ${badgeList.length ? renderBadges(badgeList) : ''}
+                                    <span class="text-[10px] text-gray-400">${newSizeLabel}</span>
                                 </div>
                             </div>
                         </div>
-                    </div>
+                    </article>
                 `;
             }).join('');
+            applyReviewSourceFilter();
         } catch(e) {
             // 静默失败
         }

@@ -23,22 +23,42 @@ def get_scanner() -> QualityScanner:
     return _scanner
 
 
-async def _run_scan(excluded: list[str]):
+async def _run_scan(excluded: list[str]) -> bool:
     """后台执行扫描，捕获异常防止 Task 崩溃"""
     try:
         scanner = get_scanner()
         await scanner.scan(excluded)
+        return True
     except asyncio.CancelledError:
         logger.info("[Scan] 扫描任务被取消")
         scanner = get_scanner()
         scanner._is_scanning = False
         scanner._progress = 0
+        return False
     except Exception as e:
         logger.exception(f"[Scan] 扫描异常: {e}")
         scanner = get_scanner()
         scanner._is_scanning = False
         scanner._progress = 0
         scanner._current_item = f"错误: {e}"
+        return False
+
+
+async def _run_scheduled_scan(excluded: list[str]):
+    """定时质量扫描完成后，同步启动一次缺集扫描。"""
+    ok = await _run_scan(excluded)
+    if not ok:
+        return
+    try:
+        from app.routers.gaps import start_gap_scan_if_idle
+
+        started = start_gap_scan_if_idle("质量扫描定时完成，准备同步缺集扫描")
+        if started:
+            logger.info("[Scheduler] 质量扫描完成，已同步启动缺集扫描")
+        else:
+            logger.info("[Scheduler] 质量扫描完成，缺集扫描已在运行，跳过同步启动")
+    except Exception as e:
+        logger.exception("[Scheduler] 同步启动缺集扫描失败: %s", e)
 
 
 async def _scheduler_loop():
@@ -68,7 +88,7 @@ async def _scheduler_loop():
                         logger.info(f"[Scheduler] 触发定时扫描（间隔 {schedule_hours}h）")
                         from app.config import settings as cfg
                         excluded = [x.strip() for x in cfg.exclude_library_ids.split(",") if x.strip()]
-                        asyncio.create_task(_run_scan(excluded))
+                        asyncio.create_task(_run_scheduled_scan(excluded))
         except Exception as e:
             logger.error(f"[Scheduler] 调度异常: {e}")
 

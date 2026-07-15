@@ -20,7 +20,8 @@ from app.database import (
     add_subscribe_review, list_subscribe_reviews, update_subscribe_review, count_pending_reviews,
     clear_subscribe_reviews, get_subscribe_review,
     add_subscribe_ignore, remove_subscribe_ignore, list_subscribe_ignores, get_subscribe_ignore_ids,
-    has_processed_item, delete_subscribe_history,
+    has_processed_item, delete_subscribe_history, build_subscribe_media_key,
+    reconcile_pending_subscribe_reviews, delete_pending_subscribe_reviews,
 )
 from app.services.emby import EmbyClient
 from app.services.moviepilot import MoviePilotClient
@@ -35,6 +36,40 @@ _run_status = {"running": False, "progress": 0, "current": "", "total": 0, "proc
 _path_size_cache: dict[str, tuple[float, int]] = {}
 _PATH_SIZE_CACHE_TTL = 600.0
 _STRM_READ_LIMIT = 8192
+_STALE_REVIEW_PRUNE_TTL = 300.0
+_STALE_REVIEW_PRUNE_CONCURRENCY = 8
+_stale_review_prune_lock = asyncio.Lock()
+_stale_review_prune_last_run = 0.0
+_stale_review_prune_task: asyncio.Task | None = None
+_PUBLIC_SEARCH_RESULT_KEYS = {
+    "_source_label",
+    "audio_encode",
+    "description",
+    "imdbid",
+    "is_unlocked",
+    "labels",
+    "name",
+    "peers",
+    "remark",
+    "resolution",
+    "seeders",
+    "share_size",
+    "site_name",
+    "size",
+    "source",
+    "source_type",
+    "subtitle",
+    "subtitle_language",
+    "subtitle_type",
+    "title",
+    "unlock_points",
+    "user",
+    "video_codec",
+    "video_encode",
+    "video_range",
+    "video_resolution",
+    "year",
+}
 
 
 class HistoryDownloadControlPayload(BaseModel):
@@ -58,6 +93,34 @@ def _review_already_handled_response(review: dict) -> dict:
         "message": text,
         "data": {"already_handled": True, "review_status": status},
     }
+
+
+def _public_search_result(result: dict) -> dict:
+    """Return only display-safe fields from a stored search result."""
+    if not isinstance(result, dict):
+        return {}
+
+    public: dict = {}
+    for key in _PUBLIC_SEARCH_RESULT_KEYS:
+        if key not in result:
+            continue
+        value = result.get(key)
+        if key == "user" and isinstance(value, dict):
+            public[key] = {"nickname": value.get("nickname", "")}
+        else:
+            public[key] = value
+    if result.get("_raw"):
+        public["_redacted"] = True
+    return public
+
+
+def _public_review(review: dict) -> dict:
+    """Trim sensitive execution fields before returning review rows to browsers."""
+    item = dict(review or {})
+    item.pop("media_key", None)
+    item.pop("candidate_rank", None)
+    item["search_result"] = _public_search_result(item.get("search_result") or {})
+    return item
 
 
 def _should_cleanup_history_download_task(logs: list[dict]) -> bool:
@@ -109,6 +172,31 @@ def _history_download_match_consistent(item: dict) -> bool:
     )
     actual = _history_seasons(str(item.get("ui_download_name") or ""))
     return not expected or not actual or bool(expected & actual)
+
+
+def _history_download_hint_fields(log: dict) -> dict:
+    """提取日志中保存的下载器指纹；有指纹但找不到任务时可判定为已离开下载器。"""
+    text = "\n".join(
+        part
+        for part in (
+            str(log.get("message") or ""),
+            str(log.get("item_name") or ""),
+            str(log.get("item_id") or ""),
+        )
+        if part
+    )
+    hash_match = re.search(r"(?:hash|torrent_hash)\s*=\s*([a-f0-9]{16,40})", text, re.I)
+    id_match = re.search(r"(?:torrent_id|transmission_id)\s*=\s*(\d+)", text, re.I)
+    name_match = re.search(r"(?:torrent_name|name)\s*=\s*\"([^\"]{3,180})\"", text, re.I)
+    downloader_match = re.search(r"downloader\s*=\s*([^\s;\n]+)", text, re.I)
+    if not any((hash_match, id_match, name_match, downloader_match)):
+        return {}
+    return {
+        "download_hash": hash_match.group(1).strip().lower() if hash_match else "",
+        "download_id": id_match.group(1).strip() if id_match else "",
+        "download_name": name_match.group(1).strip() if name_match else "",
+        "download_downloader": downloader_match.group(1).strip() if downloader_match else "",
+    }
 
 
 def _transfer_match_text(value: str) -> str:
@@ -233,6 +321,22 @@ async def _annotate_project_download_logs(logs: list[dict]) -> list[dict]:
     updated = [dict(log) for log in logs]
     for idx, item in zip(indexes[:len(annotated)], annotated):
         if not item.get("ui_download_task"):
+            hint_fields = _history_download_hint_fields(updated[idx])
+            if hint_fields:
+                updated[idx].update({
+                    "download_task": False,
+                    "download_status": "error",
+                    "download_label": "任务已删除",
+                    "download_progress": 0,
+                    "download_speed": 0,
+                    "download_eta": 0,
+                    "download_name": hint_fields.get("download_name") or "",
+                    "download_id": hint_fields.get("download_id") or hint_fields.get("download_hash") or "",
+                    "download_hash": hint_fields.get("download_hash") or "",
+                    "download_state": "missing",
+                    "download_downloader": hint_fields.get("download_downloader") or "",
+                    "download_downloader_type": "",
+                })
             continue
         if not _history_download_match_consistent(item):
             continue
@@ -838,6 +942,165 @@ def _has_subtitle(res: dict) -> bool:
     return False
 
 
+def _rule_prefer_order(rule: dict) -> list[str]:
+    prefer_order = [
+        pref
+        for pref in (rule.get("prefer_order") or [])
+        if pref in {"remux", "4k", "subtitle"}
+    ]
+    if prefer_order:
+        return prefer_order
+    return [
+        pref
+        for pref, enabled in (
+            ("remux", rule.get("prefer_remux")),
+            ("4k", rule.get("prefer_4k")),
+            ("subtitle", rule.get("prefer_subtitle")),
+        )
+        if enabled
+    ]
+
+
+def _candidate_sort_key(rule: dict, result: dict) -> tuple[int, ...]:
+    """生成可持久化的候选排名；数值越小越优。"""
+    score: list[int] = []
+    for pref in _rule_prefer_order(rule):
+        if pref == "remux":
+            score.append(0 if _is_remux(result) else 1)
+        elif pref == "4k":
+            score.append(0 if _is_4k(result) else 1)
+        elif pref == "subtitle":
+            score.append(0 if _has_subtitle(result) else 1)
+
+    target_codec = str(rule.get("target_codec") or "").lower()
+    if target_codec:
+        result_codec = _get_video_codec(result)
+        score.append(0 if result_codec == target_codec else (1 if result_codec else 2))
+
+    target_hdr = str(rule.get("target_hdr") or "").lower()
+    if target_hdr:
+        result_hdr = _get_video_range(result)
+        score.append(0 if result_hdr == target_hdr else (1 if result_hdr else 2))
+
+    source_label = str(result.get("_source_label") or "")
+    source_priority = str(rule.get("source_priority") or "hdhive")
+    score.append(0 if source_label == source_priority else 1)
+    try:
+        seeders = int(result.get("seeders", 0) or 0) if source_label == "moviepilot" else 0
+    except (TypeError, ValueError):
+        seeders = 0
+    score.append(-seeders)
+    return tuple(score)
+
+
+async def reconcile_pending_reviews() -> int:
+    """按当前规则排序清理历史待审核重复项。"""
+    reviews = await list_subscribe_reviews("pending")
+    if not reviews:
+        return 0
+    rules = {rule.get("id", ""): rule for rule in await list_subscribe_rules()}
+    metadata = []
+    for review in reviews:
+        result = dict(review.get("search_result") or {})
+        if not result.get("_source_label"):
+            result["_source_label"] = review.get("source", "")
+        current_quality = review.get("current_quality") or {}
+        metadata.append({
+            "id": review.get("id"),
+            "media_key": build_subscribe_media_key(
+                current_quality,
+                review.get("item_name", ""),
+                review.get("item_id", ""),
+            ),
+            "candidate_rank": list(_candidate_sort_key(rules.get(review.get("rule_id"), {}), result)),
+        })
+    return await reconcile_pending_subscribe_reviews(metadata)
+
+
+async def _verify_emby_item_ids(item_ids: list[str]) -> dict[str, bool | None]:
+    """批量检查 Emby 条目，限制并发并复用同一个客户端。"""
+    unique_ids = list(dict.fromkeys(str(item_id or "").strip() for item_id in item_ids))
+    unique_ids = [item_id for item_id in unique_ids if item_id]
+    if not unique_ids:
+        return {}
+
+    emby = EmbyClient()
+    semaphore = asyncio.Semaphore(_STALE_REVIEW_PRUNE_CONCURRENCY)
+
+    async def verify(item_id: str) -> tuple[str, bool | None]:
+        async with semaphore:
+            try:
+                return item_id, await emby.item_exists(item_id)
+            except Exception as e:
+                logger.warning("[Subscribe] Emby 条目 %s 校验异常: %s", item_id, e)
+                return item_id, None
+
+    try:
+        return dict(await asyncio.gather(*(verify(item_id) for item_id in unique_ids)))
+    finally:
+        await emby.close()
+
+
+async def prune_stale_pending_reviews(force: bool = False) -> int:
+    """清理 Emby 已明确返回 404 的待审核记录；连接异常时保留记录。"""
+    global _stale_review_prune_last_run
+
+    now = time.monotonic()
+    if not force and now - _stale_review_prune_last_run < _STALE_REVIEW_PRUNE_TTL:
+        return 0
+
+    async with _stale_review_prune_lock:
+        now = time.monotonic()
+        if not force and now - _stale_review_prune_last_run < _STALE_REVIEW_PRUNE_TTL:
+            return 0
+
+        try:
+            reviews = await list_subscribe_reviews("pending")
+            existence = await _verify_emby_item_ids([
+                review.get("item_id", "") for review in reviews
+            ])
+            stale_review_ids = [
+                review["id"]
+                for review in reviews
+                if existence.get(str(review.get("item_id") or "").strip()) is False
+            ]
+            removed = await delete_pending_subscribe_reviews(stale_review_ids)
+            if removed:
+                logger.info("[Subscribe] 已移除 %s 条 Emby 中不存在的待审核记录", removed)
+            return removed
+        except Exception:
+            logger.warning("[Subscribe] 清理失效待审核记录失败", exc_info=True)
+            return 0
+        finally:
+            _stale_review_prune_last_run = time.monotonic()
+
+
+def _schedule_stale_pending_review_prune():
+    """在页面轮询时按 TTL 后台整理，避免阻塞请求或频繁访问 Emby。"""
+    global _stale_review_prune_task
+    if time.monotonic() - _stale_review_prune_last_run < _STALE_REVIEW_PRUNE_TTL:
+        return
+    if _stale_review_prune_task and not _stale_review_prune_task.done():
+        return
+
+    task = asyncio.create_task(prune_stale_pending_reviews())
+    _stale_review_prune_task = task
+
+    def finish(done: asyncio.Task):
+        global _stale_review_prune_task
+        try:
+            done.result()
+        except asyncio.CancelledError:
+            pass
+        except Exception:
+            logger.warning("[Subscribe] 后台整理失效待审核记录失败", exc_info=True)
+        finally:
+            if _stale_review_prune_task is done:
+                _stale_review_prune_task = None
+
+    task.add_done_callback(finish)
+
+
 def _is_free_hdhive(res: dict) -> bool:
     """HDHive 自动转存只放行免费或已解锁资源，避免无人值守时消耗点数。"""
     if res.get("is_unlocked"):
@@ -1095,14 +1358,18 @@ async def run_subscribe(rule_id: str = ""):
 @router.get("/reviews")
 async def list_reviews(status: str = "pending"):
     """列出审核条目"""
+    if status == "pending":
+        _schedule_stale_pending_review_prune()
     reviews = await list_subscribe_reviews(status)
     reviews = [await _normalise_current_quality_for_display(r) for r in reviews]
+    reviews = [_public_review(r) for r in reviews]
     return {"status": "success", "data": reviews}
 
 
 @router.get("/reviews/count")
 async def review_count():
     """待审核数量"""
+    _schedule_stale_pending_review_prune()
     cnt = await count_pending_reviews()
     return {"status": "success", "data": {"pending": cnt}}
 
@@ -1115,6 +1382,15 @@ async def approve_review(review_id: int):
         raise HTTPException(404, "审核项不存在或已被清空")
     if review.get("status") != "pending":
         return _review_already_handled_response(review)
+
+    item_id = str(review.get("item_id") or "").strip()
+    if item_id:
+        existence = (await _verify_emby_item_ids([item_id])).get(item_id)
+        if existence is False:
+            await delete_pending_subscribe_reviews([review_id])
+            raise HTTPException(409, "Emby 条目已不存在，待审核记录已移除")
+        if existence is None:
+            raise HTTPException(503, "暂时无法确认 Emby 条目状态，请稍后重试")
 
     src = review.get("source", "")
     item_name = review.get("item_name", "")
@@ -1347,7 +1623,7 @@ async def list_history():
     from app.database import list_subscribe_logs as db_list_logs
     from app.database import list_recent_gap_transfer_marks
 
-    reviews = await list_subscribe_reviews("history")
+    reviews = [_public_review(r) for r in await list_subscribe_reviews("history")]
     logs = await db_list_logs(limit=500)
     gap_marks = await list_recent_gap_transfer_marks(limit=200)
 
@@ -1418,7 +1694,25 @@ async def batch_approve():
     """批量通过所有待审核项"""
     reviews = await list_subscribe_reviews("pending")
     results = {"success": 0, "failed": 0, "errors": []}
+    existence = await _verify_emby_item_ids([review.get("item_id", "") for review in reviews])
+    stale_ids = [
+        review["id"]
+        for review in reviews
+        if existence.get(str(review.get("item_id") or "").strip()) is False
+    ]
+    await delete_pending_subscribe_reviews(stale_ids)
+
     for rev in reviews:
+        item_id = str(rev.get("item_id") or "").strip()
+        item_exists = existence.get(item_id) if item_id else None
+        if item_exists is False:
+            results["failed"] += 1
+            results["errors"].append(f"{rev.get('item_name','')}: Emby 条目已不存在，记录已移除")
+            continue
+        if item_id and item_exists is None:
+            results["failed"] += 1
+            results["errors"].append(f"{rev.get('item_name','')}: 暂时无法确认 Emby 条目状态")
+            continue
         try:
             # 重新调用单个批准
             src = rev.get("source", "")
@@ -1524,7 +1818,12 @@ async def _run_matching(rules: list[dict]):
     global _run_status
     _run_status = {"running": True, "progress": 0, "current": "", "total": 0, "processed": 0}
 
+    emby_verifier: EmbyClient | None = None
     try:
+        # 先移除已失效的 pending，避免 has_processed_item() 被旧记录短路。
+        await prune_stale_pending_reviews(force=True)
+        emby_verifier = EmbyClient()
+
         # 加载质量缓存（带时间戳）
         items, _, cache_time = await load_quality_cache()
         if not items:
@@ -1557,6 +1856,8 @@ async def _run_matching(rules: list[dict]):
             target_res = rule.get("target_resolution", "1080p").lower()
             source = rule.get("source", "moviepilot")
             library_ids = {str(x).strip() for x in (rule.get("library_ids") or []) if str(x).strip()}
+            stale_auto_warned = False
+            emby_verify_warned = False
 
             # 过滤符合规则的低质量条目
             ignore_ids = await get_subscribe_ignore_ids(rule_id)
@@ -1587,6 +1888,9 @@ async def _run_matching(rules: list[dict]):
                     continue
                 if processed == 'pending_review':
                     # 已有待审核记录，无需重新搜索
+                    continue
+                if processed == 'submitted_download':
+                    # MP 下载已提交但尚未确认媒体库升级，避免重复提交同一资源。
                     continue
                 if processed == 'rejected':
                     # 被拒绝过但仍可搜索（需排除被拒绝的结果）
@@ -1623,6 +1927,32 @@ async def _run_matching(rules: list[dict]):
                 _run_status["processed"] = effective_count
 
                 try:
+                    existence = await emby_verifier.item_exists(item_id) if item_id else None
+                    if existence is False:
+                        logger.info("[Subscribe] %s: Emby 条目 %s 已不存在，跳过缓存项", item_name, item_id)
+                        await add_subscribe_log(
+                            rule_id,
+                            rule_name,
+                            "stale_item",
+                            item_name,
+                            item_id,
+                            "Emby 条目已不存在，已跳过质量缓存中的旧记录",
+                        )
+                        continue
+                    if existence is None:
+                        logger.warning("[Subscribe] %s: 无法确认 Emby 条目 %s，暂不搜索", item_name, item_id)
+                        if not emby_verify_warned:
+                            emby_verify_warned = True
+                            await add_subscribe_log(
+                                rule_id,
+                                rule_name,
+                                "warn",
+                                item_name,
+                                item_id,
+                                "暂时无法确认 Emby 条目状态，本轮已保守跳过",
+                            )
+                        continue
+
                     keyword = f"{item_name}"
                     year = item.get("year")
                     if year:
@@ -1802,46 +2132,7 @@ async def _run_matching(rules: list[dict]):
                         continue
 
                     # ── 排序：按优先级规则综合排序 ──
-                    # prefer_order: ["remux", "4k", "subtitle"] 顺序即优先级
-                    prefer_order = rule.get("prefer_order") or []
-                    # 向后兼容旧格式的 bool 字段
-                    if not prefer_order:
-                        if rule.get("prefer_remux"):
-                            prefer_order.append("remux")
-                        if rule.get("prefer_4k"):
-                            prefer_order.append("4k")
-                        if rule.get("prefer_subtitle"):
-                            prefer_order.append("subtitle")
-                    source_priority = rule.get("source_priority", "hdhive")
-                    target_codec = (rule.get("target_codec") or "").lower()
-                    target_hdr = (rule.get("target_hdr") or "").lower()
-
-                    def sort_key(r):
-                        label = r.get("_source_label", "")
-                        score = []
-                        for pref in prefer_order:
-                            if pref == "remux":
-                                score.append(0 if _is_remux(r) else 1)
-                            elif pref == "4k":
-                                score.append(0 if _is_4k(r) else 1)
-                            elif pref == "subtitle":
-                                score.append(0 if _has_subtitle(r) else 1)
-                        # 编码偏好（仅当设置了目标编码时生效）
-                        if target_codec:
-                            rc = _get_video_codec(r)
-                            score.append(0 if rc == target_codec else (1 if rc else 2))
-                        # HDR 偏好
-                        if target_hdr:
-                            rh = _get_video_range(r)
-                            score.append(0 if rh == target_hdr else (1 if rh else 2))
-                        # 来源优先级
-                        score.append(0 if label == source_priority else 1)
-                        # MP 做种数降序
-                        seeders = int(r.get("seeders", 0) or 0) if label == "moviepilot" else 0
-                        score.append(-seeders)
-                        return tuple(score)
-
-                    better.sort(key=sort_key)
+                    better.sort(key=lambda result: _candidate_sort_key(rule, result))
                     best = better[0]
 
                     # ── MP: 0 做种过滤（有替代项时禁止下载 0 做种） ──
@@ -1865,6 +2156,18 @@ async def _run_matching(rules: list[dict]):
 
                     # ── 自动审核：勾选的审核条件全部满足时跳过审核直接执行 ──
                     auto_approve = rule.get("auto_approve", False)
+                    if auto_approve and not cache_is_fresh:
+                        auto_approve = False
+                        if not stale_auto_warned:
+                            stale_auto_warned = True
+                            await add_subscribe_log(
+                                rule_id,
+                                rule_name,
+                                "warn",
+                                item_name,
+                                item_id,
+                                "质量缓存已过期，自动审核已降级为待审核",
+                            )
                     auto_conditions = rule.get("auto_approve_conditions") or []
 
                     if auto_approve and auto_conditions and best:
@@ -2042,10 +2345,19 @@ async def _run_matching(rules: list[dict]):
                         "search_result": best,
                         "source": src,
                         "action_type": action_type,
+                        "media_key": build_subscribe_media_key(item, item_name, item_id),
+                        "candidate_rank": list(_candidate_sort_key(rule, best)),
                         "message": f"找到 {_extract_quality(best)} 版本，待审核",
                     })
-                    await add_subscribe_log(rule_id, rule_name, "pending_review", item_name, item_id, f"已加入审核列表: {_extract_quality(best)}")
                     if review_id:
+                        await add_subscribe_log(
+                            rule_id,
+                            rule_name,
+                            "pending_review",
+                            item_name,
+                            item_id,
+                            f"已加入审核列表: {_extract_quality(best)}",
+                        )
                         effective_count += 1
                         _run_status["processed"] = effective_count
                         _run_status["progress"] = int(effective_count / target_total * 100) if target_total else 100
@@ -2104,4 +2416,6 @@ async def _run_matching(rules: list[dict]):
         logger.exception(f"[Subscribe] 执行异常: {e}")
         await add_subscribe_log("", "系统", "error", message=f"执行异常: {e}")
     finally:
+        if emby_verifier:
+            await emby_verifier.close()
         _run_status = {"running": False, "progress": 100, "current": "", "total": 0, "processed": 0}

@@ -2,11 +2,66 @@
 
 import aiosqlite
 import json
+import re
+import unicodedata
 from datetime import datetime
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 from app.config import settings
 
 DB_PATH = Path(settings.db_path)
+
+
+def _normalise_media_identity_text(value: object) -> str:
+    text = unicodedata.normalize("NFKC", str(value or "")).casefold()
+    return re.sub(r"[^\w]+", "", text)
+
+
+def build_subscribe_media_key(
+    current_quality: dict | None,
+    item_name: str = "",
+    item_id: str = "",
+) -> str:
+    """为审核项生成不依赖 Emby ID 的稳定媒体标识。"""
+    current = current_quality if isinstance(current_quality, dict) else {}
+    provider_ids = current.get("provider_ids") or current.get("ProviderIds") or {}
+    provider_ids = provider_ids if isinstance(provider_ids, dict) else {}
+    provider_lookup = {str(key).casefold(): value for key, value in provider_ids.items()}
+
+    raw_type = str(current.get("type") or current.get("Type") or "media").strip().casefold()
+    media_type = {
+        "movie": "movie",
+        "series": "series",
+        "tv": "series",
+        "episode": "series",
+    }.get(raw_type, raw_type or "media")
+    path = str(current.get("path") or current.get("Path") or "").strip()
+
+    tmdb_id = str(current.get("tmdb_id") or provider_lookup.get("tmdb") or "").strip()
+    if not tmdb_id and path:
+        match = re.search(r"tmdbid\s*=\s*(\d+)", path, re.I)
+        tmdb_id = match.group(1) if match else ""
+    if tmdb_id:
+        return f"{media_type}:tmdb:{tmdb_id.casefold()}"
+
+    imdb_id = str(current.get("imdb_id") or provider_lookup.get("imdb") or "").strip().casefold()
+    if not imdb_id and path:
+        match = re.search(r"imdbid\s*=\s*(tt\d+)", path, re.I)
+        imdb_id = match.group(1).casefold() if match else ""
+    if imdb_id:
+        return f"{media_type}:imdb:{imdb_id}"
+
+    name = _normalise_media_identity_text(current.get("name") or current.get("Name") or item_name)
+    year = _normalise_media_identity_text(current.get("year") or current.get("ProductionYear") or "")
+    folder = ""
+    if path:
+        posix_path = PurePosixPath(path.replace("\\", "/"))
+        leaf = posix_path.name
+        folder = posix_path.parent.name if "." in leaf else leaf
+        folder = _normalise_media_identity_text(folder)
+    if name or year or folder:
+        return f"{media_type}:meta:{name}:{year}:{folder}"
+
+    return f"{media_type}:item:{str(item_id or '').strip()}" if item_id else ""
 
 
 async def get_db() -> aiosqlite.Connection:
@@ -84,6 +139,8 @@ async def init_db():
                 search_result TEXT DEFAULT '{}',
                 source TEXT DEFAULT '',
                 action_type TEXT DEFAULT '',
+                media_key TEXT DEFAULT '',
+                candidate_rank TEXT DEFAULT '[]',
                 status TEXT DEFAULT 'pending',
                 message TEXT DEFAULT '',
                 created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
@@ -149,7 +206,67 @@ async def init_db():
                 updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
             );
             CREATE INDEX IF NOT EXISTS idx_gap_transfer_marks_updated ON gap_transfer_marks(updated_at);
+
+            CREATE TABLE IF NOT EXISTS gap_auto_fill_jobs (
+                series_id TEXT NOT NULL,
+                season_number INTEGER NOT NULL,
+                series_name TEXT NOT NULL DEFAULT '',
+                year TEXT NOT NULL DEFAULT '',
+                tmdb_id INTEGER NOT NULL DEFAULT 0,
+                imdb_id TEXT NOT NULL DEFAULT '',
+                library_name TEXT NOT NULL DEFAULT '',
+                enabled INTEGER NOT NULL DEFAULT 1,
+                status TEXT NOT NULL DEFAULT 'waiting',
+                attempts INTEGER NOT NULL DEFAULT 0,
+                last_message TEXT NOT NULL DEFAULT '',
+                last_resource_title TEXT NOT NULL DEFAULT '',
+                last_results_json TEXT NOT NULL DEFAULT '[]',
+                last_run_at DATETIME,
+                created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                PRIMARY KEY (series_id, season_number)
+            );
+            CREATE INDEX IF NOT EXISTS idx_gap_auto_fill_enabled ON gap_auto_fill_jobs(enabled, updated_at);
         """)
+        cursor = await db.execute("PRAGMA table_info(subscribe_reviews)")
+        review_columns = {row["name"] for row in await cursor.fetchall()}
+        if "media_key" not in review_columns:
+            await db.execute("ALTER TABLE subscribe_reviews ADD COLUMN media_key TEXT DEFAULT ''")
+        if "candidate_rank" not in review_columns:
+            await db.execute("ALTER TABLE subscribe_reviews ADD COLUMN candidate_rank TEXT DEFAULT '[]'")
+
+        cursor = await db.execute(
+            "SELECT id, item_id, item_name, current_quality FROM subscribe_reviews WHERE COALESCE(media_key, '') = ''"
+        )
+        for row in await cursor.fetchall():
+            try:
+                current_quality = json.loads(row["current_quality"] or "{}")
+            except (TypeError, json.JSONDecodeError):
+                current_quality = {}
+            media_key = build_subscribe_media_key(current_quality, row["item_name"], row["item_id"])
+            if media_key:
+                await db.execute(
+                    "UPDATE subscribe_reviews SET media_key = ? WHERE id = ?",
+                    (media_key, row["id"]),
+                )
+        await db.execute(
+            "CREATE INDEX IF NOT EXISTS idx_subscribe_reviews_media "
+            "ON subscribe_reviews(rule_id, media_key, status)"
+        )
+
+        cursor = await db.execute("PRAGMA table_info(gap_auto_fill_jobs)")
+        auto_fill_columns = {row["name"] for row in await cursor.fetchall()}
+        if "last_results_json" not in auto_fill_columns:
+            await db.execute(
+                "ALTER TABLE gap_auto_fill_jobs ADD COLUMN last_results_json TEXT NOT NULL DEFAULT '[]'"
+            )
+        await db.execute(
+            """
+            UPDATE gap_auto_fill_jobs
+            SET status = 'waiting', updated_at = datetime('now','localtime')
+            WHERE enabled = 1 AND status IN ('searching', 'transferring')
+            """
+        )
         await db.commit()
     finally:
         await db.close()
@@ -477,20 +594,34 @@ async def get_subscribe_logs(limit: int = 20) -> list[dict]:
 
 async def has_processed_item(rule_id: str, item_id: str) -> str | None:
     """检查某条目是否已被处理过（被任何规则处理过都算）
-    返回: None=未处理, 'pending_review'=待审核, 'rejected'=已拒绝（仍可搜索但需排除旧结果）
-          'done'=已完成(download/transfer/auto_approved/approved/ignored)
+    返回: None=未处理, 'pending_review'=待审核, 'submitted_download'=下载已提交但未验证,
+          'rejected'=已拒绝（仍可搜索但需排除旧结果）, 'done'=已完成(transfer/已确认转存/approved/ignored)
     failed 不算完成，允许下次规则运行时重新生成审核项并重试。
     """
     db = await get_db()
     try:
-        # 1. 检查 subscribe_logs 是否已有成功记录
+        # 1. 检查 subscribe_logs 是否已有成功记录。
+        # MoviePilot 的 download/MP auto_approved 只代表已推送下载，不等于媒体库已升级。
         cursor = await db.execute(
-            "SELECT action FROM subscribe_logs WHERE item_id = ? AND action IN ('download','transfer','auto_approved') LIMIT 1",
+            """
+            SELECT action, message FROM subscribe_logs
+            WHERE item_id = ? AND action IN ('download','transfer','auto_approved')
+            ORDER BY created_at DESC LIMIT 10
+            """,
             (item_id,)
         )
-        row = await cursor.fetchone()
-        if row:
-            return 'done'
+        rows = await cursor.fetchall()
+        for row in rows:
+            action = row["action"]
+            message = row["message"] or ""
+            if action == "transfer":
+                return 'done'
+            if action == "auto_approved":
+                if "115" in message or "转存" in message or "已在 115" in message:
+                    return 'done'
+                return 'submitted_download'
+            if action == "download":
+                return 'submitted_download'
 
         # 2. 检查 subscribe_reviews 状态
         cursor = await db.execute(
@@ -543,18 +674,128 @@ async def get_rejected_result_keys(item_id: str) -> list[str]:
 
 # ─── 订阅审核 ───
 
+
+def _parse_candidate_rank(value: object) -> list[float]:
+    if isinstance(value, str):
+        try:
+            value = json.loads(value or "[]")
+        except (TypeError, json.JSONDecodeError):
+            value = []
+    if not isinstance(value, (list, tuple)):
+        return []
+
+    rank: list[float] = []
+    for part in value:
+        try:
+            rank.append(float(part))
+        except (TypeError, ValueError):
+            return []
+    return rank
+
+
+def _candidate_rank_order(value: object, row_id: int = 0) -> tuple:
+    rank = _parse_candidate_rank(value)
+    return (0, tuple(rank), -int(row_id or 0)) if rank else (1, (), -int(row_id or 0))
+
+
+def _subscribe_result_key(result: dict | None) -> str:
+    result = result if isinstance(result, dict) else {}
+    for key in ("hdhive_slug", "page_url", "resource_url", "slug", "enclosure"):
+        value = str(result.get(key) or "").strip()
+        if value:
+            return f"{key}:{value}"
+    return ""
+
+
+async def _insert_subscribe_review_row(
+    db: aiosqlite.Connection,
+    review: dict,
+    media_key: str,
+    candidate_rank: list[float],
+) -> int:
+    cursor = await db.execute("""
+        INSERT INTO subscribe_reviews (
+            rule_id, rule_name, item_id, item_name, current_quality, search_result,
+            source, action_type, media_key, candidate_rank, status, message
+        )
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending', ?)
+    """, (
+        review.get("rule_id", ""),
+        review.get("rule_name", ""),
+        review.get("item_id", ""),
+        review.get("item_name", ""),
+        json.dumps(review.get("current_quality", {}), ensure_ascii=False),
+        json.dumps(review.get("search_result", {}), ensure_ascii=False),
+        review.get("source", ""),
+        review.get("action_type", ""),
+        media_key,
+        json.dumps(candidate_rank),
+        review.get("message", ""),
+    ))
+    return int(cursor.lastrowid)
+
+
+async def _delete_pending_review_ids(db: aiosqlite.Connection, review_ids: list[int]):
+    ids = [int(review_id) for review_id in review_ids if review_id]
+    if not ids:
+        return
+    placeholders = ",".join("?" for _ in ids)
+    await db.execute(
+        f"DELETE FROM subscribe_reviews WHERE status = 'pending' AND id IN ({placeholders})",
+        ids,
+    )
+
+
+async def delete_pending_subscribe_reviews(review_ids: list[int]) -> int:
+    """删除指定的待审核记录，已处理记录不受影响。"""
+    ids: list[int] = []
+    for review_id in review_ids:
+        try:
+            value = int(review_id)
+        except (TypeError, ValueError):
+            continue
+        if value > 0 and value not in ids:
+            ids.append(value)
+    if not ids:
+        return 0
+
+    db = await get_db()
+    try:
+        await db.execute("BEGIN IMMEDIATE")
+        placeholders = ",".join("?" for _ in ids)
+        cursor = await db.execute(
+            f"DELETE FROM subscribe_reviews WHERE status = 'pending' AND id IN ({placeholders})",
+            ids,
+        )
+        await db.commit()
+        return max(0, int(cursor.rowcount or 0))
+    except Exception:
+        await db.rollback()
+        raise
+    finally:
+        await db.close()
+
+
 async def add_subscribe_review(review: dict):
     """添加审核条目。
 
-    同一 rule_id + item_id 已有 pending 时跳过；approved/ignored 视为完成。
-    rejected/failed 允许再次生成审核项，配合被拒绝结果过滤和失败重试。
+    同一规则、同一逻辑媒体只保留候选排名最优的一条；相同资源只刷新执行信息。
+    approved/ignored 视为完成，rejected/failed 允许再次生成审核项。
     """
     db = await get_db()
     try:
-        rule_id = review.get("rule_id", "")
-        item_id = review.get("item_id", "")
+        await db.execute("BEGIN IMMEDIATE")
+        rule_id = str(review.get("rule_id") or "")
+        item_id = str(review.get("item_id") or "")
+        current_quality = review.get("current_quality") or {}
+        media_key = str(review.get("media_key") or "") or build_subscribe_media_key(
+            current_quality,
+            str(review.get("item_name") or ""),
+            item_id,
+        )
+        candidate_rank = _parse_candidate_rank(review.get("candidate_rank"))
 
-        # 检查是否已有该条目的审核记录
+        # 已完成的同一 Emby 条目沿用原有行为，不重新生成审核。
         cursor = await db.execute(
             "SELECT id, status FROM subscribe_reviews WHERE rule_id = ? AND item_id = ? ORDER BY created_at DESC LIMIT 1",
             (rule_id, item_id)
@@ -562,33 +803,181 @@ async def add_subscribe_review(review: dict):
         existing = await cursor.fetchone()
         if existing:
             existing_id, existing_status = existing
-            if existing_status == "pending":
-                # 已有待审核记录，不重复添加
-                print(f"[DB] add_subscribe_review: 跳过重复审核 rule_id={rule_id} item_id={item_id} (已有 pending review #{existing_id})")
-                return
             if existing_status in ("approved", "ignored"):
-                # 已完成或已忽略，不重复添加
                 print(f"[DB] add_subscribe_review: 跳过已处理的条目 rule_id={rule_id} item_id={item_id} (status={existing_status})")
-                return
+                await db.rollback()
+                return None
             if existing_status in ("rejected", "failed"):
                 print(f"[DB] add_subscribe_review: 允许重试 rule_id={rule_id} item_id={item_id} (latest status={existing_status})")
 
-        cursor = await db.execute("""
-            INSERT INTO subscribe_reviews (rule_id, rule_name, item_id, item_name, current_quality, search_result, source, action_type, status, message)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'pending', ?)
-        """, (
-            review.get("rule_id", ""),
-            review.get("rule_name", ""),
-            review.get("item_id", ""),
-            review.get("item_name", ""),
-            json.dumps(review.get("current_quality", {}), ensure_ascii=False),
-            json.dumps(review.get("search_result", {}), ensure_ascii=False),
-            review.get("source", ""),
-            review.get("action_type", ""),
-            review.get("message", ""),
-        ))
+        if media_key:
+            cursor = await db.execute(
+                """
+                SELECT * FROM subscribe_reviews
+                WHERE rule_id = ? AND status = 'pending'
+                  AND (media_key = ? OR (COALESCE(media_key, '') = '' AND item_id = ?))
+                ORDER BY id DESC
+                """,
+                (rule_id, media_key, item_id),
+            )
+        else:
+            cursor = await db.execute(
+                """
+                SELECT * FROM subscribe_reviews
+                WHERE rule_id = ? AND item_id = ? AND status = 'pending'
+                ORDER BY id DESC
+                """,
+                (rule_id, item_id),
+            )
+        pending_rows = await cursor.fetchall()
+
+        if not pending_rows:
+            review_id = await _insert_subscribe_review_row(db, review, media_key, candidate_rank)
+            await db.commit()
+            return review_id
+
+        best_existing = min(
+            pending_rows,
+            key=lambda row: _candidate_rank_order(row["candidate_rank"], row["id"]),
+        )
+        best_rank = _parse_candidate_rank(best_existing["candidate_rank"])
+        try:
+            best_result = json.loads(best_existing["search_result"] or "{}")
+        except (TypeError, json.JSONDecodeError):
+            best_result = {}
+        candidate_result = review.get("search_result") or {}
+        same_resource = bool(
+            _subscribe_result_key(candidate_result)
+            and _subscribe_result_key(candidate_result) == _subscribe_result_key(best_result)
+        )
+        duplicate_ids = [row["id"] for row in pending_rows if row["id"] != best_existing["id"]]
+
+        if same_resource:
+            await db.execute(
+                """
+                UPDATE subscribe_reviews
+                SET rule_name = ?, item_id = ?, item_name = ?, current_quality = ?,
+                    search_result = ?, source = ?, action_type = ?, media_key = ?,
+                    candidate_rank = ?, message = ?, updated_at = datetime('now','localtime')
+                WHERE id = ?
+                """,
+                (
+                    review.get("rule_name", ""),
+                    item_id,
+                    review.get("item_name", ""),
+                    json.dumps(current_quality, ensure_ascii=False),
+                    json.dumps(candidate_result, ensure_ascii=False),
+                    review.get("source", ""),
+                    review.get("action_type", ""),
+                    media_key,
+                    json.dumps(candidate_rank),
+                    review.get("message", ""),
+                    best_existing["id"],
+                ),
+            )
+            await _delete_pending_review_ids(db, duplicate_ids)
+            await db.commit()
+            return None
+
+        candidate_is_better = bool(candidate_rank) and (
+            not best_rank or tuple(candidate_rank) < tuple(best_rank)
+        )
+        if candidate_is_better:
+            review_id = await _insert_subscribe_review_row(db, review, media_key, candidate_rank)
+            await _delete_pending_review_ids(db, [row["id"] for row in pending_rows])
+            await db.commit()
+            return review_id
+
+        # 旧候选更好时保留其资源，但同步最新 Emby ID 和当前质量，避免审核执行引用旧条目。
+        await db.execute(
+            """
+            UPDATE subscribe_reviews
+            SET item_id = ?, item_name = ?, current_quality = ?, media_key = ?,
+                updated_at = datetime('now','localtime')
+            WHERE id = ?
+            """,
+            (
+                item_id,
+                review.get("item_name", ""),
+                json.dumps(current_quality, ensure_ascii=False),
+                media_key,
+                best_existing["id"],
+            ),
+        )
+        await _delete_pending_review_ids(db, duplicate_ids)
         await db.commit()
-        return cursor.lastrowid  # 返回自增 ID，用于 TG 按钮 callback
+        return None
+    except Exception:
+        await db.rollback()
+        raise
+    finally:
+        await db.close()
+
+
+async def reconcile_pending_subscribe_reviews(metadata: list[dict]) -> int:
+    """按已计算的媒体键和候选排名整理历史 pending 记录，返回删除数量。"""
+    metadata_by_id = {
+        int(item["id"]): item
+        for item in metadata
+        if isinstance(item, dict) and item.get("id") is not None
+    }
+    db = await get_db()
+    try:
+        await db.execute("BEGIN IMMEDIATE")
+        for review_id, item in metadata_by_id.items():
+            media_key = str(item.get("media_key") or "")
+            candidate_rank = _parse_candidate_rank(item.get("candidate_rank"))
+            await db.execute(
+                "UPDATE subscribe_reviews SET media_key = ?, candidate_rank = ? WHERE id = ? AND status = 'pending'",
+                (media_key, json.dumps(candidate_rank), review_id),
+            )
+
+        cursor = await db.execute(
+            """
+            SELECT id, rule_id, item_id, item_name, current_quality, media_key, candidate_rank
+            FROM subscribe_reviews WHERE status = 'pending' ORDER BY id DESC
+            """
+        )
+        groups: dict[tuple[str, str], list[aiosqlite.Row]] = {}
+        for row in await cursor.fetchall():
+            media_key = str(row["media_key"] or "")
+            if not media_key:
+                continue
+            groups.setdefault((str(row["rule_id"] or ""), media_key), []).append(row)
+
+        deleted = 0
+        for rows in groups.values():
+            if len(rows) < 2:
+                continue
+            best = min(
+                rows,
+                key=lambda row: _candidate_rank_order(row["candidate_rank"], row["id"]),
+            )
+            latest = max(rows, key=lambda row: int(row["id"]))
+            await db.execute(
+                """
+                UPDATE subscribe_reviews
+                SET item_id = ?, item_name = ?, current_quality = ?, media_key = ?,
+                    updated_at = datetime('now','localtime')
+                WHERE id = ?
+                """,
+                (
+                    latest["item_id"],
+                    latest["item_name"],
+                    latest["current_quality"],
+                    latest["media_key"],
+                    best["id"],
+                ),
+            )
+            duplicate_ids = [row["id"] for row in rows if row["id"] != best["id"]]
+            await _delete_pending_review_ids(db, duplicate_ids)
+            deleted += len(duplicate_ids)
+
+        await db.commit()
+        return deleted
+    except Exception:
+        await db.rollback()
+        raise
     finally:
         await db.close()
 
@@ -783,6 +1172,7 @@ def _default_gap_config() -> dict:
     return {
         "excluded_libraries": excluded,
         "cache_interval_hours": 6,
+        "auto_fill_enabled": False,
     }
 
 
@@ -792,7 +1182,10 @@ async def get_gap_config() -> dict:
     db = await get_db()
     try:
         cursor = await db.execute(
-            "SELECT key, value FROM scan_config WHERE key IN ('gaps_excluded_libraries', 'gaps_cache_interval_hours')"
+            """
+            SELECT key, value FROM scan_config
+            WHERE key IN ('gaps_excluded_libraries', 'gaps_cache_interval_hours', 'gaps_auto_fill_enabled')
+            """
         )
         rows = await cursor.fetchall()
         data = {row["key"]: row["value"] for row in rows}
@@ -813,9 +1206,17 @@ async def get_gap_config() -> dict:
         except (TypeError, ValueError):
             cache_hours = defaults["cache_interval_hours"]
 
+        auto_fill_enabled = str(data.get("gaps_auto_fill_enabled") or "").strip().lower() in {
+            "1",
+            "true",
+            "yes",
+            "on",
+        }
+
         return {
             "excluded_libraries": [str(x) for x in excluded if str(x).strip()],
             "cache_interval_hours": max(1, cache_hours),
+            "auto_fill_enabled": auto_fill_enabled,
         }
     finally:
         await db.close()
@@ -834,6 +1235,165 @@ async def save_gap_config(excluded_libraries: list[str], cache_interval_hours: i
             (str(max(1, int(cache_interval_hours or 6))),),
         )
         await db.commit()
+    finally:
+        await db.close()
+
+
+async def get_gap_auto_fill_enabled() -> bool:
+    """读取全局影巢自动补季开关。"""
+    db = await get_db()
+    try:
+        cursor = await db.execute(
+            "SELECT value FROM scan_config WHERE key = 'gaps_auto_fill_enabled'"
+        )
+        row = await cursor.fetchone()
+        return str(row["value"] if row else "").strip().lower() in {"1", "true", "yes", "on"}
+    finally:
+        await db.close()
+
+
+async def set_gap_auto_fill_enabled(enabled: bool):
+    """保存全局影巢自动补季开关。"""
+    db = await get_db()
+    try:
+        await db.execute(
+            "INSERT OR REPLACE INTO scan_config (key, value) VALUES ('gaps_auto_fill_enabled', ?)",
+            ("1" if enabled else "0",),
+        )
+        await db.commit()
+    finally:
+        await db.close()
+
+
+async def sync_gap_auto_fill_jobs(
+    items: list[dict],
+    reset_completed: bool = False,
+    prune_missing: bool = False,
+) -> int:
+    """批量同步当前整季缺口为自动补季任务。"""
+    db = await get_db()
+    synced = 0
+    seen: set[tuple[str, int]] = set()
+    try:
+        for item in items:
+            series_id = str(item.get("series_id") or "").strip()
+            try:
+                season_number = int(item.get("season_number") or 0)
+            except (TypeError, ValueError):
+                continue
+            key = (series_id, season_number)
+            if not series_id or key in seen:
+                continue
+            seen.add(key)
+            try:
+                tmdb_id = int(item.get("tmdb_id") or 0)
+            except (TypeError, ValueError):
+                tmdb_id = 0
+
+            if reset_completed:
+                conflict_updates = """
+                    enabled = 1,
+                    status = 'waiting'
+                """
+            else:
+                conflict_updates = """
+                    enabled = CASE
+                        WHEN gap_auto_fill_jobs.status = 'completed' THEN gap_auto_fill_jobs.enabled
+                        ELSE 1
+                    END,
+                    status = CASE
+                        WHEN gap_auto_fill_jobs.status = 'completed' THEN gap_auto_fill_jobs.status
+                        ELSE 'waiting'
+                    END
+                """
+
+            await db.execute(
+                f"""
+                INSERT INTO gap_auto_fill_jobs
+                (
+                    series_id, season_number, series_name, year, tmdb_id, imdb_id, library_name,
+                    enabled, status, last_message, last_resource_title, updated_at
+                )
+                VALUES (?, ?, ?, ?, ?, ?, ?, 1, 'waiting', '', '', datetime('now','localtime'))
+                ON CONFLICT(series_id, season_number) DO UPDATE SET
+                    series_name = excluded.series_name,
+                    year = excluded.year,
+                    tmdb_id = excluded.tmdb_id,
+                    imdb_id = excluded.imdb_id,
+                    library_name = excluded.library_name,
+                    {conflict_updates},
+                    updated_at = datetime('now','localtime')
+                """,
+                (
+                    series_id,
+                    season_number,
+                    str(item.get("series_name") or ""),
+                    str(item.get("year") or ""),
+                    tmdb_id,
+                    str(item.get("imdb_id") or ""),
+                    str(item.get("library_name") or ""),
+                ),
+            )
+            synced += 1
+
+        if prune_missing:
+            cursor = await db.execute(
+                """
+                SELECT
+                    series_id, season_number, last_resource_title, last_results_json
+                FROM gap_auto_fill_jobs
+                WHERE enabled = 1
+                """
+            )
+            for row in await cursor.fetchall():
+                key = (str(row["series_id"] or ""), int(row["season_number"] or 0))
+                if key in seen:
+                    continue
+                try:
+                    saved_results = json.loads(row["last_results_json"] or "[]")
+                except (TypeError, json.JSONDecodeError):
+                    saved_results = []
+                if row["last_resource_title"] or (isinstance(saved_results, list) and saved_results):
+                    await db.execute(
+                        """
+                        UPDATE gap_auto_fill_jobs
+                        SET
+                            enabled = 0,
+                            status = 'disabled',
+                            last_message = '当前完整扫描已不再纳入自动补季，任务自动停止',
+                            updated_at = datetime('now','localtime')
+                        WHERE series_id = ? AND season_number = ?
+                        """,
+                        key,
+                    )
+                else:
+                    await db.execute(
+                        "DELETE FROM gap_auto_fill_jobs WHERE series_id = ? AND season_number = ?",
+                        key,
+                    )
+        await db.commit()
+        return synced
+    finally:
+        await db.close()
+
+
+async def disable_gap_auto_fill_jobs(message: str = "已关闭全局自动补季") -> int:
+    """关闭所有尚未完成的自动补季任务。"""
+    db = await get_db()
+    try:
+        cursor = await db.execute(
+            """
+            UPDATE gap_auto_fill_jobs
+            SET enabled = 0,
+                status = 'disabled',
+                last_message = ?,
+                updated_at = datetime('now','localtime')
+            WHERE enabled = 1
+            """,
+            (str(message or ""),),
+        )
+        await db.commit()
+        return max(0, int(cursor.rowcount or 0))
     finally:
         await db.close()
 
@@ -873,6 +1433,156 @@ async def load_gap_cache() -> tuple[list[dict], dict, str | None]:
         return results if isinstance(results, list) else [], summary if isinstance(summary, dict) else {}, row["created_at"]
     finally:
         await db.close()
+
+
+def _gap_auto_fill_job_row(row: aiosqlite.Row | None) -> dict | None:
+    if not row:
+        return None
+    item = dict(row)
+    item["enabled"] = bool(item.get("enabled"))
+    raw_results = item.pop("last_results_json", "[]")
+    try:
+        results = json.loads(raw_results or "[]")
+    except (TypeError, json.JSONDecodeError):
+        results = []
+    item["last_results"] = results if isinstance(results, list) else []
+    return item
+
+
+async def get_gap_auto_fill_job(series_id: str, season_number: int) -> dict | None:
+    """读取单个影巢自动补季任务。"""
+    db = await get_db()
+    try:
+        cursor = await db.execute(
+            "SELECT * FROM gap_auto_fill_jobs WHERE series_id = ? AND season_number = ?",
+            (str(series_id or ""), int(season_number)),
+        )
+        return _gap_auto_fill_job_row(await cursor.fetchone())
+    finally:
+        await db.close()
+
+
+async def list_gap_auto_fill_jobs(enabled_only: bool = False) -> list[dict]:
+    """列出影巢自动补季任务。"""
+    db = await get_db()
+    try:
+        if enabled_only:
+            cursor = await db.execute(
+                "SELECT * FROM gap_auto_fill_jobs WHERE enabled = 1 ORDER BY updated_at DESC"
+            )
+        else:
+            cursor = await db.execute(
+                "SELECT * FROM gap_auto_fill_jobs ORDER BY updated_at DESC"
+            )
+        rows = await cursor.fetchall()
+        return [_gap_auto_fill_job_row(row) for row in rows]
+    finally:
+        await db.close()
+
+
+async def enable_gap_auto_fill_job(
+    series_id: str,
+    season_number: int,
+    series_name: str = "",
+    year: int | str = "",
+    tmdb_id: int | str = 0,
+    imdb_id: str = "",
+    library_name: str = "",
+) -> dict | None:
+    """启用或重新启用一个影巢自动补季任务。"""
+    try:
+        tmdb_number = int(tmdb_id or 0)
+    except (TypeError, ValueError):
+        tmdb_number = 0
+    db = await get_db()
+    try:
+        await db.execute(
+            """
+            INSERT INTO gap_auto_fill_jobs
+            (
+                series_id, season_number, series_name, year, tmdb_id, imdb_id, library_name,
+                enabled, status, last_message, last_resource_title, updated_at
+            )
+            VALUES (?, ?, ?, ?, ?, ?, ?, 1, 'waiting', '', '', datetime('now','localtime'))
+            ON CONFLICT(series_id, season_number) DO UPDATE SET
+                series_name = excluded.series_name,
+                year = excluded.year,
+                tmdb_id = excluded.tmdb_id,
+                imdb_id = excluded.imdb_id,
+                library_name = excluded.library_name,
+                enabled = 1,
+                status = 'waiting',
+                last_message = '',
+                last_resource_title = '',
+                updated_at = datetime('now','localtime')
+            """,
+            (
+                str(series_id or ""),
+                int(season_number),
+                str(series_name or ""),
+                str(year or ""),
+                tmdb_number,
+                str(imdb_id or ""),
+                str(library_name or ""),
+            ),
+        )
+        await db.commit()
+    finally:
+        await db.close()
+    return await get_gap_auto_fill_job(series_id, season_number)
+
+
+async def update_gap_auto_fill_job(
+    series_id: str,
+    season_number: int,
+    *,
+    enabled: bool | None = None,
+    status: str | None = None,
+    message: str | None = None,
+    resource_title: str | None = None,
+    results: list[dict] | None = None,
+    increment_attempts: bool = False,
+    touch_run_at: bool = False,
+    require_enabled: bool = False,
+) -> dict | None:
+    """更新自动补季任务状态；require_enabled 可避免覆盖用户刚取消的任务。"""
+    updates: list[str] = []
+    values: list = []
+    if enabled is not None:
+        updates.append("enabled = ?")
+        values.append(1 if enabled else 0)
+    if status is not None:
+        updates.append("status = ?")
+        values.append(str(status or ""))
+    if message is not None:
+        updates.append("last_message = ?")
+        values.append(str(message or ""))
+    if resource_title is not None:
+        updates.append("last_resource_title = ?")
+        values.append(str(resource_title or ""))
+    if results is not None:
+        updates.append("last_results_json = ?")
+        values.append(json.dumps(results[:10], ensure_ascii=False))
+    if increment_attempts:
+        updates.append("attempts = attempts + 1")
+    if touch_run_at:
+        updates.append("last_run_at = datetime('now','localtime')")
+    updates.append("updated_at = datetime('now','localtime')")
+
+    db = await get_db()
+    try:
+        where = "series_id = ? AND season_number = ?"
+        values.extend([str(series_id or ""), int(season_number)])
+        if require_enabled:
+            where += " AND enabled = 1"
+        await db.execute(
+            f"UPDATE gap_auto_fill_jobs SET {', '.join(updates)} WHERE {where}",
+            values,
+        )
+        await db.commit()
+    finally:
+        await db.close()
+    return await get_gap_auto_fill_job(series_id, season_number)
 
 
 async def save_gap_transfer_mark(

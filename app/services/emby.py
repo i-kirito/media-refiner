@@ -1,8 +1,12 @@
 """Emby API 服务 - 复用与 emby-pulse 相同的接口模式"""
 
 from __future__ import annotations
-import httpx
+
+import asyncio
 from typing import Any, Optional
+
+import httpx
+
 from app.config import settings
 
 
@@ -13,6 +17,7 @@ class EmbyClient:
         self.host = (host or settings.emby_host).rstrip("/")
         self.api_key = api_key or settings.emby_api_key
         self._user_id = user_id
+        self._user_id_lock = asyncio.Lock()
         self._client = httpx.AsyncClient(timeout=60.0, verify=False)
 
     def _safe_error(self, error: Exception) -> str:
@@ -61,11 +66,14 @@ class EmbyClient:
         """自动获取 Emby 第一个 UserId"""
         if self._user_id:
             return self._user_id
-        users = await self._get("/emby/Users")
-        if isinstance(users, list) and users:
-            self._user_id = users[0].get("Id", "")
-            return self._user_id
-        return ""
+        async with self._user_id_lock:
+            if self._user_id:
+                return self._user_id
+            users = await self._get("/emby/Users")
+            if isinstance(users, list) and users:
+                self._user_id = users[0].get("Id", "")
+                return self._user_id
+            return ""
 
     # ─── 公共 API ───
 
@@ -116,6 +124,30 @@ class EmbyClient:
         if fields:
             params["Fields"] = fields
         return await self._get(f"/Users/{uid}/Items/{item_id}", params)
+
+    async def item_exists(self, item_id: str) -> bool | None:
+        """检查媒体项是否存在；仅明确的 404 返回 False，其他异常返回 None。"""
+        item_id = str(item_id or "").strip()
+        if not item_id:
+            return None
+        uid = await self._ensure_user_id()
+        if not uid:
+            return None
+
+        path = f"/Users/{uid}/Items/{item_id}"
+        try:
+            resp = await self._client.get(
+                f"{self.host}{path}",
+                params={"api_key": self.api_key},
+                timeout=10.0,
+            )
+            if resp.status_code == 404:
+                return False
+            resp.raise_for_status()
+            return True
+        except Exception as e:
+            print(f"[Emby] EXISTS {path} failed: {self._safe_error(e)}")
+            return None
 
     async def get_playback_info(self, item_id: str) -> dict | None:
         """获取播放信息（含流信息）"""

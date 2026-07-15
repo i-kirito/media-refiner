@@ -43,6 +43,12 @@ async def _tg_callback_poller():
 async def lifespan(app: FastAPI):
     """应用生命周期"""
     await init_db()
+    removed_reviews = await subscribe.reconcile_pending_reviews()
+    if removed_reviews:
+        logger.info("[Subscribe] 启动整理已移除 %s 条重复待审核记录", removed_reviews)
+    removed_stale_reviews = await subscribe.prune_stale_pending_reviews(force=True)
+    if removed_stale_reviews:
+        logger.info("[Subscribe] 启动整理已移除 %s 条失效待审核记录", removed_stale_reviews)
     # 代理字段迁移（兼容旧版本 hdhive_proxy / tg_proxy）
     _migrate_proxy()
     # 启动定时扫描调度器

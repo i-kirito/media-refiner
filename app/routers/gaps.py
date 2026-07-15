@@ -6,7 +6,7 @@ import asyncio
 import logging
 import re
 from collections import defaultdict
-from datetime import datetime
+from datetime import datetime, timedelta
 from pathlib import PurePosixPath, PureWindowsPath
 from typing import Any
 from urllib.parse import urlparse, urlunparse
@@ -22,18 +22,26 @@ from app.database import (
     add_gap_ignore_episode,
     add_gap_ignore_season,
     add_gap_ignore_series,
+    disable_gap_auto_fill_jobs,
+    enable_gap_auto_fill_job,
+    get_gap_auto_fill_enabled,
     get_gap_config,
     get_gap_ignore_targets,
+    list_gap_auto_fill_jobs,
     list_gap_transfer_marks,
     list_gap_ignores,
     load_gap_cache,
     make_gap_episode_target_id,
     make_gap_season_target_id,
+    parse_cache_time,
     remove_gap_ignore,
     remove_gap_ignores,
     save_gap_cache,
     save_gap_config,
     save_gap_transfer_mark,
+    set_gap_auto_fill_enabled,
+    sync_gap_auto_fill_jobs,
+    update_gap_auto_fill_job,
 )
 from app.services.emby import EmbyClient
 from app.services.hdhive import HDHiveClient
@@ -44,6 +52,7 @@ logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/gaps", tags=["缺集管理"])
 
 _scan_task: asyncio.Task | None = None
+_auto_fill_task: asyncio.Task | None = None
 _refresh_lock = asyncio.Lock()
 _scan_status: dict[str, Any] = {
     "is_scanning": False,
@@ -59,10 +68,101 @@ _scan_status: dict[str, Any] = {
     "created_at": "",
     "skipped_libraries": [],
 }
+_auto_fill_status: dict[str, Any] = {
+    "is_running": False,
+    "progress": 0,
+    "total": 0,
+    "processed": 0,
+    "current_item": "",
+    "error": "",
+    "started_at": "",
+    "finished_at": "",
+}
 
 GAP_TRANSFER_SUCCESS_STATUSES = {"transferred", "already_owned", "success", "ok"}
 GAP_RESOURCE_MARK_STATUSES = GAP_TRANSFER_SUCCESS_STATUSES | {"unlocked"}
 OFFICIAL_GROUP_KEYWORDS = ("官组", "官方", "hiveweb", "hhweb", "hdsweb")
+
+
+def _gap_scan_is_running() -> bool:
+    return bool(_scan_status.get("is_scanning")) or (_scan_task is not None and not _scan_task.done())
+
+
+def _gap_auto_fill_is_running() -> bool:
+    return bool(_auto_fill_status.get("is_running")) or (
+        _auto_fill_task is not None and not _auto_fill_task.done()
+    )
+
+
+def _queue_gap_scan_status(current_item: str = "准备扫描") -> None:
+    started_at = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    _scan_status.update(
+        {
+            "is_scanning": True,
+            "progress": 0,
+            "total": 0,
+            "processed": 0,
+            "current_item": current_item,
+            "results": [],
+            "summary": {},
+            "error": "",
+            "started_at": started_at,
+            "finished_at": "",
+            "created_at": "",
+            "skipped_libraries": [],
+        }
+    )
+
+
+def _start_gap_scan_task(current_item: str = "准备扫描") -> bool:
+    global _scan_task
+    if _gap_scan_is_running() or _gap_auto_fill_is_running():
+        return False
+    _queue_gap_scan_status(current_item)
+    _scan_task = asyncio.create_task(_scan_gaps_task())
+    return True
+
+
+def start_gap_scan_if_idle(current_item: str = "准备扫描") -> bool:
+    """给质量扫描定时器调用：空闲时启动一次缺集全库扫描。"""
+    return _start_gap_scan_task(current_item)
+
+
+def _start_gap_auto_fill_task(results: list[dict], uncertain_absences: bool = False) -> bool:
+    global _auto_fill_task
+    if _gap_auto_fill_is_running():
+        return False
+    _auto_fill_task = asyncio.create_task(
+        _run_gap_auto_fill_jobs([dict(item) for item in results], uncertain_absences=uncertain_absences)
+    )
+    return True
+
+
+async def _gap_schedule_state(created_at: str = "") -> dict:
+    interval_hours = _safe_int(settings.scan_schedule, 0)
+    next_scan = ""
+    if interval_hours <= 0:
+        return {
+            "enabled": False,
+            "interval_hours": 0,
+            "next_scan": "",
+            "bound_to": "quality_scan",
+        }
+
+    from app.database import get_quality_cache_age
+
+    cache_info = await get_quality_cache_age()
+    quality_created_at = str((cache_info or {}).get("created_at") or "")
+    last_time = parse_cache_time(quality_created_at) if quality_created_at else None
+    next_scan = ""
+    if last_time:
+        next_scan = (last_time + timedelta(hours=interval_hours)).strftime("%Y-%m-%d %H:%M:%S")
+    return {
+        "enabled": True,
+        "interval_hours": interval_hours,
+        "next_scan": next_scan,
+        "bound_to": "quality_scan",
+    }
 
 
 def _gap_scan_summary(
@@ -174,6 +274,16 @@ class GapDownloadStatusPayload(BaseModel):
     results: list[dict] = Field(default_factory=list)
 
 
+class GapAutoFillPayload(BaseModel):
+    series_id: str
+    season_number: int = 0
+    enabled: bool = True
+
+
+class GapAutoFillAllPayload(BaseModel):
+    enabled: bool = True
+
+
 def _success(data: Any = None, message: str = "") -> dict:
     payload = {"status": "success", "data": data}
     if message:
@@ -192,6 +302,421 @@ def _safe_int(value: Any, default: int = 0) -> int:
         return int(value)
     except (TypeError, ValueError):
         return default
+
+
+def _gap_auto_fill_target(series: dict | None, season_number: int) -> dict | None:
+    if not isinstance(series, dict):
+        return None
+    return next(
+        (
+            gap
+            for gap in (series.get("gaps") or [])
+            if _safe_int(gap.get("season"), -1) == season_number
+            and bool(gap.get("season_missing"))
+            and _safe_int(gap.get("episode"), 0) <= 0
+        ),
+        None,
+    )
+
+
+def _gap_auto_fill_series_identity(series: dict) -> str:
+    tmdb_id = str(series.get("tmdb_id") or "").strip()
+    if tmdb_id and tmdb_id != "0":
+        return f"tmdb:{tmdb_id}"
+    imdb_id = str(series.get("imdb_id") or "").strip().lower()
+    if imdb_id:
+        return f"imdb:{imdb_id}"
+    name = _normalise_gap_series_name(series.get("series_name"))
+    year = str(series.get("year") or "").strip()
+    library = _gap_series_library_key(series)
+    series_id = str(series.get("series_id") or "").strip()
+    return f"lib:{library}|name:{name}|year:{year}|series:{series_id}"
+
+
+def _gap_auto_fill_series_rank(series: dict) -> tuple[int, int, int]:
+    season_gap_count = sum(
+        1
+        for gap in (series.get("gaps") or [])
+        if isinstance(gap, dict)
+        and bool(gap.get("season_missing"))
+        and _safe_int(gap.get("episode"), 0) <= 0
+        and not gap.get("anomaly")
+    )
+    return (
+        season_gap_count,
+        _safe_int(series.get("gap_count"), len(series.get("gaps") or [])),
+        _safe_int(series.get("series_id"), 2**63 - 1),
+    )
+
+
+def _gap_auto_fill_canonical_series(results: list[dict]) -> dict[str, dict]:
+    """同一剧集跨媒体库重复时，只对缺口更少的副本执行无人值守补季。"""
+    canonical: dict[str, dict] = {}
+    for series in results or []:
+        if not isinstance(series, dict) or not str(series.get("series_id") or "").strip():
+            continue
+        identity = _gap_auto_fill_series_identity(series)
+        current = canonical.get(identity)
+        if current is None or _gap_auto_fill_series_rank(series) < _gap_auto_fill_series_rank(current):
+            canonical[identity] = series
+    return canonical
+
+
+def _gap_auto_fill_job_inputs(results: list[dict]) -> list[dict]:
+    jobs: list[dict] = []
+    seen: set[tuple[str, int]] = set()
+    for series in _gap_auto_fill_canonical_series(results).values():
+        series_id = str(series.get("series_id") or "").strip()
+        if not series_id:
+            continue
+        for gap in series.get("gaps") or []:
+            season_number = _safe_int(gap.get("season"), -1)
+            key = (series_id, season_number)
+            if (
+                season_number < 0
+                or key in seen
+                or not bool(gap.get("season_missing"))
+                or _safe_int(gap.get("episode"), 0) > 0
+                or gap.get("anomaly")
+            ):
+                continue
+            seen.add(key)
+            jobs.append(
+                {
+                    "series_id": series_id,
+                    "season_number": season_number,
+                    "series_name": series.get("series_name") or "",
+                    "year": series.get("year") or "",
+                    "tmdb_id": series.get("tmdb_id") or 0,
+                    "imdb_id": series.get("imdb_id") or "",
+                    "library_name": series.get("library_name") or "",
+                }
+            )
+    return jobs
+
+
+def _is_free_gap_hdhive_result(result: dict) -> bool:
+    """无人值守自动补季只使用免费或已经解锁的影巢资源。"""
+    if result.get("is_unlocked") or result.get("ui_unlocked") or result.get("ui_transfer_marked"):
+        return True
+    points = result.get("unlock_points")
+    if points in (None, ""):
+        return False
+    try:
+        return float(points) <= 0
+    except (TypeError, ValueError):
+        return False
+
+
+def _gap_auto_fill_candidate_reason(results: list[dict], targets: list[dict]) -> str:
+    season_matches = [item for item in results if _is_season_only_gap_match(item, targets)]
+    if not season_matches:
+        return "影巢暂未找到匹配的整季资源"
+    identity_matches = [item for item in season_matches if not item.get("ui_identity_mismatch")]
+    if not identity_matches:
+        return "影巢整季资源身份信息不匹配，已跳过"
+    usable = [
+        item
+        for item in identity_matches
+        if str(item.get("slug") or item.get("id") or "").strip()
+    ]
+    if not usable:
+        return "影巢整季资源缺少可转存标识"
+    if not any(_is_free_gap_hdhive_result(item) for item in usable):
+        return "仅找到需要积分的影巢整季资源，等待免费或已解锁资源"
+    return "影巢暂时没有可自动转存的整季资源"
+
+
+def _gap_auto_fill_snapshot_url(result: dict) -> str:
+    for key in ("page_url", "resource_url", "url", "detail_url", "preview_url", "slug"):
+        value = str(result.get(key) or "").strip()
+        if not value.startswith(("http://", "https://")):
+            continue
+        parsed = urlparse(value)
+        if parsed.scheme in {"http", "https"} and parsed.netloc:
+            return urlunparse((parsed.scheme, parsed.netloc, parsed.path or "/", "", "", ""))
+    return ""
+
+
+def _gap_auto_fill_result_snapshot(result: dict, selected: bool = False) -> dict:
+    user = result.get("user") if isinstance(result.get("user"), dict) else {}
+    resolution = result.get("video_resolution")
+    source = result.get("source")
+    if not isinstance(resolution, list):
+        resolution = [resolution] if resolution else []
+    if not isinstance(source, list):
+        source = [source] if source else []
+    points = result.get("unlock_points")
+    return {
+        "title": str(_gap_result_title(result) or "未知资源")[:500],
+        "page_url": _gap_auto_fill_snapshot_url(result),
+        "share_size": str(result.get("share_size") or result.get("size_text") or "")[:100],
+        "size_bytes": _gap_result_size_bytes(result),
+        "unlock_points": points if isinstance(points, (int, float, str)) else "",
+        "is_unlocked": bool(
+            result.get("is_unlocked")
+            or result.get("ui_unlocked")
+            or result.get("ui_transfer_marked")
+        ),
+        "is_official": bool(result.get("ui_is_official") or result.get("is_official")),
+        "eligible": _is_free_gap_hdhive_result(result),
+        "selected": bool(selected),
+        "resolution": [str(item)[:80] for item in resolution[:6] if str(item).strip()],
+        "source": [str(item)[:80] for item in source[:6] if str(item).strip()],
+        "sharer": str(
+            result.get("sharer")
+            or user.get("nickname")
+            or user.get("username")
+            or ""
+        )[:120],
+        "remark": str(result.get("remark") or "")[:500],
+        "match_text": str(result.get("ui_episode_match_text") or "整季包")[:120],
+    }
+
+
+async def _run_gap_auto_fill_jobs(results: list[dict], uncertain_absences: bool = False):
+    try:
+        jobs = await list_gap_auto_fill_jobs(enabled_only=True)
+    except Exception as e:
+        logger.exception("[Gaps] 读取影巢自动补季任务失败")
+        _auto_fill_status.update(
+            {
+                "is_running": False,
+                "error": str(e),
+                "finished_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+            }
+        )
+        return
+    if not jobs:
+        _auto_fill_status.update(
+            {
+                "is_running": False,
+                "progress": 0,
+                "total": 0,
+                "processed": 0,
+                "current_item": "",
+                "error": "",
+                "started_at": "",
+                "finished_at": "",
+            }
+        )
+        return
+
+    started_at = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    _auto_fill_status.update(
+        {
+            "is_running": True,
+            "progress": 0,
+            "total": len(jobs),
+            "processed": 0,
+            "current_item": "准备影巢自动补季",
+            "error": "",
+            "started_at": started_at,
+            "finished_at": "",
+        }
+    )
+    series_by_id = {
+        str(item.get("series_id") or ""): item
+        for item in results
+        if str(item.get("series_id") or "")
+    }
+    canonical_series = _gap_auto_fill_canonical_series(results)
+    canonical_series_ids = {
+        str(item.get("series_id") or "")
+        for item in canonical_series.values()
+        if str(item.get("series_id") or "")
+    }
+
+    try:
+        for index, job in enumerate(jobs, start=1):
+            series_id = str(job.get("series_id") or "")
+            season_number = _safe_int(job.get("season_number"), 0)
+            series = series_by_id.get(series_id)
+            series_name = str((series or {}).get("series_name") or job.get("series_name") or series_id)
+            label = f"{series_name} S{season_number:02d}"
+            _auto_fill_status["current_item"] = f"检查 {label}"
+
+            gap = _gap_auto_fill_target(series, season_number)
+            canonical = canonical_series.get(_gap_auto_fill_series_identity(series)) if series else None
+            if series and series_id not in canonical_series_ids and canonical:
+                canonical_library = str(canonical.get("library_name") or "更完整媒体库")
+                await update_gap_auto_fill_job(
+                    series_id,
+                    season_number,
+                    enabled=False,
+                    status="disabled",
+                    message=f"检测到同一剧集的重复媒体库副本，已改用“{canonical_library}”中的更完整条目",
+                )
+            elif not series and uncertain_absences:
+                await update_gap_auto_fill_job(
+                    series_id,
+                    season_number,
+                    status="waiting",
+                    message="本次扫描存在跳过或异常，未确认该整季缺口，任务继续保留",
+                    require_enabled=True,
+                )
+            elif not gap:
+                await update_gap_auto_fill_job(
+                    series_id,
+                    season_number,
+                    enabled=False,
+                    status="completed",
+                    message="本次缺集扫描已无该整季缺口，任务自动停止",
+                )
+            elif gap.get("anomaly"):
+                await update_gap_auto_fill_job(
+                    series_id,
+                    season_number,
+                    enabled=False,
+                    status="blocked",
+                    message="缺季数据存在异常，自动任务已停止",
+                )
+            else:
+                target = {"season": season_number, "episodes": [], "season_missing": True}
+                targets = [target]
+                search_job = await update_gap_auto_fill_job(
+                    series_id,
+                    season_number,
+                    status="searching",
+                    message="正在搜索影巢整季资源",
+                    increment_attempts=True,
+                    touch_run_at=True,
+                    require_enabled=True,
+                )
+                if not search_job or not search_job.get("enabled"):
+                    _auto_fill_status.update(
+                        {
+                            "processed": index,
+                            "progress": int(index / len(jobs) * 100),
+                            "current_item": f"已取消 {label}",
+                        }
+                    )
+                    continue
+                _auto_fill_status["current_item"] = f"搜索 {label}"
+                payload = GapSearchPayload(
+                    series_id=series_id,
+                    series_name=series_name,
+                    year=(series or {}).get("year") or job.get("year") or "",
+                    season=season_number,
+                    targets=[GapTargetPayload(**target)],
+                    tmdb_id=(series or {}).get("tmdb_id") or job.get("tmdb_id") or 0,
+                    imdb_id=(series or {}).get("imdb_id") or job.get("imdb_id") or "",
+                    library_name=(series or {}).get("library_name") or job.get("library_name") or "",
+                    type="tv",
+                )
+                try:
+                    search_data, search_message = await _search_gap_hdhive_data(payload)
+                    search_results = search_data.get("results") or []
+                except Exception as e:
+                    search_results = []
+                    search_message = f"影巢搜索异常: {e}"
+                    logger.exception("[Gaps] 自动补季搜索失败: %s", label)
+
+                matched_results = [
+                    item
+                    for item in search_results
+                    if _is_season_only_gap_match(item, targets)
+                    and not item.get("ui_identity_mismatch")
+                    and str(item.get("slug") or item.get("id") or "").strip()
+                ]
+                candidates = [item for item in matched_results if _is_free_gap_hdhive_result(item)]
+                candidate = candidates[0] if candidates else None
+                result_snapshots = [
+                    _gap_auto_fill_result_snapshot(item, selected=item is candidate)
+                    for item in matched_results[:6]
+                ]
+                if not candidates:
+                    message = search_message or _gap_auto_fill_candidate_reason(search_results, targets)
+                    await update_gap_auto_fill_job(
+                        series_id,
+                        season_number,
+                        status="waiting",
+                        message=message,
+                        resource_title="",
+                        results=result_snapshots,
+                        require_enabled=True,
+                    )
+                else:
+                    resource_title = _gap_result_title(candidate)
+                    transfer_job = await update_gap_auto_fill_job(
+                        series_id,
+                        season_number,
+                        status="transferring",
+                        message="正在转存影巢整季资源",
+                        resource_title=resource_title,
+                        results=result_snapshots,
+                        require_enabled=True,
+                    )
+                    if not transfer_job or not transfer_job.get("enabled"):
+                        _auto_fill_status.update(
+                            {
+                                "processed": index,
+                                "progress": int(index / len(jobs) * 100),
+                                "current_item": f"已取消 {label}",
+                            }
+                        )
+                        continue
+                    _auto_fill_status["current_item"] = f"转存 {label}"
+                    response = await download_gap_hdhive(
+                        GapDownloadPayload(
+                            result=candidate,
+                            tmdb_id=payload.tmdb_id,
+                            slug=candidate.get("slug") or candidate.get("id") or "",
+                            series_id=series_id,
+                            series_name=series_name,
+                            season=season_number,
+                            targets=[GapTargetPayload(**target)],
+                        )
+                    )
+                    transfer_status = _gap_transfer_status(
+                        response.get("data") if isinstance(response, dict) else None
+                    )
+                    if (
+                        isinstance(response, dict)
+                        and response.get("status") == "success"
+                        and _is_gap_transfer_success_status(transfer_status)
+                    ):
+                        message = response.get("message") or "影巢整季资源已转存"
+                        await update_gap_auto_fill_job(
+                            series_id,
+                            season_number,
+                            enabled=False,
+                            status="completed",
+                            message=f"{message}，任务自动停止",
+                            resource_title=resource_title,
+                        )
+                    else:
+                        message = (
+                            response.get("message")
+                            if isinstance(response, dict)
+                            else "影巢整季资源转存失败"
+                        )
+                        await update_gap_auto_fill_job(
+                            series_id,
+                            season_number,
+                            status="error",
+                            message=message or "影巢整季资源转存失败",
+                            resource_title=resource_title,
+                            require_enabled=True,
+                        )
+
+            _auto_fill_status.update(
+                {
+                    "processed": index,
+                    "progress": int(index / len(jobs) * 100),
+                }
+            )
+            await asyncio.sleep(0.5)
+    except Exception as e:
+        logger.exception("[Gaps] 影巢自动补季任务异常")
+        _auto_fill_status["error"] = str(e)
+    finally:
+        _auto_fill_status.update(
+            {
+                "is_running": False,
+                "finished_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+            }
+        )
 
 
 def _gap_result_size_bytes(result: dict) -> int:
@@ -723,51 +1248,68 @@ def _season_episode_from_text(text: str, fallback_season: int = -1) -> tuple[int
     match = re.search(r"(?<![a-z0-9])e0?(\d{1,4})(?!\d)", value, re.I)
     if match and fallback_season >= 0:
         return fallback_season, _safe_int(match.group(1), -1)
+    match = re.search(r"第\s*0*(\d{1,4})\s*[集期话話]", value)
+    if match and fallback_season >= 0:
+        return fallback_season, _safe_int(match.group(1), -1)
+    match = re.search(r"(?<!\d)0*(\d{1,4})\s*[集期话話]", value)
+    if match and fallback_season >= 0:
+        return fallback_season, _safe_int(match.group(1), -1)
     return fallback_season, -1
 
 
 async def _cloud115_collect_seasons(c115, folder_id: str, depth: int = 0, season_hint: int = -1) -> tuple[dict[int, set[int]], set[int], list[str], list[str]]:
-    result = await c115.list_files(str(folder_id), limit=115)
     episodes_by_season: dict[int, set[int]] = defaultdict(set)
     seasons_with_content: set[int] = set()
     names: list[str] = []
     path_ids: list[str] = []
-    if not isinstance(result, dict) or not result.get("state"):
-        return episodes_by_season, seasons_with_content, names, path_ids
+    page_limit = 115
+    offset = 0
+    max_pages = 50
+    for _ in range(max_pages):
+        result = await c115.list_files(str(folder_id), limit=page_limit, offset=offset)
+        if not isinstance(result, dict) or not result.get("state"):
+            if offset == 0:
+                return episodes_by_season, seasons_with_content, names, path_ids
+            break
 
-    for item in result.get("path") or []:
-        if isinstance(item, dict) and item.get("cid"):
-            path_ids.append(str(item.get("cid")))
+        if offset == 0:
+            for item in result.get("path") or []:
+                if isinstance(item, dict) and item.get("cid"):
+                    path_ids.append(str(item.get("cid")))
 
-    for item in result.get("data") or []:
-        if not isinstance(item, dict):
-            continue
-        name = str(item.get("n") or "")
-        if name:
-            names.append(name)
-        is_folder = _safe_int(item.get("fc"), 1) == 0 or (item.get("cid") and not item.get("fid"))
-        if is_folder:
-            item_season = _season_number_from_text(name)
-            next_hint = item_season if item_season >= 0 else season_hint
-            if next_hint >= 0:
-                seasons_with_content.add(next_hint)
-            if depth < 3 and item.get("cid"):
-                child_eps, child_seasons, child_names, _ = await _cloud115_collect_seasons(
-                    c115,
-                    str(item.get("cid")),
-                    depth + 1,
-                    next_hint,
-                )
-                names.extend(child_names[:20])
-                seasons_with_content.update(child_seasons)
-                for season, eps in child_eps.items():
-                    episodes_by_season[season].update(eps)
-            continue
-        season, episode = _season_episode_from_text(name, season_hint)
-        if season >= 0:
-            seasons_with_content.add(season)
-            if episode > 0:
-                episodes_by_season[season].add(episode)
+        items = [item for item in (result.get("data") or []) if isinstance(item, dict)]
+        for item in items:
+            name = str(item.get("n") or "")
+            if name:
+                names.append(name)
+            is_folder = _safe_int(item.get("fc"), 1) == 0 or (item.get("cid") and not item.get("fid"))
+            if is_folder:
+                item_season = _season_number_from_text(name)
+                next_hint = item_season if item_season >= 0 else season_hint
+                if next_hint >= 0:
+                    seasons_with_content.add(next_hint)
+                if depth < 3 and item.get("cid"):
+                    child_eps, child_seasons, child_names, _ = await _cloud115_collect_seasons(
+                        c115,
+                        str(item.get("cid")),
+                        depth + 1,
+                        next_hint,
+                    )
+                    names.extend(child_names[:20])
+                    seasons_with_content.update(child_seasons)
+                    for season, eps in child_eps.items():
+                        episodes_by_season[season].update(eps)
+                continue
+            season, episode = _season_episode_from_text(name, season_hint)
+            if season >= 0:
+                seasons_with_content.add(season)
+                if episode > 0:
+                    episodes_by_season[season].add(episode)
+
+        total = _safe_int(result.get("count"), 0)
+        if not items or len(items) < page_limit or (total > 0 and offset + len(items) >= total):
+            break
+        offset += len(items)
     return episodes_by_season, seasons_with_content, names, path_ids
 
 
@@ -869,7 +1411,13 @@ async def _ensure_cloud115_child_folder(c115, parent_id: str, folder_name: str) 
 
 
 async def _verify_cloud115_transfer_target(c115, folder_id: str, targets: list[dict]) -> dict:
-    episodes_by_season, seasons_with_content, names, _ = await _cloud115_collect_seasons(c115, folder_id)
+    target_seasons = {
+        _safe_int(target.get("season"), -1)
+        for target in targets
+        if _safe_int(target.get("season"), -1) >= 0
+    }
+    season_hint = next(iter(target_seasons)) if len(target_seasons) == 1 else -1
+    episodes_by_season, seasons_with_content, names, _ = await _cloud115_collect_seasons(c115, folder_id, season_hint=season_hint)
     ok = _cloud115_folder_satisfies_targets(episodes_by_season, seasons_with_content, targets)
     return {
         "ok": ok,
@@ -904,6 +1452,151 @@ async def _wait_verify_cloud115_transfer_target(
     return last_result
 
 
+def _missing_gap_targets_from_verify(verify_result: dict, targets: list[dict]) -> list[dict]:
+    episodes_by_season: dict[int, set[int]] = defaultdict(set)
+    raw_episodes = verify_result.get("episodes_by_season") if isinstance(verify_result, dict) else {}
+    if isinstance(raw_episodes, dict):
+        for raw_season, episodes in raw_episodes.items():
+            season = _safe_int(raw_season, -1)
+            if season < 0:
+                continue
+            episodes_by_season[season].update(_safe_int(ep, 0) for ep in episodes or [] if _safe_int(ep, 0) > 0)
+
+    seasons_with_content = {
+        _safe_int(season, -1)
+        for season in ((verify_result or {}).get("seasons_with_content") or [])
+        if _safe_int(season, -1) >= 0
+    }
+    missing: list[dict] = []
+    for target in targets:
+        season = _safe_int(target.get("season"), -1)
+        if season < 0:
+            continue
+        episodes = sorted({_safe_int(ep, 0) for ep in target.get("episodes") or [] if _safe_int(ep, 0) > 0})
+        if episodes:
+            missing_episodes = [ep for ep in episodes if ep not in episodes_by_season.get(season, set())]
+            if missing_episodes:
+                missing.append({"season": season, "episodes": missing_episodes})
+        elif season not in seasons_with_content and not episodes_by_season.get(season):
+            missing.append({"season": season, "episodes": [], "season_missing": True})
+    return missing
+
+
+def _gap_episode_recover_search_terms(payload: GapDownloadPayload, result: dict, season: int, episode: int) -> list[str]:
+    series_names: list[str] = []
+    for value in (payload.series_name, _gap_result_title(result), result.get("resource_title"), result.get("name")):
+        text = str(value or "").strip()
+        simple = re.sub(r"[\(\（][^\)\）]*[\)\）]", "", text).strip()
+        for candidate in (text, simple):
+            if candidate and candidate not in series_names:
+                series_names.append(candidate)
+
+    episode_tokens = [
+        f"S{season:02d}E{episode:03d}",
+        f"S{season:02d}E{episode:02d}",
+        f"S{season:02d}E{episode}",
+        f"第{episode}集",
+    ]
+    terms: list[str] = []
+    for name in series_names:
+        for token in episode_tokens:
+            term = f"{name} {token}".strip()
+            if term not in terms:
+                terms.append(term)
+    return terms
+
+
+def _cloud115_search_item_matches_episode(item: dict, series_name: str, season: int, episode: int) -> bool:
+    name = _cloud115_item_name(item)
+    if not name:
+        return False
+    series_token = _normalise_title(series_name)
+    if series_token and series_token not in _normalise_title(name):
+        return False
+    item_season, item_episode = _season_episode_from_text(name, season)
+    return item_season == season and item_episode == episode
+
+
+async def _recover_existing_gap_episode_files(
+    c115,
+    payload: GapDownloadPayload,
+    result: dict,
+    folder_id: str,
+    targets: list[dict],
+    verify_result: dict | None = None,
+) -> dict:
+    """校验缺单集时，从 115 账号内精确搜索已有文件并复制回目标目录。"""
+    missing_targets = _missing_gap_targets_from_verify(verify_result or {}, targets) if verify_result else targets
+    missing_targets = [target for target in missing_targets if target.get("episodes")]
+    if not missing_targets:
+        return {"ok": False, "skipped": True, "message": "没有可按单集恢复的缺口"}
+
+    source_ids: list[str] = []
+    recovered_labels: list[str] = []
+    missing_labels: list[str] = []
+    checked_terms: set[str] = set()
+    series_name = payload.series_name or _gap_result_title(result)
+    for target in missing_targets:
+        season = _safe_int(target.get("season"), -1)
+        if season < 0:
+            continue
+        for episode in sorted({_safe_int(ep, 0) for ep in target.get("episodes") or [] if _safe_int(ep, 0) > 0}):
+            found_id = ""
+            for term in _gap_episode_recover_search_terms(payload, result, season, episode):
+                if term in checked_terms:
+                    continue
+                checked_terms.add(term)
+                search = await c115.search_files(term, limit=20)
+                if not isinstance(search, dict) or not search.get("state"):
+                    continue
+                for item in search.get("data") or []:
+                    if not isinstance(item, dict) or _cloud115_item_is_folder(item):
+                        continue
+                    if not _cloud115_search_item_matches_episode(item, series_name, season, episode):
+                        continue
+                    found_id = str(item.get("fid") or "").strip()
+                    if found_id:
+                        break
+                if found_id:
+                    break
+            label = _gap_episode_summary(season, [episode])
+            if found_id:
+                if found_id not in source_ids:
+                    source_ids.append(found_id)
+                recovered_labels.append(label)
+            else:
+                missing_labels.append(label)
+
+    if missing_labels:
+        return {"ok": False, "message": f"115 账号内未找到可恢复文件: {', '.join(missing_labels[:8])}"}
+    if not source_ids:
+        return {"ok": False, "message": "115 账号内未找到可复制的缺口文件"}
+
+    copy_result = await c115.copy_files(source_ids, folder_id)
+    copy_ok = isinstance(copy_result, dict) and copy_result.get("state") is True
+    copy_pending = isinstance(copy_result, dict) and _safe_int(copy_result.get("errno"), 0) == 990009
+    if not copy_ok and not copy_pending:
+        message = copy_result.get("error") or copy_result.get("message") if isinstance(copy_result, dict) else ""
+        return {"ok": False, "message": message or "115 缺口文件复制失败", "data": copy_result}
+
+    final_verify = await _wait_verify_cloud115_transfer_target(c115, folder_id, targets)
+    if final_verify.get("ok"):
+        return {
+            "ok": True,
+            "mode": "file_copy",
+            "message": f"已从 115 账号内补拷缺口文件: {', '.join(recovered_labels[:8])}",
+            "file_count": len(source_ids),
+            "data": copy_result,
+            "verify": final_verify,
+        }
+    return {
+        "ok": False,
+        "message": final_verify.get("message") or "115 已复制缺口文件，但目标目录仍未校验通过",
+        "data": copy_result,
+        "verify": final_verify,
+    }
+
+
 def _iter_text_values(value: Any):
     if isinstance(value, str):
         yield value
@@ -931,24 +1624,24 @@ def _share_item_parent_cid(item: dict) -> str:
     return str(item.get("__share_parent_cid") or "0").strip() or "0"
 
 
-def _share_item_episode(name: str) -> tuple[int, int] | None:
-    match = re.search(r"(?<![a-z0-9])s0?(\d{1,2})[ ._-]*e0?(\d{1,4})(?!\d)", str(name or ""), re.I)
-    if not match:
+def _share_item_episode(name: str, fallback_season: int = -1) -> tuple[int, int] | None:
+    season, episode = _season_episode_from_text(name, fallback_season)
+    if season < 0 or episode <= 0:
         return None
-    return _safe_int(match.group(1), -1), _safe_int(match.group(2), -1)
+    return season, episode
 
 
 def _share_item_matches_gap_targets(item: dict, targets: list[dict], full_series: bool = False) -> bool:
     if full_series or not targets:
         return True
     name = _share_item_name(item)
-    episode = _share_item_episode(name)
     season_from_name = _season_number_from_text(name)
     for target in targets:
         season = _safe_int(target.get("season"), -1)
         if season < 0:
             continue
         episodes = sorted({_safe_int(ep, 0) for ep in target.get("episodes") or [] if _safe_int(ep, 0) > 0})
+        episode = _share_item_episode(name, season)
         if episode:
             item_season, item_episode = episode
             if item_season != season:
@@ -1193,11 +1886,15 @@ async def _recover_already_owned_gap_transfer(
                         "data": copy_result,
                     }
                 return {"ok": False, "message": f"115 已找到已有文件夹，但复制失败: {message}", "data": copy_result}
+        file_result = await _recover_existing_gap_episode_files(c115, payload, result, folder_id, targets)
+        if file_result.get("ok"):
+            return file_result
+        file_message = "" if file_result.get("skipped") else str(file_result.get("message") or "")
         return {
             "ok": False,
             "message": (
                 f"115 提示已转存过，但账号内未找到包含 {target_text} 的已有文件；"
-                f"{share_message or '无法直接重新接收'}"
+                f"{file_message or share_message or '无法直接重新接收'}"
             ),
         }
     finally:
@@ -1284,17 +1981,21 @@ def _tmdb_season_started(season: dict) -> bool:
         return False
 
 
+def _tmdb_episode_count(season: dict) -> int:
+    return _safe_int(
+        season.get("episode_count")
+        or season.get("episodeCount")
+        or season.get("total_episode")
+        or season.get("totalEpisode"),
+        0,
+    )
+
+
 def _tmdb_season_map(seasons: list[dict]) -> dict[int, dict]:
     season_map: dict[int, dict] = {}
     for season in seasons:
         season_num = _safe_int(season.get("season_number") or season.get("season"), 0)
-        episode_count = _safe_int(
-            season.get("episode_count")
-            or season.get("episodeCount")
-            or season.get("total_episode")
-            or season.get("totalEpisode"),
-            0,
-        )
+        episode_count = _tmdb_episode_count(season)
         if season_num <= 0 or episode_count <= 0 or not _tmdb_season_started(season):
             continue
         season_map[season_num] = season
@@ -1340,6 +2041,71 @@ async def _fetch_expected_season_map(
     if season_cache is not None:
         season_cache[cache_key] = season_map
     return season_map
+
+
+async def _fetch_tmdb_episode_counts(tmdb_id: int | str, timeout: float = 3.0) -> dict[int, int]:
+    tmdb_num = _safe_int(tmdb_id, 0)
+    if tmdb_num <= 0:
+        return {}
+    mp = MoviePilotClient()
+    try:
+        if not mp.is_configured:
+            return {}
+        seasons = await asyncio.wait_for(mp.get_tmdb_seasons(tmdb_num), timeout=timeout)
+    except Exception as e:
+        logger.info("[Gaps] 读取 TMDB 集数上限失败: tmdb=%s %s", tmdb_num, e)
+        return {}
+    finally:
+        await mp.close()
+
+    counts: dict[int, int] = {}
+    for season in seasons:
+        season_num = _safe_int(season.get("season_number") or season.get("season"), 0)
+        episode_count = _tmdb_episode_count(season)
+        if season_num > 0 and episode_count > 0 and _tmdb_season_started(season):
+            counts[season_num] = episode_count
+    return counts
+
+
+def _limit_gap_targets_by_episode_counts(targets: list[dict], episode_counts: dict[int, int]) -> tuple[list[dict], list[dict]]:
+    if not targets or not episode_counts:
+        return targets, []
+
+    limited: list[dict] = []
+    removed: list[dict] = []
+    for target in targets:
+        season = _safe_int(target.get("season"), -1)
+        episodes = sorted({_safe_int(ep, 0) for ep in target.get("episodes") or [] if _safe_int(ep, 0) > 0})
+        episode_count = episode_counts.get(season, 0)
+        if season < 0 or episode_count <= 0 or not episodes:
+            limited.append(target)
+            continue
+
+        kept = [ep for ep in episodes if ep <= episode_count]
+        dropped = [ep for ep in episodes if ep > episode_count]
+        if kept:
+            next_target = dict(target)
+            next_target["episodes"] = kept
+            limited.append(next_target)
+        if dropped:
+            removed.append({"season": season, "episodes": dropped, "episode_count": episode_count})
+    return limited, removed
+
+
+def _tmdb_episode_limit_message(removed_targets: list[dict]) -> str:
+    if not removed_targets:
+        return ""
+    parts = [
+        f"S{_safe_int(target.get('season'), 0):02d} 最多 {_safe_int(target.get('episode_count'), 0)} 集"
+        for target in removed_targets[:3]
+    ]
+    return "目标集数超出 TMDB 已知总集数：" + "，".join(parts)
+
+
+async def _limit_gap_targets_by_tmdb(tmdb_id: int | str, targets: list[dict]) -> tuple[list[dict], str]:
+    episode_counts = await _fetch_tmdb_episode_counts(tmdb_id)
+    limited, removed = _limit_gap_targets_by_episode_counts(targets, episode_counts)
+    return limited, _tmdb_episode_limit_message(removed)
 
 
 def _missing_season_numbers(
@@ -1808,6 +2574,11 @@ async def _scan_one_series(
 
     expected_season_map = await _fetch_expected_season_map(mp, series, season_cache, timeout=tmdb_timeout)
     expected_season_nums = set(expected_season_map)
+    expected_episode_counts = {
+        season_num: _tmdb_episode_count(season_info)
+        for season_num, season_info in expected_season_map.items()
+        if _tmdb_episode_count(season_info) > 0
+    }
     existing_season_numbers = {num for num in season_numbers if num > 0} | {num for num in seasons if num > 0}
 
     gaps: list[dict] = []
@@ -1858,6 +2629,16 @@ async def _scan_one_series(
                 known_missing[episode_num] = slot
 
         for episode_num, slot in sorted(known_missing.items()):
+            expected_count = expected_episode_counts.get(season_num, 0)
+            if expected_count and episode_num > expected_count:
+                logger.info(
+                    "[Gaps] 跳过 TMDB 集数外的 Emby 缺失项: %s S%02dE%02d > %s",
+                    series.get("Name") or series_id,
+                    season_num,
+                    episode_num,
+                    expected_count,
+                )
+                continue
             target_id = _episode_target_id(series_id, season_num, episode_num)
             if target_id in ignored:
                 continue
@@ -1883,6 +2664,11 @@ async def _scan_one_series(
             continue
 
         sorted_present = sorted(set(present_nums))
+        expected_count = expected_episode_counts.get(season_num, 0)
+        if expected_count:
+            sorted_present = [episode_num for episode_num in sorted_present if episode_num <= expected_count]
+            if not sorted_present:
+                continue
         missing_set = set(known_missing)
         inferred_nums: list[int] = []
 
@@ -1906,6 +2692,8 @@ async def _scan_one_series(
                 )
 
         for episode_num in sorted(set(inferred_nums)):
+            if expected_count and episode_num > expected_count:
+                continue
             if episode_num in missing_set:
                 continue
             target_id = _episode_target_id(series_id, season_num, episode_num)
@@ -2059,6 +2847,7 @@ async def _scan_gaps_task():
 
         results: list[dict] = []
         processed = 0
+        series_error_count = 0
 
         def publish_scan_snapshot(current_item: str = ""):
             visible_results = sorted(
@@ -2124,6 +2913,7 @@ async def _scan_gaps_task():
                     processed += 1
                     if isinstance(item, Exception):
                         failed_count += 1
+                        series_error_count += 1
                         logger.warning("[Gaps] 扫描剧集异常: %s", item)
                     elif item:
                         results.append(item)
@@ -2165,6 +2955,21 @@ async def _scan_gaps_task():
             }
         )
         logger.info("[Gaps] 缺集扫描完成: %s 部剧集 / %s 个缺口", summary["series_count"], summary["gap_count"])
+        if await get_gap_auto_fill_enabled():
+            inventory_complete = not bool(skipped_libraries or series_error_count)
+            synced = await sync_gap_auto_fill_jobs(
+                _gap_auto_fill_job_inputs(results),
+                prune_missing=inventory_complete,
+            )
+            logger.info("[Gaps] 已同步 %s 个整季缺口到影巢自动补季", synced)
+            if await get_gap_auto_fill_enabled():
+                if _start_gap_auto_fill_task(
+                    results,
+                    uncertain_absences=bool(skipped_libraries or series_error_count),
+                ):
+                    logger.info("[Gaps] 缺集扫描完成，已检查影巢自动补季任务")
+            else:
+                await disable_gap_auto_fill_jobs()
     except Exception as e:
         logger.exception("[Gaps] 缺集扫描失败")
         _scan_status.update(
@@ -2201,27 +3006,11 @@ async def _hydrate_cache_if_needed():
 @router.post("/scan/start")
 async def start_gap_scan():
     """启动缺集扫描。"""
-    global _scan_task
-    if _scan_status.get("is_scanning"):
+    if _gap_scan_is_running():
         return _error("缺集扫描正在运行")
-    started_at = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-    _scan_status.update(
-        {
-            "is_scanning": True,
-            "progress": 0,
-            "total": 0,
-            "processed": 0,
-            "current_item": "准备扫描",
-            "results": [],
-            "summary": {},
-            "error": "",
-            "started_at": started_at,
-            "finished_at": "",
-            "created_at": "",
-            "skipped_libraries": [],
-        }
-    )
-    _scan_task = asyncio.create_task(_scan_gaps_task())
+    if _gap_auto_fill_is_running():
+        return _error("影巢自动补季正在运行，请稍后再扫描")
+    _start_gap_scan_task("准备扫描")
     return _success({"started": True}, "已启动缺集扫描")
 
 
@@ -2229,7 +3018,125 @@ async def start_gap_scan():
 async def gap_scan_progress():
     """获取缺集扫描进度和最新结果。"""
     await _hydrate_cache_if_needed()
-    return _success(dict(_scan_status))
+    status = dict(_scan_status)
+    status["schedule"] = await _gap_schedule_state(str(status.get("created_at") or ""))
+    status["auto_fill"] = dict(_auto_fill_status)
+    status["auto_fill_jobs"] = await list_gap_auto_fill_jobs()
+    status["auto_fill_enabled"] = await get_gap_auto_fill_enabled()
+    return _success(status)
+
+
+@router.get("/auto-fill")
+async def gap_auto_fill_jobs():
+    """读取影巢自动补季任务和当前运行状态。"""
+    return _success(
+        {
+            "enabled": await get_gap_auto_fill_enabled(),
+            "jobs": await list_gap_auto_fill_jobs(),
+            "run": dict(_auto_fill_status),
+        }
+    )
+
+
+@router.post("/auto-fill/toggle-all")
+async def toggle_gap_auto_fill_all(payload: GapAutoFillAllPayload):
+    """启用或关闭全局影巢自动补季。"""
+    enabled = bool(payload.enabled)
+    await set_gap_auto_fill_enabled(enabled)
+
+    if not enabled:
+        disabled = await disable_gap_auto_fill_jobs()
+        return _success(
+            {
+                "enabled": False,
+                "jobs": await list_gap_auto_fill_jobs(),
+                "disabled": disabled,
+            },
+            "已关闭影巢自动补季",
+        )
+
+    await _hydrate_cache_if_needed()
+    if _gap_scan_is_running():
+        return _success(
+            {
+                "enabled": True,
+                "jobs": await list_gap_auto_fill_jobs(),
+                "synced": 0,
+            },
+            "已启用，将在本次缺集扫描完成后同步整季缺口",
+        )
+
+    results = [dict(item) for item in (_scan_status.get("results") or [])]
+    summary = dict(_scan_status.get("summary") or {})
+    synced = await sync_gap_auto_fill_jobs(
+        _gap_auto_fill_job_inputs(results),
+        reset_completed=True,
+        prune_missing=bool(_scan_status.get("created_at")) and not bool(summary.get("partial")),
+    )
+    return _success(
+        {
+            "enabled": True,
+            "jobs": await list_gap_auto_fill_jobs(),
+            "synced": synced,
+        },
+        f"已启用影巢自动补季，共纳入 {synced} 个整季缺口",
+    )
+
+
+@router.post("/auto-fill/toggle")
+async def toggle_gap_auto_fill(payload: GapAutoFillPayload):
+    """启用或取消单季影巢自动补齐。"""
+    series_id = str(payload.series_id or "").strip()
+    season_number = _safe_int(payload.season_number, -1)
+    if not series_id or season_number < 0:
+        return _error("缺少剧集或季号参数")
+
+    if not payload.enabled:
+        job = await update_gap_auto_fill_job(
+            series_id,
+            season_number,
+            enabled=False,
+            status="disabled",
+            message="已手动取消自动补季",
+        )
+        return _success({"job": job}, "已取消影巢自动补季")
+
+    if _gap_scan_is_running():
+        return _error("缺集扫描正在运行，请稍后再启用")
+    await _hydrate_cache_if_needed()
+    series = next(
+        (
+            item
+            for item in (_scan_status.get("results") or [])
+            if str(item.get("series_id") or "") == series_id
+        ),
+        None,
+    )
+    gap = _gap_auto_fill_target(series, season_number)
+    if not gap:
+        return _error("当前缓存中没有该整季缺口，请先刷新该剧")
+    if gap.get("anomaly"):
+        return _error("该缺季存在数据异常，不能启用自动补季")
+    canonical = _gap_auto_fill_canonical_series(
+        [item for item in (_scan_status.get("results") or []) if isinstance(item, dict)]
+    ).get(_gap_auto_fill_series_identity(series))
+    if canonical and str(canonical.get("series_id") or "") != series_id:
+        canonical_library = str(canonical.get("library_name") or "其他媒体库")
+        return _error(f"同一剧集已有更完整的“{canonical_library}”副本，请在该条目启用自动补季")
+
+    job = await enable_gap_auto_fill_job(
+        series_id=series_id,
+        season_number=season_number,
+        series_name=series.get("series_name") or "",
+        year=series.get("year") or "",
+        tmdb_id=series.get("tmdb_id") or 0,
+        imdb_id=series.get("imdb_id") or "",
+        library_name=series.get("library_name") or "",
+    )
+    return _success(
+        {"job": job},
+        "已启用：每次缺集扫描后仅使用影巢免费或已解锁整季资源",
+    )
 
 
 @router.get("/series/{series_id}/episodes")
@@ -2326,6 +3233,7 @@ async def gap_series_episodes(series_id: str):
                     "year": (series or {}).get("ProductionYear") or (cached or {}).get("year") or "",
                     "library_id": (series or {}).get("ParentId") or (cached or {}).get("library_id") or "",
                     "library_name": (cached or {}).get("library_name") or "",
+                    "path": (series or {}).get("Path") or (cached or {}).get("path") or "",
                 },
                 "summary": summary,
                 "episodes": episode_rows,
@@ -2346,6 +3254,8 @@ async def refresh_gap_series(payload: GapRefreshSeriesPayload):
         return _error("缺少剧集 ID")
     if _scan_status.get("is_scanning"):
         return _error("全库缺集扫描正在运行，请稍后再刷新单部剧集")
+    if _gap_auto_fill_is_running():
+        return _error("影巢自动补季正在运行，请稍后再刷新")
 
     async with _refresh_lock:
         await _hydrate_cache_if_needed()
@@ -2424,6 +3334,7 @@ async def verify_gap_scan():
 @router.get("/config")
 async def gap_config():
     cfg = await get_gap_config()
+    schedule_hours = _safe_int(settings.scan_schedule, 0)
     data = {
         "client_type": "emby",
         "client_url": settings.emby_host,
@@ -2431,6 +3342,12 @@ async def gap_config():
         "client_pass": "已设置" if settings.emby_api_key else "",
         "excluded_libraries": cfg.get("excluded_libraries", []),
         "cache_interval_hours": cfg.get("cache_interval_hours", 6),
+        "auto_fill_enabled": bool(cfg.get("auto_fill_enabled")),
+        "scan_schedule": {
+            "enabled": schedule_hours > 0,
+            "interval_hours": schedule_hours,
+            "bound_to": "quality_scan",
+        },
     }
     return _success(data)
 
@@ -2590,6 +3507,23 @@ def _season_collection_count(text: str) -> int:
     return 0
 
 
+def _explicit_episode_upper_bound(text: str) -> int:
+    """识别“全26集 / 26集完结 / 1-26集”这类资源明确覆盖到第几集。"""
+    bounds: list[int] = []
+    patterns = [
+        r"(?:全|共|总共|全集)\s*0*(\d{1,4})\s*[集期话話]",
+        r"0*(\d{1,4})\s*[集期话話]\s*(?:全|全集|完结|完|complete)",
+        r"(?:更新到|更新至|更到|更至|至|到)\s*0*(\d{1,4})\s*[集期话話]",
+        r"(?:第\s*)?0*1\s*(?:-|~|至|到)\s*0*(\d{1,4})\s*[集期话話]",
+    ]
+    for pattern in patterns:
+        for match in re.finditer(pattern, text, re.I):
+            bound = _safe_int(match.group(1), 0)
+            if bound > 0:
+                bounds.append(bound)
+    return max(bounds) if bounds else 0
+
+
 def _episode_range(start: int, end: int, targets: set[int]) -> list[int]:
     return [ep for ep in _episode_span(start, end) if ep in targets]
 
@@ -2713,6 +3647,7 @@ def _episode_match_ratio(
             text,
         )
     )
+    ongoing_episode_marker = bool(re.search(r"(?:更新到|更新至|更到|更至)\s*0*\d{1,4}\s*[集期话話]", text))
     has_target_season = (
         season in explicit_seasons
         or any(token in text for token in season_tokens if token)
@@ -2723,18 +3658,21 @@ def _episode_match_ratio(
         and season == 1
         and not explicit_seasons
         and collection_count == 0
-        and not has_episode_markers
+        and (not has_episode_markers or ongoing_episode_marker)
     ):
         has_target_season = True
     if season == 0 and re.search(r"(?<![a-z0-9])sp(?![a-z0-9])", text):
         has_target_season = True
     if explicit_seasons and not explicit_seasons.intersection(match_seasons):
         return 0.0, [], "none", 0
+    explicit_upper_bound = _explicit_episode_upper_bound(text)
+    if targets and has_target_season and explicit_upper_bound > 0 and min(targets) > explicit_upper_bound:
+        return 0.0, [], "none", 0
 
     matched: set[int] = set()
     explicit_episode_numbers: set[int] = set()
     for item_season in sorted(match_seasons):
-        for match in re.finditer(rf"(?<![a-z0-9])s0?{item_season}[ ._-]*e0*(\d{{1,4}})(?:\s*(?:-|~|至|到)\s*e?0*(\d{{1,4}}))?(?!\d)", text):
+        for match in re.finditer(rf"(?<![a-z0-9])s0?{item_season}[ ._-]*e0*(\d{{1,4}})(?:\s*(?:-|~|至|到)\s*(?:s0?{item_season}[ ._-]*)?e?0*(\d{{1,4}}))?(?!\d)", text):
             span = _episode_span(_safe_int(match.group(1)), _safe_int(match.group(2)))
             explicit_episode_numbers.update(span)
             matched.update(ep for ep in span if ep in target_set)
@@ -2767,7 +3705,14 @@ def _episode_match_ratio(
         match_kind = "episode" if explicit_episode_numbers and explicit_episode_numbers.issubset(target_set) else "episode_pack"
         return len(matched) / max(1, len(targets)), sorted(matched), match_kind, file_season
     if has_target_season and not re.search(r"(?<![a-z0-9])s\d{1,2}[ ._-]*e\d{1,4}(?!\d)|(?<![a-z0-9])(?:e|episode[ ._-]*)\d{1,4}(?!\d)", text):
-        return (1.0 if len(targets) > 1 else 0.65), targets, "season_pack", file_season
+        covered_targets = [ep for ep in targets if explicit_upper_bound <= 0 or ep <= explicit_upper_bound]
+        if covered_targets:
+            return (
+                (len(covered_targets) / max(1, len(targets))) if explicit_upper_bound > 0 else (1.0 if len(targets) > 1 else 0.65),
+                covered_targets,
+                "season_pack",
+                file_season,
+            )
     return 0.0, [], "none", 0
 
 
@@ -3110,6 +4055,10 @@ async def search_gap_moviepilot(payload: GapSearchPayload):
     full_series = bool(payload.full_series)
     if not targets and not full_series:
         return _error("缺少待补集数", {"genes": [], "results": []})
+    if targets and not full_series:
+        targets, limit_message = await _limit_gap_targets_by_tmdb(payload.tmdb_id, targets)
+        if limit_message and not targets:
+            return _success({"genes": [], "results": [], "errors": [], "target_limit": limit_message}, limit_message)
 
     mp = MoviePilotClient()
     genes: list[dict] = []
@@ -3181,12 +4130,13 @@ async def search_gap_moviepilot(payload: GapSearchPayload):
                 item["ui_download_block_reason"] = "该资源没有命中当前缺失集数，缺集管理不会自动下载"
         annotated.sort(
             key=lambda x: (
+                1 if x.get("ui_download_blocked") else 0,
+                -_safe_int(x.get("seeders"), 0),
                 -float(x.get("ui_episode_match_ratio") or 0),
                 0 if x.get("ui_episode_match_kind") == "episode" else 1,
                 0 if x.get("ui_episode_match_kind") == "episode_pack" else 1,
                 -_safe_int(x.get("ui_identity_score"), 0),
                 1 if x.get("ui_identity_mismatch") else 0,
-                -_safe_int(x.get("seeders"), 0),
                 -_safe_int(x.get("size"), 0),
             )
         )
@@ -3215,15 +4165,18 @@ async def gap_moviepilot_download_status(payload: GapDownloadStatusPayload):
         await mp.close()
 
 
-@router.post("/search_hdhive")
-async def search_gap_hdhive(payload: GapSearchPayload):
+async def _search_gap_hdhive_data(payload: GapSearchPayload) -> tuple[dict, str]:
     hd = HDHiveClient()
     try:
         tmdb_id = _safe_int(payload.tmdb_id, 0)
         targets = _normalise_gap_targets(payload.season, payload.episodes, payload.targets)
         full_series = bool(payload.full_series)
         if not targets and not full_series:
-            return _error("缺少待补集数", {"results": []})
+            raise ValueError("缺少待补集数")
+        if targets and not full_series:
+            targets, limit_message = await _limit_gap_targets_by_tmdb(tmdb_id, targets)
+            if limit_message and not targets:
+                return {"results": [], "target_limit": limit_message}, limit_message
         results = await hd.search(
             keyword=payload.series_name,
             tmdb_id=tmdb_id,
@@ -3259,13 +4212,20 @@ async def search_gap_hdhive(payload: GapSearchPayload):
                 _safe_int(x.get("unlock_points"), 9999),
             )
         )
-        return _success({"results": annotated[:80]})
-    except RuntimeError as e:
+        return {"results": annotated[:80]}, ""
+    finally:
+        await hd.close()
+
+
+@router.post("/search_hdhive")
+async def search_gap_hdhive(payload: GapSearchPayload):
+    try:
+        data, message = await _search_gap_hdhive_data(payload)
+        return _success(data, message)
+    except (RuntimeError, ValueError) as e:
         return _error(str(e), {"results": []})
     except Exception as e:
         return _error(f"影巢搜索异常: {e}", {"results": []})
-    finally:
-        await hd.close()
 
 
 @router.post("/subscribe_mp")
@@ -3279,6 +4239,9 @@ async def subscribe_gap_moviepilot(payload: GapMoviePilotSubscribePayload):
         return _error("缺少 TMDB ID，MoviePilot 无法准确订阅")
     if not targets:
         return _error("缺少待订阅集数")
+    targets, limit_message = await _limit_gap_targets_by_tmdb(tmdb_id, targets)
+    if limit_message and not targets:
+        return _error(limit_message)
 
     mediaid = f"tmdb:{tmdb_id}"
     year = str(payload.year or "").strip()
@@ -3446,6 +4409,10 @@ async def download_gap_moviepilot(payload: GapDownloadPayload):
     match_kind = str(result.get("ui_episode_match_kind") or "")
     if full_series and (result.get("ui_download_blocked") is True or match_kind != "full_series" or result.get("ui_full_series") is not True):
         return _error("该资源不是全集/整季包，已拦截全集重下")
+    if targets and not full_series:
+        targets, limit_message = await _limit_gap_targets_by_tmdb(payload.tmdb_id, targets)
+        if limit_message and not targets:
+            return _error(limit_message)
     target_season = _safe_int(payload.season, 0)
     target_episodes = sorted({_safe_int(ep, 0) for ep in payload.episodes if _safe_int(ep, 0) > 0})
     display_targets = targets
@@ -3479,10 +4446,7 @@ async def download_gap_moviepilot(payload: GapDownloadPayload):
         should_split_pack = (
             not full_series
             and match_kind in {"episode_pack", "season_pack"}
-            and any(
-                target.get("episodes") or _is_season_only_gap_target(target)
-                for target in file_targets
-            )
+            and any(target.get("episodes") for target in file_targets)
         )
         if should_split_pack:
             resp = await mp.download_selected_episodes(
@@ -3498,7 +4462,15 @@ async def download_gap_moviepilot(payload: GapDownloadPayload):
         else:
             resp = await mp.download(torrent_url, torrent_info=result, tmdbid=_safe_int(payload.tmdb_id, 0))
             history_prefix = "全集重下 MP 下载" if full_series else "缺集 MP 下载"
-            success_message = "MoviePilot 全集下载已提交" if full_series else "MoviePilot 下载已提交"
+            if full_series:
+                success_message = "MoviePilot 全集下载已提交"
+            elif display_targets and all(_is_season_only_gap_target(target) for target in display_targets):
+                target_text = _gap_targets_summary(display_targets)
+                success_message = f"MoviePilot 整季下载已提交: {target_text}"
+            else:
+                success_message = "MoviePilot 下载已提交"
+            if resp and resp.get("success") and not str(resp.get("message") or "").strip():
+                resp["message"] = success_message
         if resp and resp.get("success"):
             await add_subscribe_log(
                 "",
@@ -3537,6 +4509,11 @@ async def download_gap_hdhive(payload: GapDownloadPayload):
     if full_series and (result.get("ui_download_blocked") is True or match_kind != "full_series" or result.get("ui_full_series") is not True):
         return _error("该资源不是全集/整季包，已拦截全集重下")
     targets = _normalise_gap_targets(payload.season, payload.episodes, payload.targets)
+    if targets and not full_series:
+        targets, limit_message = await _limit_gap_targets_by_tmdb(payload.tmdb_id, targets)
+        if limit_message and not targets:
+            return _error(limit_message)
+        payload.targets = [GapTargetPayload(**target) for target in targets]
     if targets:
         annotated_result = _annotate_gap_match_for_targets(result, targets, series_name=payload.series_name)
         target_season = _safe_int(annotated_result.get("ui_target_season"), _safe_int(payload.season, 0))
@@ -3595,19 +4572,37 @@ async def download_gap_hdhive(payload: GapDownloadPayload):
                 c115 = Cloud115Client()
                 try:
                     verify_result = await _wait_verify_cloud115_transfer_target(c115, folder_id, targets)
+                    if isinstance(resp, dict):
+                        resp["cloud115_verify"] = verify_result
+                    if not verify_result.get("ok"):
+                        recover_result = await _recover_existing_gap_episode_files(
+                            c115,
+                            payload,
+                            result,
+                            folder_id,
+                            targets,
+                            verify_result,
+                        )
+                        if isinstance(resp, dict):
+                            resp["cloud115_recover"] = recover_result
+                        if recover_result.get("ok"):
+                            verify_result = recover_result.get("verify") or verify_result
+                            if isinstance(resp, dict):
+                                resp["cloud115_verify"] = verify_result
+                                resp["message"] = recover_result.get("message") or resp.get("message", "")
+                        else:
+                            message = recover_result.get("message") or verify_result.get("message") or "115 转存已提交，但目标目录未找到实体文件"
+                            await _notify_gap_hdhive_transfer(payload, resp, False, message)
+                            await add_subscribe_log("", "缺集管理", "error", item_name, item_id, f"缺集影巢转存失败: {message}")
+                            return _error(message, resp)
                 finally:
                     await c115.close()
             else:
                 from app.services.transfer_verify import verify_hdhive_transfer_visible
 
                 verify_result = await verify_hdhive_transfer_visible(result, resp)
-            if isinstance(resp, dict):
-                resp["cloud115_verify"] = verify_result
-            if not verify_result.get("ok"):
-                message = verify_result.get("message") or "115 转存已提交，但目标目录未找到实体文件"
-                await _notify_gap_hdhive_transfer(payload, resp, False, message)
-                await add_subscribe_log("", "缺集管理", "error", item_name, item_id, f"缺集影巢转存失败: {message}")
-                return _error(message, resp)
+                if isinstance(resp, dict):
+                    resp["cloud115_verify"] = verify_result
         clouddrive_result = await _refresh_clouddrive_after_gap_transfer(status)
         if isinstance(resp, dict):
             resp["clouddrive"] = clouddrive_result

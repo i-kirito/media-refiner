@@ -231,11 +231,11 @@ class Cloud115Client:
             f"&format=json&show_dir=1&search_value={encoded_keyword}"
         )
 
-    async def list_files(self, folder_id: str, limit: int = 115) -> dict | None:
+    async def list_files(self, folder_id: str, limit: int = 115, offset: int = 0) -> dict | None:
         """列出目录内容。"""
         return await self._get(
             "https://webapi.115.com/files?"
-            f"aid=1&cid={folder_id}&o=file_name&asc=1&offset=0&limit={max(1, min(limit, 115))}"
+            f"aid=1&cid={folder_id}&o=file_name&asc=1&offset={max(0, offset)}&limit={max(1, min(limit, 115))}"
             "&show_dir=1&format=json"
         )
 

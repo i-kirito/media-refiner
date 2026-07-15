@@ -274,6 +274,18 @@ def _torrent_match_tokens(value: str) -> set[str]:
     return tokens
 
 
+def _torrent_release_group(value: str) -> str:
+    text = re.split(r"[\\/]", str(value or ""))[-1].strip()
+    if not text:
+        return ""
+    text = re.sub(r"\.(?:torrent|mkv|mp4|avi|mov|wmv|flv|ts|m2ts|m4v|webm|rmvb)$", "", text, flags=re.I)
+    for match in re.finditer(r"[-_]+([a-z][a-z0-9@._]{1,30})\s*$", text, re.I):
+        group = re.sub(r"[^a-z0-9]+", "", match.group(1).lower())
+        if group:
+            return group
+    return ""
+
+
 def _preferred_downloader_name(result: dict | None) -> str:
     if not result:
         return ""
@@ -888,6 +900,9 @@ class MoviePilotClient:
             message = f"已{label} {affected} 个下载器任务"
         elif noop:
             message = "；".join(str(item.get("message") or "") for item in details if item.get("noop")) or f"任务无需{label}"
+        elif action == "delete" and (hints.get("hashes") or hints.get("transmission_ids") or hints.get("names")):
+            noop = 1
+            message = "下载器中已找不到该任务，可能已被删除"
         elif matched:
             message = f"找到 {matched} 个下载器任务，但{label}失败"
         else:
@@ -1935,6 +1950,8 @@ class MoviePilotClient:
         source_name = str(torrent_name or "").lower()
         normalized_source = _normalize_torrent_name(source_name)
         source_tokens = _torrent_match_tokens(source_name)
+        source_seasons = _extract_file_seasons(source_name)
+        source_group = _torrent_release_group(source_name)
         expected_size = _safe_int(expected_size, 0)
         size_tolerance = max(100 * 1024 * 1024, int(expected_size * 0.02)) if expected_size else 0
 
@@ -1949,17 +1966,26 @@ class MoviePilotClient:
             normalized_item = _normalize_torrent_name(item_name)
             if not normalized_source or not normalized_item:
                 continue
+            item_seasons = _extract_file_seasons(item_name)
+            if source_seasons and item_seasons and source_seasons.isdisjoint(item_seasons):
+                continue
+            item_group = _torrent_release_group(item_name)
+            if source_group and item_group and source_group != item_group:
+                continue
 
             item_tokens = _torrent_match_tokens(item_name)
             overlap = len(source_tokens & item_tokens) if source_tokens and item_tokens else 0
             token_ratio = overlap / max(1, len(source_tokens))
-            name_match = (
+            strong_name_match = (
                 normalized_source in normalized_item
                 or normalized_item in normalized_source
-                or (overlap >= 4 and token_ratio >= 0.66)
             )
+            token_name_match = overlap >= 4 and token_ratio >= 0.66
+            name_match = strong_name_match or token_name_match
             size_match = bool(expected_size and item_size and abs(item_size - expected_size) <= size_tolerance)
             if not name_match and not size_match:
+                continue
+            if token_name_match and not strong_name_match and not size_match:
                 continue
 
             score = 0
@@ -1967,8 +1993,11 @@ class MoviePilotClient:
             if normalized_source == normalized_item:
                 score += 80
                 reason = "name-exact"
-            elif name_match:
+            elif strong_name_match:
                 score += 55 + min(20, overlap * 2)
+                reason = "name"
+            elif token_name_match:
+                score += 45 + min(15, overlap * 2)
                 reason = "name-token" if overlap else "name"
             if size_match:
                 score += 45

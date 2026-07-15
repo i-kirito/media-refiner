@@ -209,6 +209,7 @@
         display: flex;
         align-items: center;
         justify-content: flex-end;
+        flex-wrap: wrap;
         gap: 8px;
         margin-left: auto;
     }
@@ -609,6 +610,11 @@
                 <button onclick="openGapIgnores()" class="px-3 py-2 rounded-xl bg-gray-100 dark:bg-apple-hoverDark hover:bg-gray-200 dark:hover:bg-[#3A3A3C] text-gray-600 dark:text-gray-300 text-xs font-bold transition-colors border border-gray-200 dark:border-white/5 flex items-center gap-2">
                     <i class="fa-solid fa-box-archive"></i><span>忽略列表</span>
                 </button>
+                <button id="gapAutoFillBtn" onclick="openGapAutoFillPanel()" title="查看影巢自动补季任务" aria-label="自动补季" aria-haspopup="dialog" class="px-3 py-2 rounded-xl bg-cyan-50 dark:bg-cyan-500/10 hover:bg-cyan-100 dark:hover:bg-cyan-500/20 text-cyan-700 dark:text-cyan-300 text-xs font-bold transition-all active:scale-95 border border-cyan-100 dark:border-cyan-500/20 flex items-center gap-2 disabled:opacity-60">
+                    <i id="gapAutoFillIcon" class="fa-solid fa-clock"></i>
+                    <span id="gapAutoFillLabel">自动补季</span>
+                    <span id="gapAutoFillCount" class="hidden min-w-5 h-5 px-1 rounded-md bg-black/10 dark:bg-white/10 items-center justify-center text-[10px] font-black">0</span>
+                </button>
                 <button id="gapScanBtn" onclick="startGapScan()" class="px-4 py-2 rounded-xl bg-brand-500 hover:bg-brand-600 text-white text-xs font-bold transition-all active:scale-95 shadow-sm flex items-center gap-2">
                     <i class="fa-solid fa-rotate"></i><span>扫描缺集</span>
                 </button>
@@ -750,10 +756,10 @@
         </div>
         <div class="p-4 overflow-y-auto mac-scrollbar flex-1">
             <div class="mb-4">
-                <label class="block text-xs font-black text-gray-500 dark:text-gray-400 mb-2">缓存间隔</label>
-                <div class="relative max-w-[180px]">
-                    <input id="gapCacheHours" type="number" min="1" step="1" class="w-full px-3 py-2 pr-10 rounded-xl bg-gray-50 dark:bg-apple-hoverDark border border-gray-200 dark:border-white/10 text-sm font-bold outline-none focus:ring-2 focus:ring-brand-500" value="6">
-                    <span class="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-gray-400 font-bold">小时</span>
+                <label class="block text-xs font-black text-gray-500 dark:text-gray-400 mb-2">定时扫描</label>
+                <div class="rounded-2xl bg-cyan-50 dark:bg-cyan-500/10 border border-cyan-100 dark:border-cyan-500/20 px-3 py-3">
+                    <div id="gapScheduleBinding" class="text-sm font-black text-cyan-700 dark:text-cyan-300">跟随质量扫描定时</div>
+                    <div class="mt-1 text-[11px] font-bold text-cyan-700/70 dark:text-cyan-200/70">质量扫描定时完成后，自动同步刷新缺集缓存。</div>
                 </div>
             </div>
             <div>
@@ -764,6 +770,42 @@
         <div class="p-4 border-t border-gray-100 dark:border-white/5 flex justify-end gap-2 shrink-0">
             <button onclick="closeGapConfig()" class="px-4 py-2 rounded-xl bg-gray-100 dark:bg-apple-hoverDark text-gray-600 dark:text-gray-300 text-xs font-bold">取消</button>
             <button onclick="saveGapConfig()" class="px-4 py-2 rounded-xl bg-brand-500 hover:bg-brand-600 text-white text-xs font-bold">保存</button>
+        </div>
+    </div>
+</div>
+
+<div id="gapAutoFillModal" class="fixed inset-0 z-[125] hidden opacity-0 transition-opacity duration-200">
+    <div class="absolute inset-0 bg-black/50 backdrop-blur-sm" onclick="closeGapAutoFillPanel()"></div>
+    <div class="gap-modal-panel absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[96%] max-w-5xl bg-white dark:bg-apple-cardDark rounded-[24px] shadow-2xl border border-gray-200 dark:border-white/5 overflow-hidden flex flex-col">
+        <div class="px-5 py-4 border-b border-gray-100 dark:border-white/5 flex items-center justify-between gap-3 shrink-0">
+            <div class="min-w-0">
+                <h3 class="font-black text-gray-900 dark:text-white">影巢自动补季</h3>
+                <p id="gapAutoFillPanelSub" class="text-xs text-gray-500 dark:text-gray-400 mt-1 truncate">读取任务状态...</p>
+            </div>
+            <div class="flex items-center gap-2 shrink-0">
+                <button onclick="refreshGapAutoFillPanel()" title="刷新任务" aria-label="刷新自动补季任务" class="w-8 h-8 rounded-lg bg-gray-100 dark:bg-white/5 text-gray-400 hover:text-cyan-500 transition-colors">
+                    <i class="fa-solid fa-rotate"></i>
+                </button>
+                <button onclick="closeGapAutoFillPanel()" title="关闭" aria-label="关闭自动补季面板" class="w-8 h-8 rounded-lg bg-gray-100 dark:bg-white/5 text-gray-400 hover:text-gray-700 dark:hover:text-white transition-colors">
+                    <i class="fa-solid fa-xmark"></i>
+                </button>
+            </div>
+        </div>
+        <div class="px-4 py-3 border-b border-gray-100 dark:border-white/5 shrink-0">
+            <div class="flex flex-col sm:flex-row sm:items-center gap-3">
+                <div class="relative flex-1">
+                    <i class="fa-solid fa-magnifying-glass absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 text-xs"></i>
+                    <input id="gapAutoFillSearch" oninput="gapState.autoFillPanelQuery = this.value; renderGapAutoFillPanel()" class="w-full pl-9 pr-3 py-2 rounded-xl bg-gray-50 dark:bg-apple-hoverDark border border-gray-200 dark:border-white/10 text-xs font-bold outline-none focus:ring-2 focus:ring-cyan-500" placeholder="筛选剧名、季或资源标题">
+                </div>
+                <div id="gapAutoFillFilters" class="flex items-center gap-1.5 overflow-x-auto mac-scrollbar"></div>
+            </div>
+        </div>
+        <div id="gapAutoFillPanelBody" class="flex-1 min-h-[260px] overflow-y-auto mac-scrollbar"></div>
+        <div class="px-4 py-3 border-t border-gray-100 dark:border-white/5 flex flex-col sm:flex-row sm:items-center justify-between gap-3 shrink-0">
+            <div id="gapAutoFillPanelSummary" class="text-xs font-bold text-gray-500 dark:text-gray-400"></div>
+            <button id="gapAutoFillMasterToggle" onclick="toggleGapAutoFillAll()" aria-pressed="false" class="px-4 py-2 rounded-xl text-xs font-black transition-all active:scale-95 flex items-center justify-center gap-2">
+                <i class="fa-solid fa-clock"></i><span>启用自动补季</span>
+            </button>
         </div>
     </div>
 </div>
@@ -781,8 +823,16 @@ const gapState = {
     pollTimer: null,
     refreshingSeries: new Set(),
     subscribingSeries: new Set(),
+    autoFillJobs: new Map(),
+    autoFillEnabled: false,
+    autoFillGlobalBusy: false,
+    autoFillState: {},
+    autoFillPanelFilter: 'all',
+    autoFillPanelQuery: '',
+    autoFillPanelLoading: false,
     fileData: null,
     fileFilter: 'all',
+    clouddriveUrl: '',
     scanMonitor: null,
     scanStatus: {},
     downloadStatusToken: 0,
@@ -854,8 +904,10 @@ async function loadGapEmbyConfig() {
     try {
         const data = await gapApi(`/api/config?_t=${Date.now()}`);
         gapEmbyServerId = data.data?.emby_server_id || '';
+        gapState.clouddriveUrl = data.data?.clouddrive_url || '';
     } catch (e) {
         gapEmbyServerId = '';
+        gapState.clouddriveUrl = '';
     }
 }
 
@@ -1128,6 +1180,266 @@ function isSeasonMissingGap(item) {
     return item?.season_missing === true || String(item?.source || '') === 'season_inferred' || Number(item?.episode || 0) <= 0;
 }
 
+function gapAutoFillKey(seriesId, season) {
+    return `${String(seriesId || '')}:S${String(Number(season || 0)).padStart(2, '0')}`;
+}
+
+function gapAutoFillJobResults(job) {
+    const results = Array.isArray(job?.last_results) ? job.last_results.filter(Boolean) : [];
+    if (results.length) return results;
+    const legacyTitle = String(job?.last_resource_title || '').trim();
+    return legacyTitle ? [{
+        title: legacyTitle,
+        selected: true,
+        eligible: true,
+        legacy: true,
+    }] : [];
+}
+
+function gapAutoFillStatusMeta(job) {
+    const status = String(job?.status || 'waiting');
+    const map = {
+        searching: ['搜索中', 'fa-circle-notch fa-spin', 'bg-cyan-50 dark:bg-cyan-500/10 text-cyan-700 dark:text-cyan-300'],
+        transferring: ['转存中', 'fa-circle-notch fa-spin', 'bg-indigo-50 dark:bg-indigo-500/10 text-indigo-700 dark:text-indigo-300'],
+        completed: ['已完成', 'fa-circle-check', 'bg-emerald-50 dark:bg-emerald-500/10 text-emerald-700 dark:text-emerald-300'],
+        error: ['失败', 'fa-triangle-exclamation', 'bg-red-50 dark:bg-red-500/10 text-red-700 dark:text-red-300'],
+        blocked: ['已阻止', 'fa-ban', 'bg-amber-50 dark:bg-amber-500/10 text-amber-700 dark:text-amber-300'],
+        disabled: ['已关闭', 'fa-pause', 'bg-gray-100 dark:bg-white/5 text-gray-500 dark:text-gray-400'],
+        waiting: ['等待', 'fa-clock', 'bg-gray-100 dark:bg-white/5 text-gray-600 dark:text-gray-300'],
+    };
+    const [label, icon, className] = map[status] || map.waiting;
+    return {status, label, icon, className};
+}
+
+function gapAutoFillFilterMatch(job, filter) {
+    const status = String(job?.status || 'waiting');
+    if (filter === 'matched') return gapAutoFillJobResults(job).length > 0;
+    if (filter === 'waiting') return ['waiting', 'searching', 'transferring'].includes(status) && Boolean(job?.enabled);
+    if (filter === 'completed') return status === 'completed';
+    if (filter === 'issues') return ['error', 'blocked'].includes(status);
+    return true;
+}
+
+function setGapAutoFillPanelFilter(filter) {
+    gapState.autoFillPanelFilter = String(filter || 'all');
+    renderGapAutoFillPanel();
+}
+
+function renderGapAutoFillResource(result) {
+    const title = String(result?.title || '未知资源');
+    const previewUrl = safeHttpUrl(result?.page_url);
+    const size = result?.share_size || (Number(result?.size_bytes || 0) > 0 ? formatBytes(result.size_bytes) : '');
+    const resolution = joinList(result?.resolution);
+    const source = joinList(result?.source);
+    const points = result?.unlock_points;
+    const pointsNumber = Number(points);
+    let accessBadge = '<span class="px-2 py-1 rounded-md bg-gray-100 dark:bg-white/5 text-gray-500">不可自动</span>';
+    if (result?.is_unlocked) {
+        accessBadge = '<span class="px-2 py-1 rounded-md bg-emerald-50 dark:bg-emerald-500/10 text-emerald-600 dark:text-emerald-300">已解锁</span>';
+    } else if (points !== '' && points !== undefined && Number.isFinite(pointsNumber) && pointsNumber <= 0) {
+        accessBadge = '<span class="px-2 py-1 rounded-md bg-emerald-50 dark:bg-emerald-500/10 text-emerald-600 dark:text-emerald-300">免费</span>';
+    } else if (result?.eligible) {
+        accessBadge = '<span class="px-2 py-1 rounded-md bg-emerald-50 dark:bg-emerald-500/10 text-emerald-600 dark:text-emerald-300">可自动</span>';
+    } else if (points !== '' && points !== undefined) {
+        accessBadge = `<span class="px-2 py-1 rounded-md bg-amber-50 dark:bg-amber-500/10 text-amber-700 dark:text-amber-300">${escapeHtml(points)} 积分</span>`;
+    }
+    const titleHtml = previewUrl
+        ? `<a href="${escapeHtml(previewUrl)}" target="_blank" rel="noopener noreferrer" class="font-black text-sm text-gray-900 dark:text-white hover:text-cyan-500 transition-colors"><span>${escapeHtml(title)}</span> <i class="fa-solid fa-arrow-up-right-from-square text-[10px]"></i></a>`
+        : `<div class="font-black text-sm text-gray-900 dark:text-white">${escapeHtml(title)}</div>`;
+    return `
+        <div class="py-2.5 border-t first:border-t-0 border-gray-100 dark:border-white/5">
+            <div class="flex items-start justify-between gap-3">
+                <div class="min-w-0 flex-1">
+                    ${titleHtml}
+                    <div class="flex flex-wrap items-center gap-1.5 mt-1.5 text-[10px] font-black">
+                        ${result?.selected ? '<span class="px-2 py-1 rounded-md bg-cyan-50 dark:bg-cyan-500/10 text-cyan-700 dark:text-cyan-300">已选资源</span>' : ''}
+                        ${result?.is_official ? '<span class="px-2 py-1 rounded-md bg-blue-50 dark:bg-blue-500/10 text-blue-700 dark:text-blue-300">官组</span>' : ''}
+                        ${size ? `<span class="px-2 py-1 rounded-md bg-gray-100 dark:bg-white/5 text-gray-500">${escapeHtml(size)}</span>` : ''}
+                        ${resolution ? `<span class="px-2 py-1 rounded-md bg-gray-100 dark:bg-white/5 text-gray-500">${escapeHtml(resolution)}</span>` : ''}
+                        ${source ? `<span class="px-2 py-1 rounded-md bg-gray-100 dark:bg-white/5 text-gray-500">${escapeHtml(source)}</span>` : ''}
+                        ${result?.match_text ? `<span class="px-2 py-1 rounded-md bg-cyan-50 dark:bg-cyan-500/10 text-cyan-700 dark:text-cyan-300">${escapeHtml(result.match_text)}</span>` : ''}
+                        ${accessBadge}
+                    </div>
+                    ${result?.sharer ? `<div class="mt-1.5 text-[11px] text-gray-400">分享者：${escapeHtml(result.sharer)}</div>` : ''}
+                    ${result?.remark ? `<div class="mt-1.5 text-[11px] text-gray-500 dark:text-gray-400 line-clamp-2">${escapeHtml(result.remark)}</div>` : ''}
+                </div>
+            </div>
+        </div>
+    `;
+}
+
+function renderGapAutoFillJob(job) {
+    const status = gapAutoFillStatusMeta(job);
+    const results = gapAutoFillJobResults(job);
+    const season = Number(job?.season_number || 0);
+    const metadata = [
+        job?.library_name,
+        job?.year,
+        Number(job?.attempts || 0) > 0 ? `尝试 ${Number(job.attempts)}` : '',
+        job?.last_run_at ? `最近 ${shortDateTime(job.last_run_at)}` : '',
+    ].filter(Boolean).join(' · ');
+    return `
+        <div class="px-4 py-4 border-b last:border-b-0 border-gray-100 dark:border-white/5">
+            <div class="flex items-start justify-between gap-3">
+                <div class="min-w-0">
+                    <div class="flex flex-wrap items-center gap-2">
+                        <span class="font-black text-sm text-gray-900 dark:text-white">${escapeHtml(job?.series_name || job?.series_id || '未知剧集')}</span>
+                        <span class="px-2 py-1 rounded-md bg-gray-100 dark:bg-white/5 text-[10px] font-black text-gray-600 dark:text-gray-300">S${String(season).padStart(2, '0')}</span>
+                    </div>
+                    ${metadata ? `<div class="mt-1 text-[11px] font-bold text-gray-400">${escapeHtml(metadata)}</div>` : ''}
+                </div>
+                <span class="shrink-0 px-2.5 py-1.5 rounded-lg text-[10px] font-black ${status.className}">
+                    <i class="fa-solid ${status.icon} mr-1"></i>${status.label}
+                </span>
+            </div>
+            ${job?.last_message ? `<div class="mt-2 text-xs font-bold text-gray-600 dark:text-gray-300">${escapeHtml(job.last_message)}</div>` : ''}
+            ${results.length ? `<div class="mt-2 pl-3 border-l-2 border-cyan-200 dark:border-cyan-500/30">${results.slice(0, 6).map(renderGapAutoFillResource).join('')}</div>` : '<div class="mt-2 text-[11px] font-bold text-gray-400">尚未保存命中资源</div>'}
+        </div>
+    `;
+}
+
+function renderGapAutoFillPanel() {
+    const body = document.getElementById('gapAutoFillPanelBody');
+    const filters = document.getElementById('gapAutoFillFilters');
+    const sub = document.getElementById('gapAutoFillPanelSub');
+    const summary = document.getElementById('gapAutoFillPanelSummary');
+    const toggle = document.getElementById('gapAutoFillMasterToggle');
+    if (!body || !filters || !sub || !summary || !toggle) return;
+
+    const jobs = [...gapState.autoFillJobs.values()].filter(
+        job => String(job?.status || 'waiting') !== 'completed'
+    );
+    const counts = {
+        all: jobs.length,
+        matched: jobs.filter(job => gapAutoFillJobResults(job).length > 0).length,
+        waiting: jobs.filter(job => gapAutoFillFilterMatch(job, 'waiting')).length,
+        issues: jobs.filter(job => gapAutoFillFilterMatch(job, 'issues')).length,
+    };
+    const filterItems = [
+        ['all', '全部', counts.all],
+        ['waiting', '等待', counts.waiting],
+        ['matched', '命中', counts.matched],
+        ['issues', '异常', counts.issues],
+    ];
+    filters.innerHTML = filterItems.map(([key, label, value]) => {
+        const active = gapState.autoFillPanelFilter === key;
+        const className = active
+            ? 'bg-cyan-500 text-white border-cyan-500'
+            : 'bg-gray-50 dark:bg-white/5 text-gray-500 dark:text-gray-300 border-gray-200 dark:border-white/10 hover:text-cyan-500';
+        return `<button type="button" aria-pressed="${active ? 'true' : 'false'}" onclick="setGapAutoFillPanelFilter('${key}')" class="shrink-0 px-3 py-2 rounded-lg border text-[11px] font-black transition-colors ${className}">${label} ${value}</button>`;
+    }).join('');
+
+    const query = String(gapState.autoFillPanelQuery || '').trim().toLowerCase();
+    const visible = jobs.filter(job => {
+        if (!gapAutoFillFilterMatch(job, gapState.autoFillPanelFilter)) return false;
+        if (!query) return true;
+        const resourceText = gapAutoFillJobResults(job).map(item => item?.title || '').join(' ');
+        return [
+            job?.series_name,
+            `S${String(Number(job?.season_number || 0)).padStart(2, '0')}`,
+            job?.library_name,
+            job?.last_message,
+            resourceText,
+        ].join(' ').toLowerCase().includes(query);
+    }).sort((a, b) => {
+        const matchDiff = gapAutoFillJobResults(b).length - gapAutoFillJobResults(a).length;
+        if (matchDiff) return matchDiff;
+        const nameDiff = String(a?.series_name || '').localeCompare(String(b?.series_name || ''), 'zh-CN');
+        return nameDiff || Number(a?.season_number || 0) - Number(b?.season_number || 0);
+    });
+
+    sub.textContent = `${gapState.autoFillEnabled ? '已启用' : '已关闭'} · 仅自动转存免费或已解锁的影巢整季资源`;
+    summary.textContent = `显示 ${visible.length}/${jobs.length} · 已保存命中 ${counts.matched} · 等待 ${counts.waiting}`;
+    toggle.disabled = gapState.autoFillGlobalBusy;
+    toggle.setAttribute('aria-pressed', gapState.autoFillEnabled ? 'true' : 'false');
+    toggle.className = `px-4 py-2 rounded-xl text-xs font-black transition-all active:scale-95 flex items-center justify-center gap-2 disabled:opacity-60 ${
+        gapState.autoFillEnabled
+            ? 'bg-red-50 dark:bg-red-500/10 text-red-600 dark:text-red-300 hover:bg-red-100 dark:hover:bg-red-500/20'
+            : 'bg-emerald-500 hover:bg-emerald-600 text-white'
+    }`;
+    toggle.innerHTML = gapState.autoFillGlobalBusy
+        ? '<i class="fa-solid fa-circle-notch fa-spin"></i><span>处理中</span>'
+        : (gapState.autoFillEnabled
+            ? '<i class="fa-solid fa-stop"></i><span>关闭自动补季</span>'
+            : '<i class="fa-solid fa-clock"></i><span>启用自动补季</span>');
+
+    if (gapState.autoFillPanelLoading) {
+        body.innerHTML = '<div class="py-20 text-center text-gray-400"><i class="fa-solid fa-circle-notch fa-spin text-2xl"></i></div>';
+    } else if (!visible.length) {
+        const message = gapState.autoFillPanelFilter === 'matched'
+            ? '暂无已保存的命中资源，下一次定时搜索后会在这里更新'
+            : '当前筛选下没有任务';
+        body.innerHTML = `<div class="py-20 text-center text-sm font-bold text-gray-400">${message}</div>`;
+    } else {
+        body.innerHTML = visible.map(renderGapAutoFillJob).join('');
+    }
+}
+
+async function refreshGapAutoFillPanel() {
+    gapState.autoFillPanelLoading = true;
+    renderGapAutoFillPanel();
+    try {
+        const data = await gapApi(`/api/gaps/auto-fill?_t=${Date.now()}`);
+        const payload = data.data || {};
+        gapState.autoFillEnabled = payload.enabled === true;
+        gapState.autoFillState = payload.run || {};
+        gapState.autoFillJobs = new Map(
+            (Array.isArray(payload.jobs) ? payload.jobs : []).map(job => [
+                gapAutoFillKey(job.series_id, job.season_number),
+                job,
+            ])
+        );
+        updateGapAutoFillButton(gapState.scanStatus);
+    } catch (e) {
+        showToast('error', '任务加载失败', e.message);
+    } finally {
+        gapState.autoFillPanelLoading = false;
+        renderGapAutoFillPanel();
+    }
+}
+
+function openGapAutoFillPanel() {
+    gapState.autoFillPanelFilter = 'all';
+    gapState.autoFillPanelQuery = '';
+    const search = document.getElementById('gapAutoFillSearch');
+    if (search) search.value = '';
+    showGapModal('gapAutoFillModal');
+    refreshGapAutoFillPanel();
+}
+
+function closeGapAutoFillPanel() {
+    hideGapModal('gapAutoFillModal');
+}
+
+async function toggleGapAutoFillAll() {
+    if (gapState.autoFillGlobalBusy) return;
+    const enabled = !gapState.autoFillEnabled;
+    gapState.autoFillGlobalBusy = true;
+    updateGapAutoFillButton(gapState.scanStatus);
+    try {
+        const data = await gapApi('/api/gaps/auto-fill/toggle-all', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({enabled}),
+        });
+        const payload = data.data || {};
+        gapState.autoFillEnabled = payload.enabled === true;
+        gapState.autoFillJobs = new Map(
+            (Array.isArray(payload.jobs) ? payload.jobs : []).map(job => [
+                gapAutoFillKey(job.series_id, job.season_number),
+                job,
+            ])
+        );
+        showToast('success', enabled ? '已启用自动补季' : '已关闭自动补季', data.message || '');
+    } catch (e) {
+        showToast('error', enabled ? '启用失败' : '取消失败', e.message);
+    } finally {
+        gapState.autoFillGlobalBusy = false;
+        updateGapAutoFillButton(gapState.scanStatus);
+        renderGapAutoFillPanel();
+    }
+}
+
 function isGapAnomaly(item) {
     return item?.anomaly === true || Boolean(item?.anomaly_type);
 }
@@ -1223,6 +1535,14 @@ function applyGapStatus(status) {
     gapState.scanStatus = status || {};
     gapState.items = Array.isArray(status.results) ? status.results : [];
     gapState.summary = status.summary || {};
+    gapState.autoFillState = status.auto_fill || {};
+    gapState.autoFillEnabled = status.auto_fill_enabled === true;
+    gapState.autoFillJobs = new Map(
+        (Array.isArray(status.auto_fill_jobs) ? status.auto_fill_jobs : []).map(job => [
+            gapAutoFillKey(job.series_id, job.season_number),
+            job,
+        ])
+    );
     document.getElementById('gapLoading').classList.add('hidden');
     const emptyText = document.querySelector('#gapEmpty p');
     if (emptyText) {
@@ -1230,50 +1550,92 @@ function applyGapStatus(status) {
     }
     updateGapStats(status);
     updateGapProgress(status);
+    updateGapAutoFillButton(status);
+    if (!document.getElementById('gapAutoFillModal')?.classList.contains('hidden')) {
+        renderGapAutoFillPanel();
+    }
     renderGapLibrarySwitch();
     renderGapResults();
-    if (running && !gapState.pollTimer) startGapPolling();
+    if ((running || status.auto_fill?.is_running) && !gapState.pollTimer) startGapPolling();
 }
 
 function updateGapStats(status = {}) {
     const summary = gapState.summary || {};
+    const autoFill = status.auto_fill || {};
+    const autoRunning = !!autoFill.is_running;
     const seriesCount = summary.series_count ?? gapState.items.length;
     const gapCount = summary.gap_count ?? gapState.items.reduce((sum, item) => sum + (item.gaps || []).length, 0);
     const processed = summary.processed ?? status.processed ?? 0;
     const total = summary.total ?? status.total ?? 0;
     document.getElementById('statSeries').textContent = seriesCount;
     document.getElementById('statGaps').textContent = gapCount;
-    document.getElementById('statProcessed').textContent = status.is_scanning && total ? `${processed}/${total}` : processed;
-    document.getElementById('statState').textContent = status.is_scanning ? '扫描中' : (status.error ? '异常' : '空闲');
+    document.getElementById('statProcessed').textContent = autoRunning
+        ? `${autoFill.processed || 0}/${autoFill.total || 0}`
+        : (status.is_scanning && total ? `${processed}/${total}` : processed);
+    document.getElementById('statState').textContent = status.is_scanning
+        ? '扫描中'
+        : (autoRunning ? '影巢补季' : (status.error || autoFill.error ? '异常' : '空闲'));
     document.getElementById('gapLibraryCount').textContent = `剧集库 ${summary.library_count ?? 0}`;
     const scanMonitor = gapState.scanMonitor || {};
     const scanSummary = scanMonitor.summary || {};
     const scanTime = scanMonitor.scan_time || scanSummary.scan_time || scanMonitor.cache?.created_at || '';
     const scanTimeEl = document.getElementById('gapCacheTime');
-    if (scanTime) {
-        scanTimeEl.textContent = `上次扫描: ${scanTime}`;
-        const nextScan = scanMonitor.schedule?.next_scan;
-        scanTimeEl.title = nextScan ? `下次定时扫描: ${nextScan}` : '与仪表盘同步的扫描时间';
-    } else if (status.created_at) {
+    if (status.created_at) {
         scanTimeEl.textContent = `缺集扫描: ${status.created_at}`;
-        scanTimeEl.title = '缺集缓存更新时间';
+        const nextScan = status.schedule?.next_scan;
+        scanTimeEl.title = nextScan ? `下次缺集扫描: ${nextScan}` : '缺集缓存更新时间';
+    } else if (scanTime) {
+        scanTimeEl.textContent = `质量扫描: ${scanTime}`;
+        const nextScan = scanMonitor.schedule?.next_scan;
+        scanTimeEl.title = nextScan ? `下次质量扫描: ${nextScan}` : '与仪表盘同步的扫描时间';
     } else {
         scanTimeEl.textContent = '等待扫描';
         scanTimeEl.removeAttribute('title');
     }
 }
 
+function updateGapAutoFillButton(status = {}) {
+    const btn = document.getElementById('gapAutoFillBtn');
+    const icon = document.getElementById('gapAutoFillIcon');
+    const label = document.getElementById('gapAutoFillLabel');
+    const count = document.getElementById('gapAutoFillCount');
+    if (!btn || !icon || !label || !count) return;
+
+    const enabled = gapState.autoFillEnabled === true;
+    const running = !!status.auto_fill?.is_running;
+    const activeCount = [...gapState.autoFillJobs.values()].filter(job => (
+        job?.enabled === true || Number(job?.enabled || 0) === 1
+    )).length;
+    const baseClass = 'px-3 py-2 rounded-xl text-xs font-bold transition-all active:scale-95 border flex items-center gap-2 disabled:opacity-60';
+    const enabledClass = 'bg-emerald-50 dark:bg-emerald-500/10 hover:bg-emerald-100 dark:hover:bg-emerald-500/20 text-emerald-700 dark:text-emerald-300 border-emerald-100 dark:border-emerald-500/20';
+    const disabledClass = 'bg-cyan-50 dark:bg-cyan-500/10 hover:bg-cyan-100 dark:hover:bg-cyan-500/20 text-cyan-700 dark:text-cyan-300 border-cyan-100 dark:border-cyan-500/20';
+
+    btn.className = `${baseClass} ${enabled ? enabledClass : disabledClass}`;
+    btn.disabled = gapState.autoFillGlobalBusy;
+    icon.className = `fa-solid ${gapState.autoFillGlobalBusy || running ? 'fa-circle-notch fa-spin' : (enabled ? 'fa-clock-rotate-left' : 'fa-clock')}`;
+    label.textContent = running ? '补季中' : '自动补季';
+    count.textContent = String(activeCount);
+    count.classList.toggle('hidden', !enabled || activeCount <= 0);
+    count.classList.toggle('inline-flex', enabled && activeCount > 0);
+    btn.title = enabled
+        ? `查看影巢自动补季任务${activeCount ? `，等待任务 ${activeCount}` : ''}`
+        : '查看影巢自动补季任务（当前关闭）';
+}
+
 function updateGapProgress(status = {}) {
     const card = document.getElementById('gapProgressCard');
     const scanBtn = document.getElementById('gapScanBtn');
-    const running = !!status.is_scanning;
-    card.classList.toggle('hidden', !running && !status.error);
+    const autoFill = status.auto_fill || {};
+    const autoRunning = !!autoFill.is_running;
+    const running = !!status.is_scanning || autoRunning;
+    const active = status.is_scanning ? status : autoFill;
+    card.classList.toggle('hidden', !running && !status.error && !autoFill.error);
     scanBtn.disabled = running;
     scanBtn.classList.toggle('opacity-60', running);
-    const progress = Math.max(0, Math.min(100, Number(status.progress || 0)));
+    const progress = Math.max(0, Math.min(100, Number(active.progress || 0)));
     document.getElementById('gapProgressBar').style.width = `${progress}%`;
     document.getElementById('gapProgressPct').textContent = `${progress}%`;
-    document.getElementById('gapProgressText').textContent = status.error || status.current_item || '扫描中...';
+    document.getElementById('gapProgressText').textContent = status.error || autoFill.error || active.current_item || '处理中...';
 }
 
 async function startGapScan() {
@@ -1327,7 +1689,7 @@ function startGapPolling() {
         try {
             const data = await gapApi(`/api/gaps/scan/progress?_t=${Date.now()}`);
             applyGapStatus(data.data || {});
-            if (!data.data?.is_scanning) {
+            if (!data.data?.is_scanning && !data.data?.auto_fill?.is_running) {
                 clearInterval(gapState.pollTimer);
                 gapState.pollTimer = null;
             }
@@ -1466,17 +1828,18 @@ function renderGapEpisodeButtons(series, group, episodeCsv) {
         return group.episodes.map(ep => {
             if (!isSeasonMissingGap(ep)) return '';
             const anomaly = isGapAnomaly(ep);
+            const season = Number(ep.season || group.season || 0);
             const chipClass = anomaly
                 ? 'bg-red-50 dark:bg-red-500/10 border-red-200 dark:border-red-500/25 text-red-700 dark:text-red-300'
                 : 'bg-amber-50 dark:bg-amber-500/10 border-amber-200 dark:border-amber-500/20 text-amber-700 dark:text-amber-300';
             const chipTitle = anomaly ? `数据异常：${gapAnomalyText(ep)}` : '搜索整季缺失';
             return `
                 <div class="gap-episode-chip inline-flex items-center rounded-lg border ${chipClass} overflow-hidden">
-                    <button title="${escapeHtml(chipTitle)}" class="gap-chip inline-flex items-center gap-1.5 px-2 text-[11px] font-black hover:text-brand-500 hover:bg-white/60 dark:hover:bg-white/10 transition-colors" onclick='openGapSourceSeason(${jsString(series.series_id)}, ${Number(ep.season || group.season || 0)})'>
+                    <button title="${escapeHtml(chipTitle)}" class="gap-chip inline-flex items-center gap-1.5 px-2 text-[11px] font-black hover:text-brand-500 hover:bg-white/60 dark:hover:bg-white/10 transition-colors" onclick='openGapSourceSeason(${jsString(series.series_id)}, ${season})'>
                         ${anomaly ? '<span class="gap-chip-anomaly-dot"></span>' : ''}
                         整季缺失
                     </button>
-                    <button title="忽略整季缺失" class="w-7 h-7 border-l border-black/5 dark:border-white/10 hover:bg-black/5 dark:hover:bg-white/10 text-gray-400 hover:text-red-500 transition-colors" onclick='ignoreGapEpisode(${jsString(series.series_id)}, ${jsString(series.series_name)}, ${Number(ep.season || group.season || 0)}, 0)'>
+                    <button title="忽略整季缺失" class="w-7 h-7 border-l border-black/5 dark:border-white/10 hover:bg-black/5 dark:hover:bg-white/10 text-gray-400 hover:text-red-500 transition-colors" onclick='ignoreGapEpisode(${jsString(series.series_id)}, ${jsString(series.series_name)}, ${season}, 0)'>
                         <i class="fa-solid fa-xmark text-[11px]"></i>
                     </button>
                 </div>
@@ -1777,6 +2140,100 @@ function gapFileActionSeries() {
     };
 }
 
+function gapCd2BaseUrl() {
+    const configured = String(gapState.clouddriveUrl || '').trim().replace(/\/+$/, '');
+    if (configured) return configured;
+    return window.location.hostname ? `${window.location.protocol}//${window.location.hostname}:19798` : '';
+}
+
+function normaliseCd2MediaPath(path) {
+    let value = String(path || '').trim().replace(/\\/g, '/');
+    if (!value) return '';
+    value = value.replace(/\/+/g, '/');
+    if (!value.startsWith('/')) value = `/${value}`;
+    const lower = value.toLowerCase();
+    const openIndex = lower.indexOf('/115open/');
+    if (openIndex >= 0) {
+        value = value.slice(openIndex);
+    } else {
+        const driveMarker = '/clouddrive/';
+        const driveIndex = lower.indexOf(driveMarker);
+        if (driveIndex < 0) return '';
+        value = value.slice(driveIndex + driveMarker.length - 1);
+    }
+    if (!value.startsWith('/')) value = `/${value}`;
+    return value.replace(/\/+$/, '');
+}
+
+function gapPathLeaf(path) {
+    const parts = String(path || '').split('/').filter(Boolean);
+    return parts.length ? parts[parts.length - 1] : '';
+}
+
+function gapParentPath(path) {
+    const value = String(path || '').replace(/\/+$/, '');
+    const index = value.lastIndexOf('/');
+    return index > 0 ? value.slice(0, index) : value;
+}
+
+function gapLooksLikeFilePath(path) {
+    return /\.[a-z0-9]{2,8}$/i.test(gapPathLeaf(path));
+}
+
+function stripGapSeasonFolder(path) {
+    const leaf = gapPathLeaf(path);
+    if (/^(?:season|s)\s*0?\d{1,2}$/i.test(leaf) || /^第\s*\d{1,2}\s*季$/.test(leaf)) {
+        return gapParentPath(path);
+    }
+    return path;
+}
+
+function gapCd2DirectoryFromMediaPath(path, stripFile = true) {
+    let value = normaliseCd2MediaPath(path);
+    if (!value) return '';
+    if (stripFile && gapLooksLikeFilePath(value)) value = gapParentPath(value);
+    return stripGapSeasonFolder(value);
+}
+
+function gapCd2SeriesPath() {
+    const data = gapState.fileData || {};
+    const series = data.series || {};
+    const seriesPath = gapCd2DirectoryFromMediaPath(series.path || series.file_path || '', false);
+    if (seriesPath) return seriesPath;
+    const episodes = Array.isArray(data.episodes) ? data.episodes : [];
+    for (const item of episodes) {
+        const sources = Array.isArray(item?.media_sources) ? item.media_sources : [];
+        for (const source of sources) {
+            const path = gapCd2DirectoryFromMediaPath(source?.path || '');
+            if (path) return path;
+        }
+        const path = gapCd2DirectoryFromMediaPath(item?.path || '');
+        if (path) return path;
+    }
+    return '';
+}
+
+function gapCd2FilesUrl() {
+    const base = gapCd2BaseUrl();
+    const path = gapCd2SeriesPath();
+    if (!base || !path) return '';
+    return `${base}/?page=files&path=${encodeURIComponent(path)}`;
+}
+
+function openGapCd2Files() {
+    const base = gapCd2BaseUrl();
+    const path = gapCd2SeriesPath();
+    if (!base) {
+        showToast('warning', 'CD2 地址未配置');
+        return;
+    }
+    if (!path) {
+        showToast('warning', '没有可定位的 CD2 路径');
+        return;
+    }
+    window.open(`${base}/?page=files&path=${encodeURIComponent(path)}`, '_blank', 'noopener,noreferrer');
+}
+
 function gapFileActionsHtml() {
     const targets = gapFileMissingTargets();
     const series = gapFileActionSeries();
@@ -1785,8 +2242,13 @@ function gapFileActionsHtml() {
     const subscribeKey = String(series.series_id || series.series_name || '').trim();
     const isSubscribing = subscribeKey && gapState.subscribingSeries.has(subscribeKey);
     const targetLabel = hasTargets ? gapTargetLabel(targets) : '没有缺失集数';
+    const cd2Url = gapCd2FilesUrl();
+    const cd2Path = gapCd2SeriesPath();
     return `
         <div class="gap-files-actions">
+            <button type="button" title="${escapeHtml(cd2Url ? `在 CloudDrive2 打开：${cd2Path}` : '没有可定位的 CD2 路径')}" ${cd2Url ? '' : 'disabled'} onclick="openGapCd2Files()" class="gap-files-action bg-cyan-50 dark:bg-cyan-500/10 text-cyan-700 dark:text-cyan-300 hover:bg-cyan-100 dark:hover:bg-cyan-500/20">
+                <i class="fa-solid fa-folder-tree text-[11px]"></i><span>CD2</span>
+            </button>
             <button type="button" title="${escapeHtml(hasTargets ? `补齐缺失：${targetLabel}` : '没有缺失集数')}" ${hasTargets ? '' : 'disabled'} onclick="openGapFileSourceAll()" class="gap-files-action bg-brand-50 dark:bg-brand-500/10 text-brand-600 dark:text-brand-300 hover:bg-brand-100 dark:hover:bg-brand-500/20">
                 <i class="fa-solid fa-magnifying-glass text-[11px]"></i><span>补集</span>
             </button>
@@ -2109,6 +2571,7 @@ async function runGapSearch(source) {
         gapState.resolverResults = source === 'hdhive'
             ? ((data.data || {}).results || [])
             : ((data.data || {}).results || []);
+        sortMoviePilotResolverResults();
         renderGapResolver();
         if (source === 'moviepilot') {
             refreshMoviePilotDownloadStatuses();
@@ -2133,11 +2596,29 @@ async function refreshMoviePilotDownloadStatuses() {
         const results = (data.data || {}).results || [];
         if (Array.isArray(results) && results.length) {
             gapState.resolverResults = results;
+            sortMoviePilotResolverResults();
             renderGapResolver();
         }
     } catch (e) {
         console.warn('MoviePilot 下载状态读取失败', e);
     }
+}
+
+function moviePilotSeederCount(item) {
+    const value = item?.seeders;
+    const number = Number(value);
+    if (Number.isFinite(number)) return number;
+    const match = String(value || '').match(/\d+/);
+    return match ? Number(match[0]) : 0;
+}
+
+function sortMoviePilotResolverResults() {
+    if (gapState.source !== 'moviepilot' || !Array.isArray(gapState.resolverResults)) return;
+    gapState.resolverResults.sort((a, b) => {
+        const blockedDiff = (a?.ui_download_blocked ? 1 : 0) - (b?.ui_download_blocked ? 1 : 0);
+        if (blockedDiff !== 0) return blockedDiff;
+        return moviePilotSeederCount(b) - moviePilotSeederCount(a);
+    });
 }
 
 function renderGapResolver() {
@@ -2547,7 +3028,13 @@ async function openGapConfig() {
             gapApi(`/api/gaps/config?_t=${Date.now()}`),
             gapApi(`/api/gaps/libraries?_t=${Date.now()}`),
         ]);
-        document.getElementById('gapCacheHours').value = (cfg.data || {}).cache_interval_hours || 6;
+        const schedule = (cfg.data || {}).scan_schedule || {};
+        const binding = document.getElementById('gapScheduleBinding');
+        if (binding) {
+            binding.textContent = schedule.enabled
+                ? `跟随质量扫描定时：每 ${schedule.interval_hours} 小时`
+                : '跟随质量扫描定时：未启用';
+        }
         const excluded = new Set((cfg.data || {}).excluded_libraries || []);
         const libraries = libs.data || [];
         if (!libraries.length) {
@@ -2571,12 +3058,11 @@ function closeGapConfig() {
 
 async function saveGapConfig() {
     const excluded = [...document.querySelectorAll('#gapConfigLibraries input[type="checkbox"]:checked')].map(input => input.value);
-    const hours = Number(document.getElementById('gapCacheHours').value || 6);
     try {
         await gapApi('/api/gaps/config', {
             method: 'POST',
             headers: {'Content-Type': 'application/json'},
-            body: JSON.stringify({excluded_libraries: excluded, cache_interval_hours: hours}),
+            body: JSON.stringify({excluded_libraries: excluded}),
         });
         closeGapConfig();
         showToast('success', '配置已保存');
