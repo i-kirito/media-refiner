@@ -313,9 +313,25 @@ class MoviePilotClient:
     def __init__(self, url: str = "", token: str = ""):
         self.url = (url or settings.moviepilot_url).rstrip("/")
         self.token = token or settings.moviepilot_token
-        self._client = httpx.AsyncClient(timeout=60.0, verify=False)
+        # 订阅/整理繁忙时 MP 可能超过 60s 才返回；区分连接与读取超时
+        self._client = httpx.AsyncClient(
+            timeout=httpx.Timeout(connect=10.0, read=90.0, write=30.0, pool=10.0),
+            verify=False,
+        )
         self.last_error = ""
         self.last_status_code = 0
+
+
+    def _format_request_error(self, error: Exception) -> str:
+        """把 httpx 超时/连接错误转成可读信息，避免日志里出现空 failed:。"""
+        if isinstance(error, httpx.TimeoutException):
+            return "MoviePilot 请求超时，服务可能正忙于整理/识别，请稍后重试"
+        if isinstance(error, httpx.ConnectError):
+            return f"无法连接 MoviePilot: {error or 'connection failed'}"
+        message = str(error or "").strip()
+        if message:
+            return message
+        return type(error).__name__ or "MoviePilot 请求失败"
 
     @property
     def is_configured(self) -> bool:
@@ -345,7 +361,7 @@ class MoviePilotClient:
             return None
         except Exception as e:
             self.last_status_code = 0
-            self.last_error = str(e)
+            self.last_error = self._format_request_error(e)
             print(f"[MoviePilot] GET {path} failed: {self.last_error}")
             return None
 
@@ -370,7 +386,7 @@ class MoviePilotClient:
             return {"success": False, "message": self.last_error, "status_code": e.response.status_code}
         except Exception as e:
             self.last_status_code = 0
-            self.last_error = str(e)
+            self.last_error = self._format_request_error(e)
             print(f"[MoviePilot] POST {path} failed: {self.last_error}")
             return {"success": False, "message": self.last_error}
 
@@ -395,7 +411,7 @@ class MoviePilotClient:
             return {"success": False, "message": self.last_error, "status_code": e.response.status_code}
         except Exception as e:
             self.last_status_code = 0
-            self.last_error = str(e)
+            self.last_error = self._format_request_error(e)
             print(f"[MoviePilot] PUT {path} failed: {self.last_error}")
             return {"success": False, "message": self.last_error}
 
@@ -571,11 +587,37 @@ class MoviePilotClient:
             return result
         return None
 
+    async def list_subscriptions(self) -> list[dict]:
+        """读取 MoviePilot 全部订阅，供页面批量回显订阅状态。"""
+        if not self.is_configured:
+            raise RuntimeError("MoviePilot 未配置")
+        result = await self._get("/api/v1/subscribe/")
+        if isinstance(result, list):
+            return [item for item in result if isinstance(item, dict)]
+        if isinstance(result, dict):
+            for key in ("data", "items", "list", "results"):
+                items = result.get(key)
+                if isinstance(items, list):
+                    return [item for item in items if isinstance(item, dict)]
+        return []
+
     async def add_subscription(self, payload: dict) -> dict | None:
         """新增 MoviePilot 订阅，不触发搜索或下载。"""
         if not self.is_configured:
             raise RuntimeError("MoviePilot 未配置")
-        result = await self._post("/api/v1/subscribe/", payload)
+        body = dict(payload or {})
+        # 兼容新版 MP 字段：media_source/media_id，避免仅靠 mediaid 时服务端卡住或拒收
+        tmdbid = body.get("tmdbid") or body.get("tmdb_id") or 0
+        try:
+            tmdbid = int(tmdbid or 0)
+        except (TypeError, ValueError):
+            tmdbid = 0
+        if tmdbid > 0:
+            body.setdefault("tmdbid", tmdbid)
+            body.setdefault("media_source", "themoviedb")
+            body.setdefault("media_id", str(tmdbid))
+            body.setdefault("mediaid", f"tmdb:{tmdbid}")
+        result = await self._post("/api/v1/subscribe/", body)
         if result and "success" not in result:
             status = str(result.get("status", "")).lower()
             code = result.get("code")

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import logging
 import re
 from collections import defaultdict
@@ -28,6 +29,7 @@ from app.database import (
     get_gap_config,
     get_gap_ignore_targets,
     list_gap_auto_fill_jobs,
+    list_gap_download_bindings,
     list_gap_transfer_marks,
     list_gap_ignores,
     load_gap_cache,
@@ -38,6 +40,7 @@ from app.database import (
     remove_gap_ignores,
     save_gap_cache,
     save_gap_config,
+    save_gap_download_binding,
     save_gap_transfer_mark,
     set_gap_auto_fill_enabled,
     sync_gap_auto_fill_jobs,
@@ -228,6 +231,8 @@ class GapTargetPayload(BaseModel):
     season: int = 0
     episodes: list[int] = Field(default_factory=list)
     season_missing: bool = False
+    season_title: str = ""
+    season_year: int | str = ""
 
 
 class GapSearchPayload(BaseModel):
@@ -268,6 +273,17 @@ class GapMoviePilotSubscribePayload(BaseModel):
     episodes: list[int] = Field(default_factory=list)
     targets: list[GapTargetPayload] = Field(default_factory=list)
     tmdb_id: int | str = 0
+
+
+class GapSubscriptionStatusItem(BaseModel):
+    series_id: str = ""
+    series_name: str = ""
+    tmdb_id: int | str = 0
+    seasons: list[int] = Field(default_factory=list)
+
+
+class GapSubscriptionStatusPayload(BaseModel):
+    items: list[GapSubscriptionStatusItem] = Field(default_factory=list)
 
 
 class GapDownloadStatusPayload(BaseModel):
@@ -794,6 +810,7 @@ def _normalise_gap_targets(
 ) -> list[dict]:
     grouped: dict[int, set[int]] = defaultdict(set)
     season_only: set[int] = set()
+    season_metadata: dict[int, dict[str, Any]] = {}
     for target in targets or []:
         if isinstance(target, BaseModel):
             raw = target.model_dump()
@@ -804,6 +821,13 @@ def _normalise_gap_targets(
         target_season = _safe_int(raw.get("season"), -1)
         if target_season < 0:
             continue
+        metadata = season_metadata.setdefault(target_season, {})
+        season_title = str(raw.get("season_title") or "").strip()
+        season_year = _safe_int(raw.get("season_year"), 0)
+        if season_title and not metadata.get("season_title"):
+            metadata["season_title"] = season_title
+        if season_year > 0 and not metadata.get("season_year"):
+            metadata["season_year"] = season_year
         raw_episodes = raw.get("episodes") or []
         if bool(raw.get("season_missing") or raw.get("season_only") or raw.get("full_season")) and not raw_episodes:
             season_only.add(target_season)
@@ -823,6 +847,7 @@ def _normalise_gap_targets(
             "season": item_season,
             "episodes": sorted(item_episodes),
             "season_missing": item_season in season_only and not item_episodes,
+            **season_metadata.get(item_season, {}),
         }
         for item_season, item_episodes in sorted(grouped.items())
         if item_episodes or item_season in season_only
@@ -864,24 +889,31 @@ def _full_series_episode_spans(text: str) -> list[tuple[int, int]]:
 
 
 def _is_full_series_gap_resource(result: dict) -> tuple[bool, str]:
+    """仅识别跨季/整剧合集。单季完整包应走 season_pack，避免 S02 被误标成全集。"""
     text = _normalise_title(_result_match_text(result))
     if not text:
         return False, "未知资源"
 
+    explicit_seasons = {
+        season
+        for season in _explicit_title_seasons(text)
+        if _safe_int(season, -1) >= 0
+    }
+    collection_count = _season_collection_count(text)
     pack_signal = bool(
-        _season_collection_count(text)
+        collection_count > 1
         or re.search(
-            r"全集|合集|整季|全季|全\s*\d{1,4}\s*[集期话話]|"
-            r"complete|full[ ._-]*season|season[ ._-]*pack|batch|collection",
+            r"全集|合集|整剧|全系列|全季合集|"
+            r"complete[ ._-]*series|full[ ._-]*series|series[ ._-]*pack|batch|collection",
             text,
             re.I,
         )
     )
-    season_signal = bool(
-        re.search(r"(?<![a-z0-9])s0?\d{1,2}(?![ ._-]*(?:e|ep)\d)(?![a-z0-9])", text)
-        or re.search(r"(?<![a-z0-9])season[ ._-]*\d{1,2}(?![ ._-]*(?:e|ep)\d)(?![a-z0-9])", text)
-        or re.search(r"第\s*\d{1,2}\s*季", text)
-        or re.search(r"(?<![a-z0-9])specials?(?![a-z0-9])", text)
+    # “整季/全季/complete/full season/season pack” 在单季标题里很常见，不能当作跨季全集。
+    multi_season_range = bool(
+        re.search(r"(?<![a-z0-9])s0?\d{1,2}\s*(?:-|~|至|到|to)\s*s?0?\d{1,2}(?![a-z0-9])", text)
+        or re.search(r"第\s*\d{1,2}\s*(?:-|~|至|到)\s*\d{1,2}\s*季", text)
+        or re.search(r"(?<![a-z0-9])season[ ._-]*\d{1,2}\s*(?:-|~|to|至|到)\s*(?:season[ ._-]*)?\d{1,2}(?![a-z0-9])", text)
     )
     episode_spans = _full_series_episode_spans(text)
     broad_episode_ranges = [
@@ -895,14 +927,53 @@ def _is_full_series_gap_resource(result: dict) -> tuple[bool, str]:
         for start, end in episode_spans
     )
     ongoing_pack_signal = bool(re.search(r"(?:更新到|更新至|更到|更至|至|到)\s*0*\d{1,4}\s*[集期话話]", text))
+    single_season_only = len(explicit_seasons) == 1 and collection_count <= 1 and not multi_season_range
 
     if has_single_episode and not (pack_signal or has_broad_episode_range or ongoing_pack_signal):
         return False, "单集资源"
-    if pack_signal or season_signal or has_broad_episode_range or ongoing_pack_signal:
+    if single_season_only:
+        return False, "单季资源"
+    if pack_signal or multi_season_range or collection_count > 1:
+        return True, "全集"
+    # 无明确季号的宽泛合集/大跨度集数，仍可视为整剧资源
+    if not explicit_seasons and (has_broad_episode_range or ongoing_pack_signal):
         return True, "全集"
     if episode_spans or has_single_episode:
         return False, "单集资源"
     return False, "非全集"
+
+
+def _choose_full_series_gap_result(
+    result: dict,
+    annotate_targets: list[dict],
+    *,
+    assume_first_season_when_ambiguous: bool = False,
+    series_name: str = "",
+) -> dict:
+    """全集重下标注：跨季/整剧合集优先；否则保留单季整季包（含 S02）。"""
+    full_item = _mark_full_series_gap_result(result)
+    season_item = _annotate_gap_match_for_targets(
+        result,
+        annotate_targets,
+        assume_first_season_when_ambiguous=assume_first_season_when_ambiguous,
+        series_name=series_name,
+    )
+    season_kind = str(season_item.get("ui_episode_match_kind") or "")
+    # 真正跨季全集优先，避免“S01-S02 合集”被压成 S01 整季包。
+    if full_item.get("ui_full_series") is True:
+        return full_item
+    if season_kind in {"season_pack", "episode_pack"}:
+        chosen = season_item
+        chosen["ui_download_mode"] = "normal"
+        chosen["ui_full_series"] = False
+        if season_kind == "season_pack":
+            target_season = _safe_int(chosen.get("ui_target_season"), 0)
+            if target_season > 0:
+                chosen["ui_episode_match_text"] = f"S{target_season:02d} 整季包"
+            else:
+                chosen["ui_episode_match_text"] = chosen.get("ui_episode_match_text") or "整季包"
+        return chosen
+    return full_item
 
 
 def _mark_full_series_gap_result(result: dict) -> dict:
@@ -1001,6 +1072,30 @@ def _is_season_only_gap_target(target: dict | None) -> bool:
     if not isinstance(target, dict):
         return False
     return bool(target.get("season_missing")) and not target.get("episodes")
+
+
+def _is_complete_season_gap_hdhive_result(item: dict, full_series: bool = False) -> bool:
+    """影巢缺集搜索只展示完整整季/全集资源。"""
+    if not isinstance(item, dict):
+        return False
+    if full_series:
+        kind = str(item.get("ui_episode_match_kind") or "")
+        if kind in {"full_series", "season_pack"} or item.get("ui_full_series") is True:
+            return True
+        matched_targets = item.get("ui_gap_targets")
+        if isinstance(matched_targets, list):
+            for target in matched_targets:
+                if isinstance(target, dict) and str(target.get("match_kind") or "") in {"full_series", "season_pack"}:
+                    return True
+        return False
+    if str(item.get("ui_episode_match_kind") or "") == "season_pack":
+        return True
+    matched_targets = item.get("ui_gap_targets")
+    if isinstance(matched_targets, list):
+        for target in matched_targets:
+            if isinstance(target, dict) and str(target.get("match_kind") or "") == "season_pack":
+                return True
+    return False
 
 
 def _is_season_only_gap_match(item: dict, targets: list[dict]) -> bool:
@@ -1171,6 +1266,119 @@ def _gap_resource_key_candidates(result: dict) -> list[str]:
         if key and key not in keys:
             keys.append(key)
     return keys
+
+
+def _gap_mp_resource_key(result: dict) -> str:
+    """生成不暴露站点链接的 MP 候选资源键；同名跨站资源必须得到不同键。"""
+    site_name = str(result.get("site_name") or result.get("site") or "").strip().lower()
+    identity = ""
+    for field in ("page_url", "enclosure", "download_url", "guid", "id"):
+        value = result.get(field)
+        if isinstance(value, (dict, list, tuple, set)):
+            continue
+        normalized = _normalize_gap_resource_key(value)
+        if normalized:
+            identity = f"{field}:{normalized}"
+            break
+    if not identity:
+        title = str(_gap_result_title(result) or "").strip().lower()
+        size = _safe_int(result.get("size"), 0)
+        identity = f"fallback:{title}|{size}"
+    digest = hashlib.sha256(f"{site_name}|{identity}".encode("utf-8")).hexdigest()
+    return f"mp:{digest}"
+
+
+_GAP_DOWNLOAD_STATUS_FIELDS = (
+    "ui_download_task",
+    "ui_download_status",
+    "ui_download_label",
+    "ui_download_progress",
+    "ui_download_speed",
+    "ui_download_eta",
+    "ui_download_name",
+    "ui_download_id",
+    "ui_download_hash",
+    "ui_download_state",
+    "ui_downloader",
+    "ui_downloader_type",
+)
+
+
+def _gap_download_task_id(item: dict | None) -> str:
+    if not isinstance(item, dict):
+        return ""
+    for key in ("ui_download_hash", "ui_download_id", "torrent_hash", "torrent_id", "download_id", "hash"):
+        value = str(item.get(key) or "").strip().lower()
+        if value:
+            return value
+    return ""
+
+
+def _clear_gap_download_status(item: dict) -> None:
+    for key in _GAP_DOWNLOAD_STATUS_FIELDS:
+        item.pop(key, None)
+
+
+async def _apply_gap_download_bindings(results: list[dict]) -> list[dict]:
+    """同一下载器任务只回显到用户实际点击的站点候选。"""
+    if not results:
+        return results
+    resource_keys = [_gap_mp_resource_key(item) for item in results]
+    task_ids = [_gap_download_task_id(item) for item in results]
+    bindings = await list_gap_download_bindings(resource_keys, task_ids)
+    bound_keys_by_task = {
+        str(binding.get("task_id") or "").strip().lower(): key
+        for key, binding in bindings.items()
+        if str(binding.get("task_id") or "").strip()
+    }
+    if not bound_keys_by_task:
+        return results
+
+    for item, resource_key in zip(results, resource_keys):
+        task_id = _gap_download_task_id(item)
+        bound_resource_key = bound_keys_by_task.get(task_id)
+        if bound_resource_key and bound_resource_key != resource_key:
+            _clear_gap_download_status(item)
+    return results
+
+
+async def _save_gap_download_binding_for_result(
+    mp: MoviePilotClient,
+    result: dict,
+    response: dict,
+) -> dict:
+    """从提交响应或下载器状态捕获任务 ID，并绑定到被点击的 MP 候选。"""
+    sources = [response]
+    for key in ("data", "episode_selection"):
+        value = response.get(key)
+        if isinstance(value, dict):
+            sources.append(value)
+
+    task_source = next((source for source in sources if _gap_download_task_id(source)), None)
+    if not task_source:
+        for attempt in range(4):
+            annotated = await mp.annotate_downloader_statuses([result])
+            candidate = annotated[0] if annotated else {}
+            if _gap_download_task_id(candidate):
+                task_source = candidate
+                break
+            if attempt < 3:
+                await asyncio.sleep(0.75)
+    if not task_source:
+        return {}
+
+    task_id = _gap_download_task_id(task_source)
+    resource_key = _gap_mp_resource_key(result)
+    saved = await save_gap_download_binding(
+        resource_key,
+        task_id,
+        task_name=str(task_source.get("ui_download_name") or task_source.get("torrent_name") or ""),
+        downloader_name=str(task_source.get("ui_downloader") or task_source.get("downloader") or ""),
+        downloader_type=str(task_source.get("ui_downloader_type") or task_source.get("downloader_type") or ""),
+    )
+    if not saved:
+        return {}
+    return {"resource_key": resource_key, "task_id": task_id}
 
 
 def _gap_transfer_status(resp: dict | None) -> str:
@@ -2289,6 +2497,56 @@ def _dedupe_gap_series_results(results: list[dict]) -> list[dict]:
     return list(grouped.values())
 
 
+def _filter_gap_results_by_ignored(results: list[dict], ignored: set[str]) -> list[dict]:
+    """在缓存/扫描结果上重新应用忽略规则，处理扫描期间新增忽略项的竞态。"""
+    ignored_ids = {str(value or "").strip() for value in ignored if str(value or "").strip()}
+    if not ignored_ids:
+        return _dedupe_gap_series_results(results)
+
+    visible: list[dict] = []
+    for raw_item in _dedupe_gap_series_results(results):
+        item = dict(raw_item)
+        series_ids = {
+            str(value or "").strip()
+            for value in [item.get("series_id"), *(item.get("merged_series_ids") or [])]
+            if str(value or "").strip()
+        }
+        if series_ids.intersection(ignored_ids):
+            continue
+
+        gaps: list[dict] = []
+        for gap in item.get("gaps") or []:
+            if not isinstance(gap, dict):
+                continue
+            season = _safe_int(gap.get("season"), 0)
+            episode = _safe_int(gap.get("episode"), 0)
+            season_missing = bool(gap.get("season_missing")) or episode <= 0
+            target_ids = {str(gap.get("id") or "").strip()}
+            for series_id in series_ids:
+                if season_missing:
+                    target_ids.add(_season_target_id(series_id, season))
+                else:
+                    target_ids.add(_episode_target_id(series_id, season, episode))
+            if target_ids.intersection(ignored_ids):
+                continue
+            gaps.append(dict(gap))
+
+        if not gaps:
+            continue
+        item["gaps"] = gaps
+        item["gap_count"] = len(gaps)
+        visible.append(item)
+    return visible
+
+
+async def _apply_current_gap_ignores() -> None:
+    """忽略写入后立即清理内存结果，避免轮询把刚隐藏的卡片恢复出来。"""
+    ignored = await get_gap_ignore_targets()
+    results = _filter_gap_results_by_ignored(_scan_status.get("results") or [], ignored)
+    _scan_status["results"] = results
+    _scan_status["summary"] = _gap_summary_from_results(results, _scan_status.get("summary") or {})
+
+
 def _merge_gap_series_item(existing: dict, item: dict) -> dict:
     if _gap_series_rank(item) > _gap_series_rank(existing):
         keeper = dict(item)
@@ -2450,6 +2708,18 @@ async def _fetch_all_items(
         items.extend(batch)
         start += limit
     return items
+
+
+async def _get_gap_libraries(emby: EmbyClient) -> list[dict]:
+    """带重试地读取媒体库，避免把连接失败误判成空库。"""
+    last_error = ""
+    for attempt in range(4):
+        result = await emby._get("/Library/VirtualFolders", {"api_key": emby.api_key})
+        if isinstance(result, list) and result:
+            return result
+        last_error = "Emby 未返回任何媒体库"
+        await asyncio.sleep(0.8 + attempt * 0.8)
+    raise RuntimeError(f"{last_error}，已保留上次缺集结果")
 
 
 async def _get_items_page(
@@ -2800,6 +3070,9 @@ async def _scan_gaps_task():
     emby = EmbyClient()
     mp = MoviePilotClient()
     season_cache: dict[str, dict[int, dict]] = {}
+    previous_results: list[dict] = []
+    previous_summary: dict = {}
+    previous_created_at = ""
     started_at = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     _scan_status.update(
         {
@@ -2817,16 +3090,23 @@ async def _scan_gaps_task():
         }
     )
     try:
+        cached_results, cached_summary, cached_created_at = await load_gap_cache()
+        ignored = await get_gap_ignore_targets()
+        previous_results = _filter_gap_results_by_ignored(cached_results, ignored)
+        previous_summary = _gap_summary_from_results(previous_results, cached_summary)
+        previous_created_at = str(cached_created_at or "")
+
         cfg = await get_gap_config()
         excluded = {str(x) for x in cfg.get("excluded_libraries", [])}
-        ignored = await get_gap_ignore_targets()
 
-        libraries = await emby.get_libraries()
+        libraries = await _get_gap_libraries(emby)
         tv_libraries = [
             lib for lib in libraries
             if (lib.get("CollectionType") == "tvshows" or str(lib.get("CollectionType") or "").lower() == "tv")
             and str(lib.get("ItemId") or "") not in excluded
         ]
+        if not tv_libraries:
+            raise RuntimeError("未发现可扫描的剧集库，已保留上次缺集结果")
 
         total = 0
         skipped_libraries: list[dict] = []
@@ -2843,11 +3123,14 @@ async def _scan_gaps_task():
                 skipped_libraries.append({"id": lib_id, "name": lib_name, "error": str(e)})
                 _scan_status["skipped_libraries"] = skipped_libraries
                 _scan_status["current_item"] = f"跳过 {lib_name}: {e}"
+        if not scannable_libraries:
+            raise RuntimeError("所有剧集库均无法读取，已保留上次缺集结果")
         _scan_status["total"] = total
 
         results: list[dict] = []
         processed = 0
         series_error_count = 0
+        scanned_library_count = 0
 
         def publish_scan_snapshot(current_item: str = ""):
             visible_results = sorted(
@@ -2894,6 +3177,7 @@ async def _scan_gaps_task():
                 publish_scan_snapshot(f"跳过 {lib_name}: {e}")
                 await asyncio.sleep(0.4)
                 continue
+            scanned_library_count += 1
 
             semaphore = asyncio.Semaphore(1)
             failed_count = 0
@@ -2922,13 +3206,20 @@ async def _scan_gaps_task():
                     raise RuntimeError(f"Emby 请求失败过多，已停止扫描（失败 {failed_count} 项）")
                 await asyncio.sleep(0.4)
 
+        if scanned_library_count == 0:
+            raise RuntimeError("所有剧集库均扫描失败，已保留上次缺集结果")
+
         _scan_status.update(
             {
                 "current_item": f"复核已发现缺集 {len(results)} 部",
                 "progress": 99,
             }
         )
+        # 扫描可能持续较久，期间用户新增的忽略项必须在落盘前重新读取。
+        ignored = await get_gap_ignore_targets()
         results = await _revalidate_gap_scan_results(emby, mp, results, ignored)
+        ignored = await get_gap_ignore_targets()
+        results = _filter_gap_results_by_ignored(results, ignored)
         results.sort(key=lambda x: (-_safe_int(x.get("gap_count"), 0), x.get("series_name", "")))
         summary = _gap_scan_summary(
             results,
@@ -2972,11 +3263,16 @@ async def _scan_gaps_task():
                 await disable_gap_auto_fill_jobs()
     except Exception as e:
         logger.exception("[Gaps] 缺集扫描失败")
+        restored = bool(previous_results)
         _scan_status.update(
             {
                 "is_scanning": False,
+                "progress": 100 if restored else 0,
                 "error": str(e),
-                "current_item": "扫描失败",
+                "current_item": "扫描失败，已保留上次结果" if restored else "扫描失败",
+                "results": previous_results,
+                "summary": previous_summary,
+                "created_at": previous_created_at,
                 "finished_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
             }
         )
@@ -2990,7 +3286,8 @@ async def _hydrate_cache_if_needed():
         return
     results, summary, created_at = await load_gap_cache()
     if results:
-        results = _dedupe_gap_series_results(results)
+        ignored = await get_gap_ignore_targets()
+        results = _filter_gap_results_by_ignored(results, ignored)
         summary = _gap_summary_from_results(results, summary)
         _scan_status.update(
             {
@@ -3019,6 +3316,9 @@ async def gap_scan_progress():
     """获取缺集扫描进度和最新结果。"""
     await _hydrate_cache_if_needed()
     status = dict(_scan_status)
+    ignored = await get_gap_ignore_targets()
+    status["results"] = _filter_gap_results_by_ignored(status.get("results") or [], ignored)
+    status["summary"] = _gap_summary_from_results(status["results"], status.get("summary") or {})
     status["schedule"] = await _gap_schedule_state(str(status.get("created_at") or ""))
     status["auto_fill"] = dict(_auto_fill_status)
     status["auto_fill_jobs"] = await list_gap_auto_fill_jobs()
@@ -3409,8 +3709,10 @@ async def ignore_gap_episode(payload: GapEpisodePayload):
         return _error("缺少剧集或集数参数")
     if payload.episode_number <= 0:
         await add_gap_ignore_season(payload.series_id, payload.series_name, payload.season_number)
+        await _apply_current_gap_ignores()
         return _success(message="已忽略该整季缺失")
     await add_gap_ignore_episode(payload.series_id, payload.series_name, payload.season_number, payload.episode_number)
+    await _apply_current_gap_ignores()
     return _success(message="已忽略该缺集")
 
 
@@ -3419,6 +3721,7 @@ async def ignore_gap_series(payload: GapSeriesPayload):
     if not payload.series_id:
         return _error("缺少剧集 ID")
     await add_gap_ignore_series(payload.series_id, payload.series_name)
+    await _apply_current_gap_ignores()
     return _success(message="已忽略该剧集")
 
 
@@ -3436,6 +3739,8 @@ async def ignore_gap_series_batch(payload: GapSeriesPayload):
             continue
         await add_gap_ignore_series(series_id, item.get("series_name") or item.get("name") or "")
         count += 1
+    if count:
+        await _apply_current_gap_ignores()
     return _success({"count": count}, f"已忽略 {count} 部剧集")
 
 
@@ -3488,7 +3793,7 @@ def _chinese_num_to_int(text: str) -> int:
 
 
 def _season_collection_count(text: str) -> int:
-    """识别“两季全 / 全2季 / 2季合集”这类整包资源覆盖的季数。"""
+    """识别“两季全 / 全2季 / 2季合集 / 一二季全”这类整包资源覆盖的季数。"""
     number = r"(\d{1,2}|[零〇一二两三四五六七八九十]{1,3})"
     patterns = [
         rf"(?<!第){number}\s*季\s*(?:全|全集|合集|完整|完结|完)",
@@ -3502,6 +3807,20 @@ def _season_collection_count(text: str) -> int:
         count = _safe_int(raw, 0) if raw.isdigit() else _chinese_num_to_int(raw)
         if count > 0:
             return count
+    # “一二季全”按连续中文季号的最大季号计覆盖数。
+    for raw in re.findall(r"([零〇一二两三四五六七八九十]{2,})\s*季\s*(?:全|全集|合集|完整|完结|完)?", text):
+        values = []
+        for ch in raw:
+            if ch == "十":
+                values = []
+                break
+            value = _chinese_num_to_int(ch)
+            if value <= 0:
+                values = []
+                break
+            values.append(value)
+        if values:
+            return max(values)
     if "双季" in text or "两季" in text:
         return 2
     return 0
@@ -3548,6 +3867,67 @@ def _season_span(start: int, end: int) -> list[int]:
     return list(range(start, min(end, start + 99) + 1))
 
 
+def _explicit_title_seasons(title: str) -> set[int]:
+    """提取资源标题中明确声明的季号，供缺集匹配和分季别名映射共用。"""
+    text = _normalise_title(title)
+    explicit_seasons = {
+        _safe_int(value, 0)
+        for value in re.findall(r"(?<![a-z0-9])s0?(\d{1,2})(?!\d)", text)
+    }
+    # “一二季全 / 一二三季”这类连续中文季号，按每个数字字面展开。
+    for raw in re.findall(r"([零〇一二两三四五六七八九十]{2,})\s*季", text):
+        seasons = []
+        for ch in raw:
+            if ch == "十":
+                seasons = []
+                break
+            value = _chinese_num_to_int(ch)
+            if value <= 0:
+                seasons = []
+                break
+            seasons.append(value)
+        if seasons:
+            explicit_seasons.update(seasons)
+    explicit_seasons.update(
+        _safe_int(value, 0)
+        for value in re.findall(r"(?<![a-z0-9])season[ ._-]*0?(\d{1,2})(?!\d)", text, re.I)
+    )
+    for left, right in re.findall(
+        r"(?<![a-z0-9])s0?(\d{1,2})\s*(?:-|~|至|到|to)\s*s?0?(\d{1,2})(?!\d)",
+        text,
+        re.I,
+    ):
+        explicit_seasons.update(_season_span(_safe_int(left, -1), _safe_int(right, -1)))
+    for left, right in re.findall(
+        r"(?<![a-z0-9])season[ ._-]*0?(\d{1,2})\s*(?:-|~|至|到|to)\s*(?:season[ ._-]*)?0?(\d{1,2})(?!\d)",
+        text,
+        re.I,
+    ):
+        explicit_seasons.update(_season_span(_safe_int(left, -1), _safe_int(right, -1)))
+    explicit_seasons.update(
+        _safe_int(value, 0)
+        for value in re.findall(r"第\s*(\d{1,2})\s*季", text)
+    )
+    for left, right in re.findall(r"第\s*(\d{1,2})\s*(?:-|~|至|到)\s*(\d{1,2})\s*季", text):
+        start = _safe_int(left, 0)
+        end = _safe_int(right, 0)
+        if start > 0 and end > 0:
+            explicit_seasons.update(range(min(start, end), max(start, end) + 1))
+    explicit_seasons.update(
+        _chinese_num_to_int(value)
+        for value in re.findall(r"第\s*([零〇一二两三四五六七八九十]{1,3})\s*季", text)
+    )
+    for left, right in re.findall(
+        r"第\s*([零〇一二两三四五六七八九十]{1,3})\s*(?:-|~|至|到)\s*([零〇一二两三四五六七八九十]{1,3})\s*季",
+        text,
+    ):
+        start = _chinese_num_to_int(left)
+        end = _chinese_num_to_int(right)
+        if start > 0 and end > 0:
+            explicit_seasons.update(range(min(start, end), max(start, end) + 1))
+    return {season for season in explicit_seasons if season >= 0}
+
+
 def _series_file_season_override(series_name: str, title: str, target_season: int) -> int:
     """处理 Emby 季号和资源站文件季号不一致的长连载。"""
     target_season = _safe_int(target_season, 0)
@@ -3578,6 +3958,7 @@ def _episode_match_ratio(
     episodes: list[int],
     assume_first_season_when_ambiguous: bool = False,
     series_name: str = "",
+    file_season_hint: int | None = None,
 ) -> tuple[float, list[int], str, int]:
     text = _normalise_title(title)
     if not text:
@@ -3588,7 +3969,12 @@ def _episode_match_ratio(
     target_set = set(targets)
     if season < 0:
         return 0.0, [], "none", 0
-    file_season = _series_file_season_override(series_name, title, season) or season
+    hinted_file_season = _safe_int(file_season_hint, -1)
+    file_season = (
+        hinted_file_season
+        if hinted_file_season >= 0
+        else (_series_file_season_override(series_name, title, season) or season)
+    )
     match_seasons = {season}
     if file_season:
         match_seasons.add(file_season)
@@ -3606,36 +3992,7 @@ def _episode_match_ratio(
     ]
     if season == 0:
         season_tokens.extend(["specials", "special", "特别篇", "特别", "番外", "ova"])
-    explicit_seasons = {
-        _safe_int(x, 0)
-        for x in re.findall(r"(?<![a-z0-9])s0?(\d{1,2})(?!\d)", text)
-    }
-    for left, right in re.findall(r"(?<![a-z0-9])s0?(\d{1,2})\s*(?:-|~|至|到|to)\s*s?0?(\d{1,2})(?!\d)", text, re.I):
-        explicit_seasons.update(_season_span(_safe_int(left, -1), _safe_int(right, -1)))
-    for left, right in re.findall(r"(?<![a-z0-9])season[ ._-]*0?(\d{1,2})\s*(?:-|~|至|到|to)\s*(?:season[ ._-]*)?0?(\d{1,2})(?!\d)", text, re.I):
-        explicit_seasons.update(_season_span(_safe_int(left, -1), _safe_int(right, -1)))
-    explicit_seasons.update(
-        _safe_int(x, 0)
-        for x in re.findall(r"第\s*(\d{1,2})\s*季", text)
-    )
-    for left, right in re.findall(r"第\s*(\d{1,2})\s*(?:-|~|至|到)\s*(\d{1,2})\s*季", text):
-        start = _safe_int(left, 0)
-        end = _safe_int(right, 0)
-        if start > 0 and end > 0:
-            explicit_seasons.update(range(min(start, end), max(start, end) + 1))
-    explicit_seasons.update(
-        _chinese_num_to_int(x)
-        for x in re.findall(r"第\s*([零〇一二两三四五六七八九十]{1,3})\s*季", text)
-    )
-    for left, right in re.findall(
-        r"第\s*([零〇一二两三四五六七八九十]{1,3})\s*(?:-|~|至|到)\s*([零〇一二两三四五六七八九十]{1,3})\s*季",
-        text,
-    ):
-        start = _chinese_num_to_int(left)
-        end = _chinese_num_to_int(right)
-        if start > 0 and end > 0:
-            explicit_seasons.update(range(min(start, end), max(start, end) + 1))
-    explicit_seasons = {x for x in explicit_seasons if x >= 0}
+    explicit_seasons = _explicit_title_seasons(text)
     collection_count = _season_collection_count(text)
     has_episode_markers = bool(
         re.search(
@@ -3652,6 +4009,7 @@ def _episode_match_ratio(
         season in explicit_seasons
         or any(token in text for token in season_tokens if token)
         or (season > 0 and collection_count >= season)
+        or hinted_file_season >= 0
     )
     if (
         assume_first_season_when_ambiguous
@@ -3744,12 +4102,19 @@ def _annotate_gap_match(
     series_name: str = "",
 ) -> dict:
     item = dict(result)
+    hint_target_season = _safe_int(item.get("ui_target_season_hint"), -1)
+    file_season_hint = (
+        _safe_int(item.get("ui_file_season_hint"), -1)
+        if hint_target_season == _safe_int(season, 0)
+        else -1
+    )
     ratio, matched, match_kind, file_season = _episode_match_ratio(
         _result_match_text(item),
         season,
         episodes,
         assume_first_season_when_ambiguous=assume_first_season_when_ambiguous,
         series_name=series_name,
+        file_season_hint=file_season_hint if file_season_hint >= 0 else None,
     )
     item["ui_episode_match_ratio"] = ratio
     item["ui_episode_match_kind"] = match_kind
@@ -3825,6 +4190,23 @@ def _annotate_gap_match_for_targets(
         if first.get("file_season") and _safe_int(first.get("file_season"), 0) != _safe_int(first.get("season"), 0):
             best["ui_file_season"] = first["file_season"]
     return best
+
+
+def _is_completed_gap_transfer_mark(mark: dict | None) -> bool:
+    if not isinstance(mark, dict):
+        return False
+    return str(mark.get("status") or "").strip().lower() in GAP_TRANSFER_SUCCESS_STATUSES
+
+
+async def _gap_has_transfer_record(result: dict, slug: str = "") -> bool:
+    candidate = dict(result or {})
+    if slug:
+        candidate["slug"] = slug
+    keys = _gap_resource_key_candidates(candidate)
+    if not keys:
+        return False
+    marks = await list_gap_transfer_marks(keys)
+    return any(_is_completed_gap_transfer_mark(marks.get(key)) for key in keys)
 
 
 async def _apply_gap_transfer_marks(results: list[dict]) -> list[dict]:
@@ -3975,7 +4357,7 @@ def _search_keywords(
 
 
 def _gap_identity_context(item: dict, payload: GapSearchPayload) -> dict:
-    target_year = _safe_int(payload.year, 0)
+    target_year = _safe_int(item.get("ui_season_year"), 0) or _safe_int(payload.year, 0)
     target_imdb = str(payload.imdb_id or "").strip().lower()
     result_imdb = str(item.get("imdbid") or item.get("imdb_id") or item.get("imdb") or "").strip().lower()
     title_text = _normalise_title(_result_match_text(item))
@@ -4017,13 +4399,29 @@ def _apply_gap_identity_context(items: list[dict], payload: GapSearchPayload) ->
     return items
 
 
+def _clean_season_search_name(season_name: str) -> str:
+    raw = str(season_name or "").strip()
+    if not raw or raw in {"整季", "整季缺失", "未知季"}:
+        return ""
+    cleaned = re.sub(r"第\s*[零〇一二两三四五六七八九十\d]+\s*季", " ", raw, flags=re.I)
+    cleaned = re.sub(r"\b(?:season|series)\s*\d+\b", " ", cleaned, flags=re.I)
+    cleaned = re.sub(r"\b(?:19|20)\d{2}\b", " ", cleaned)
+    cleaned = re.sub(r"[（()）\[\]【】]", " ", cleaned)
+    cleaned = re.sub(r"^[\s:：·._-]+|[\s:：·._-]+$", "", cleaned)
+    cleaned = re.sub(r"\s+", " ", cleaned).strip()
+    if cleaned.isdigit():
+        return ""
+    if re.fullmatch(r"(?:s\s*0?\d+|season\s*\d+|第?\s*\d+\s*季)", cleaned, re.I):
+        return ""
+    return cleaned
+
+
 def _season_aliases_from_name(series_name: str, season_name: str) -> list[str]:
     normalized = _normalise_title(f"{series_name} {season_name}")
-    cleaned = re.sub(r"第\s*\d+\s*季", "", season_name or "").strip()
-    cleaned = re.sub(r"[（(].*?[）)]", "", cleaned).strip()
+    cleaned = _clean_season_search_name(season_name)
     aliases: list[str] = []
-    if cleaned:
-        aliases.append(f"{series_name} {cleaned}")
+    if cleaned and _normalise_title(cleaned) != _normalise_title(series_name):
+        aliases.extend([cleaned, f"{series_name} {cleaned}"])
     is_pokemon = any(token in normalized for token in ("宝可梦", "寶可夢", "精灵宝可梦", "神奇宝贝", "宠物小精灵", "pokemon", "pokémon", "pocket monsters"))
     if is_pokemon and any(token in normalized for token in ("钻石", "鑽石", "珍珠", "神奥", "神奧")):
         aliases.extend(["宝可梦 钻石与珍珠", "精灵宝可梦 钻石与珍珠", "Pokemon Diamond and Pearl", "Pokémon Diamond and Pearl", "Pokemon DP"])
@@ -4032,21 +4430,175 @@ def _season_aliases_from_name(series_name: str, season_name: str) -> list[str]:
     return _unique_keywords(aliases)
 
 
-async def _gap_season_search_aliases(series_id: str, series_name: str, season: int) -> list[str]:
-    if not series_id or _safe_int(season, 0) <= 0:
+def _season_direct_search_names(series_name: str, season_name: str, season: int, season_year: int = 0) -> list[str]:
+    cleaned = _clean_season_search_name(season_name)
+    if not cleaned or _normalise_title(cleaned) == _normalise_title(series_name):
         return []
-    emby = EmbyClient()
-    try:
-        data = await emby._get(f"/Shows/{series_id}/Seasons", {"Fields": "IndexNumber,SortName,OriginalTitle"})
-        items = data.get("Items", []) if isinstance(data, dict) else []
-        for item in items:
-            if _safe_int(item.get("IndexNumber"), -1) == _safe_int(season, 0):
-                return _season_aliases_from_name(series_name, str(item.get("Name") or item.get("OriginalTitle") or ""))
-    except Exception as e:
-        logger.warning("[Gaps] 读取季别名失败: %s", e)
-    finally:
-        await emby.close()
-    return []
+    file_season = 1 if _safe_int(season, 0) > 1 else max(1, _safe_int(season, 1))
+    marker = f"S{file_season:02d}"
+    names: list[str] = []
+    if season_year > 0:
+        names.extend([
+            f"{cleaned} {season_year} {marker}",
+            f"{cleaned} {marker} {season_year}",
+            f"{cleaned} {season_year}",
+        ])
+    names.extend([f"{cleaned} {marker}", cleaned])
+    return _unique_keywords(names)
+
+
+async def _gap_season_search_context(
+    mp: MoviePilotClient,
+    series_id: str,
+    series_name: str,
+    tmdb_id: int | str,
+    season: int,
+    target: dict | None = None,
+) -> dict:
+    target_season = _safe_int(season, 0)
+    if target_season <= 0:
+        return {"search_names": [], "direct_keywords": [], "season_title": "", "season_year": 0}
+
+    season_names: list[str] = []
+    target = target or {}
+    target_title = str(target.get("season_title") or "").strip()
+    if _clean_season_search_name(target_title):
+        season_names.append(target_title)
+    season_year = _safe_int(target.get("season_year"), 0)
+
+    if not season_names and _safe_int(tmdb_id, 0) > 0 and mp.is_configured:
+        try:
+            seasons = await asyncio.wait_for(mp.get_tmdb_seasons(tmdb_id), timeout=3.0)
+            season_info = next(
+                (
+                    item for item in seasons
+                    if _safe_int(item.get("season_number") or item.get("season"), -1) == target_season
+                ),
+                {},
+            )
+            for field in ("name", "title", "original_name", "original_title"):
+                value = str(season_info.get(field) or "").strip()
+                if _clean_season_search_name(value):
+                    season_names.append(value)
+            if season_year <= 0:
+                season_year = _safe_int(_tmdb_season_air_date(season_info)[:4], 0)
+        except Exception as e:
+            logger.info("[Gaps] 读取 TMDB 分季标题失败: tmdb=%s S%02d %s", tmdb_id, target_season, e)
+
+    if not season_names and series_id:
+        emby = EmbyClient()
+        try:
+            data = await emby._get(
+                f"/Shows/{series_id}/Seasons",
+                {"Fields": "IndexNumber,SortName,OriginalTitle,PremiereDate"},
+            )
+            items = data.get("Items", []) if isinstance(data, dict) else []
+            season_info = next(
+                (item for item in items if _safe_int(item.get("IndexNumber"), -1) == target_season),
+                {},
+            )
+            for field in ("Name", "OriginalTitle", "SortName"):
+                value = str(season_info.get(field) or "").strip()
+                if _clean_season_search_name(value):
+                    season_names.append(value)
+            if season_year <= 0:
+                season_year = _safe_int(str(season_info.get("PremiereDate") or "")[:4], 0)
+        except Exception as e:
+            logger.warning("[Gaps] 读取 Emby 季别名失败: %s", e)
+        finally:
+            await emby.close()
+
+    search_names: list[str] = []
+    direct_keywords: list[str] = []
+    season_title = ""
+    for season_name in _unique_keywords(season_names):
+        cleaned = _clean_season_search_name(season_name)
+        if not cleaned or _normalise_title(cleaned) == _normalise_title(series_name):
+            continue
+        if not season_title:
+            season_title = cleaned
+        direct_keywords.extend(_season_direct_search_names(series_name, season_name, target_season, season_year))
+        search_names.extend(_season_aliases_from_name(series_name, season_name))
+    direct_keywords = _unique_keywords(direct_keywords)
+    search_names = _unique_keywords(direct_keywords + search_names)
+    return {
+        "search_names": search_names,
+        "direct_keywords": direct_keywords,
+        "season_title": season_title,
+        "season_year": season_year,
+    }
+
+
+def _apply_season_search_hint(result: dict, target_season: int, context: dict, keyword: str) -> dict:
+    """将独立分季标题检索到的 S01 安全映射回 TMDB 目标季。"""
+    item = dict(result)
+    target_year = _safe_int(context.get("season_year"), 0)
+    result_year = _safe_int(item.get("year"), 0)
+    if result_year <= 0:
+        year_match = re.search(r"(?<!\d)((?:19|20)\d{2})(?!\d)", _result_match_text(item))
+        result_year = _safe_int(year_match.group(1), 0) if year_match else 0
+    if target_year > 0 and result_year > 0 and target_year != result_year:
+        return item
+    explicit_seasons = _explicit_title_seasons(_result_match_text(item))
+    if explicit_seasons and target_season not in explicit_seasons and 1 not in explicit_seasons:
+        return item
+    file_season = target_season if target_season in explicit_seasons else 1
+    item["ui_target_season_hint"] = target_season
+    item["ui_file_season_hint"] = file_season
+    item["ui_season_title"] = str(context.get("season_title") or "")
+    item["ui_season_year"] = _safe_int(context.get("season_year"), 0)
+    item["ui_season_search_keyword"] = keyword
+    return item
+
+
+
+async def _full_series_search_targets(
+    mp: MoviePilotClient | None,
+    series_id: str,
+    series_name: str,
+    tmdb_id: int | str,
+    fallback_season: int = 1,
+) -> list[dict]:
+    """全集重下需要覆盖所有已知季，不能只搜 S01。"""
+    seasons: set[int] = set()
+
+    # 1) TMDB 权威季列表
+    if mp is not None:
+        try:
+            season_map = await _fetch_expected_season_map(
+                mp,
+                {"Id": series_id, "Name": series_name, "ProviderIds": {"Tmdb": str(tmdb_id or "")}},
+                timeout=3.0,
+            )
+            seasons.update(num for num in season_map if num > 0)
+        except Exception as e:
+            logger.info("[Gaps] 全集重下读取 TMDB 季列表失败: %s tmdb=%s %s", series_name, tmdb_id, e)
+
+    # 2) Emby 本地季列表兜底
+    if series_id:
+        emby = EmbyClient()
+        try:
+            data = await emby._get(
+                f"/Shows/{series_id}/Seasons",
+                {"Fields": "IndexNumber,Name,Path"},
+            )
+            items = data.get("Items", []) if isinstance(data, dict) else []
+            for item in items:
+                num = _safe_int(item.get("IndexNumber"), -1)
+                if num > 0:
+                    seasons.add(num)
+        except Exception as e:
+            logger.info("[Gaps] 全集重下读取 Emby 季列表失败: %s %s", series_id, e)
+        finally:
+            await emby.close()
+
+    if not seasons:
+        seasons.add(max(1, _safe_int(fallback_season, 1)))
+
+    return [
+        {"season": season, "episodes": [], "season_missing": True}
+        for season in sorted(seasons)
+    ]
 
 
 @router.post("/search_mp")
@@ -4066,18 +4618,41 @@ async def search_gap_moviepilot(payload: GapSearchPayload):
     errors: list[str] = []
     searched_keywords: set[str] = set()
     try:
-        search_targets = targets or [{"season": _safe_int(payload.season, 1) or 1, "episodes": []}]
+        if full_series and not targets:
+            # 全集重下：按整剧各季分别检索，避免只命中 S01
+            search_targets = await _full_series_search_targets(
+                mp,
+                str(payload.series_id or ""),
+                payload.series_name,
+                payload.tmdb_id,
+                fallback_season=_safe_int(payload.season, 1) or 1,
+            )
+        else:
+            search_targets = targets or [{"season": _safe_int(payload.season, 1) or 1, "episodes": []}]
         for target in search_targets:
             target_season = _safe_int(target.get("season"), 0)
             target_episodes = target.get("episodes") or []
-            season_aliases = await _gap_season_search_aliases(str(payload.series_id or ""), payload.series_name, target_season)
+            season_context = await _gap_season_search_context(
+                mp,
+                str(payload.series_id or ""),
+                payload.series_name,
+                payload.tmdb_id,
+                target_season,
+                target,
+            )
+            season_aliases = season_context.get("search_names") or []
+            direct_keyword_keys = {
+                str(keyword or "").strip().lower()
+                for keyword in (season_context.get("direct_keywords") or [])
+                if str(keyword or "").strip()
+            }
             target_start = len(merged)
             for keyword in _search_keywords(
                 payload.series_name,
                 target_season,
                 target_episodes,
                 extra_names=season_aliases,
-                year=payload.year,
+                year=season_context.get("season_year") or payload.year,
                 library_name=payload.library_name,
             ):
                 keyword_key = keyword.lower()
@@ -4086,7 +4661,18 @@ async def search_gap_moviepilot(payload: GapSearchPayload):
                 searched_keywords.add(keyword_key)
                 try:
                     results = await mp.search(keyword, media_type="tv")
-                    genes.append({"season": target_season, "episodes": target_episodes, "keyword": keyword, "count": len(results)})
+                    if keyword_key in direct_keyword_keys:
+                        results = [
+                            _apply_season_search_hint(item, target_season, season_context, keyword)
+                            for item in results
+                        ]
+                    genes.append({
+                        "season": target_season,
+                        "episodes": target_episodes,
+                        "keyword": keyword,
+                        "count": len(results),
+                        "season_title": season_context.get("season_title") or "",
+                    })
                     merged.extend(results)
                     if full_series:
                         if len(merged) - target_start >= 120:
@@ -4104,19 +4690,34 @@ async def search_gap_moviepilot(payload: GapSearchPayload):
                     break
                 except Exception as e:
                     errors.append(f"{keyword}: {e}")
-        annotated = (
-            [_mark_full_series_gap_result(item) for item in _dedupe_results(merged)]
-            if full_series
-            else [
+        if full_series:
+            # 全集重下同时接受：整剧合集 + 各季完整整季包
+            annotate_targets = targets or search_targets
+            annotated = [
+                _choose_full_series_gap_result(
+                    item,
+                    annotate_targets,
+                    assume_first_season_when_ambiguous=bool(payload.tmdb_id or payload.series_id),
+                    series_name=payload.series_name,
+                )
+                for item in _dedupe_results(merged)
+            ]
+        else:
+            annotated = [
                 _annotate_gap_match_for_targets(item, targets, series_name=payload.series_name)
                 for item in _dedupe_results(merged)
             ]
-        )
         _apply_gap_identity_context(annotated, payload)
         for item in annotated:
             match_kind = item.get("ui_episode_match_kind")
             if full_series:
-                item["ui_download_mode"] = "normal"
+                if match_kind not in {"full_series", "season_pack", "episode_pack"}:
+                    item["ui_download_blocked"] = True
+                    item["ui_download_block_reason"] = item.get("ui_download_block_reason") or "非整季/全集资源，全集重下不会提交"
+                else:
+                    item["ui_download_mode"] = "normal"
+                    item.pop("ui_download_blocked", None)
+                    item.pop("ui_download_block_reason", None)
             elif _is_season_only_gap_match(item, targets):
                 item["ui_download_mode"] = "normal"
                 item["ui_download_hint"] = "整季缺失将直接提交 MoviePilot 下载"
@@ -4128,13 +4729,13 @@ async def search_gap_moviepilot(payload: GapSearchPayload):
             else:
                 item["ui_download_blocked"] = True
                 item["ui_download_block_reason"] = "该资源没有命中当前缺失集数，缺集管理不会自动下载"
+        kind_rank = {"full_series": 0, "season_pack": 1, "episode_pack": 2, "episode": 3, "none": 9}
         annotated.sort(
             key=lambda x: (
                 1 if x.get("ui_download_blocked") else 0,
+                kind_rank.get(str(x.get("ui_episode_match_kind") or "none"), 8),
                 -_safe_int(x.get("seeders"), 0),
                 -float(x.get("ui_episode_match_ratio") or 0),
-                0 if x.get("ui_episode_match_kind") == "episode" else 1,
-                0 if x.get("ui_episode_match_kind") == "episode_pack" else 1,
                 -_safe_int(x.get("ui_identity_score"), 0),
                 1 if x.get("ui_identity_mismatch") else 0,
                 -_safe_int(x.get("size"), 0),
@@ -4145,6 +4746,7 @@ async def search_gap_moviepilot(payload: GapSearchPayload):
         top_results = annotated[:80]
         try:
             top_results = await mp.annotate_downloader_statuses(top_results)
+            top_results = await _apply_gap_download_bindings(top_results)
         except Exception:
             logger.exception("[Gaps] 读取 MoviePilot 下载器状态失败")
         return _success({"genes": genes, "results": top_results, "errors": errors})
@@ -4157,6 +4759,7 @@ async def gap_moviepilot_download_status(payload: GapDownloadStatusPayload):
     mp = MoviePilotClient()
     try:
         results = await mp.annotate_downloader_statuses(payload.results[:80])
+        results = await _apply_gap_download_bindings(results)
         return _success({"results": results})
     except Exception as e:
         logger.exception("[Gaps] MoviePilot 下载状态读取异常")
@@ -4183,10 +4786,25 @@ async def _search_gap_hdhive_data(payload: GapSearchPayload) -> tuple[dict, str]
             emby_item_id=payload.series_id,
             media_type="tv",
         )
-        annotated = (
-            [_mark_full_series_gap_result(item) for item in _dedupe_results(results)]
-            if full_series
-            else [
+        if full_series:
+            annotate_targets = targets or await _full_series_search_targets(
+                None,
+                str(payload.series_id or ""),
+                payload.series_name,
+                payload.tmdb_id,
+                fallback_season=_safe_int(payload.season, 1) or 1,
+            )
+            annotated = [
+                _choose_full_series_gap_result(
+                    item,
+                    annotate_targets,
+                    assume_first_season_when_ambiguous=bool(tmdb_id or payload.series_id),
+                    series_name=payload.series_name,
+                )
+                for item in _dedupe_results(results)
+            ]
+        else:
+            annotated = [
                 _annotate_gap_match_for_targets(
                     item,
                     targets,
@@ -4195,7 +4813,14 @@ async def _search_gap_hdhive_data(payload: GapSearchPayload) -> tuple[dict, str]
                 )
                 for item in _dedupe_results(results)
             ]
-        )
+        # 缺集影巢搜索：只保留完整整季/全集资源，单集/多集包不展示
+        complete_results = [
+            item
+            for item in annotated
+            if _is_complete_season_gap_hdhive_result(item, full_series=full_series)
+        ]
+        filtered_out = max(0, len(annotated) - len(complete_results))
+        annotated = complete_results
         _apply_gap_identity_context(annotated, payload)
         annotated = await _apply_gap_transfer_marks(annotated)
         for item in annotated:
@@ -4212,7 +4837,12 @@ async def _search_gap_hdhive_data(payload: GapSearchPayload) -> tuple[dict, str]
                 _safe_int(x.get("unlock_points"), 9999),
             )
         )
-        return {"results": annotated[:80]}, ""
+        message = ""
+        if not annotated:
+            message = "影巢暂无完整整季资源"
+        elif filtered_out:
+            message = f"已过滤 {filtered_out} 条非完整整季资源"
+        return {"results": annotated[:80], "filtered_out": filtered_out}, message
     finally:
         await hd.close()
 
@@ -4341,7 +4971,7 @@ async def subscribe_gap_moviepilot(payload: GapMoviePilotSubscribePayload):
                 })
                 continue
 
-            reason = message or "MoviePilot API 无响应"
+            reason = message or getattr(mp, "last_error", "") or "MoviePilot API 无响应"
             failures.append(f"{label}: {reason}")
             results.append({
                 "season": season,
@@ -4398,6 +5028,73 @@ async def subscribe_gap_moviepilot(payload: GapMoviePilotSubscribePayload):
         await mp.close()
 
 
+def _mp_subscription_tmdb_id(subscription: dict) -> int:
+    tmdb_id = _safe_int(subscription.get("tmdbid") or subscription.get("tmdb_id"), 0)
+    if tmdb_id > 0:
+        return tmdb_id
+    media_source = str(subscription.get("media_source") or "").strip().lower()
+    if media_source in {"themoviedb", "tmdb"}:
+        tmdb_id = _safe_int(subscription.get("media_id"), 0)
+        if tmdb_id > 0:
+            return tmdb_id
+    media_id = str(subscription.get("mediaid") or "").strip().lower()
+    match = re.fullmatch(r"tmdb:(\d+)", media_id)
+    return _safe_int(match.group(1), 0) if match else 0
+
+
+def _gap_subscription_status_rows(
+    items: list[GapSubscriptionStatusItem],
+    subscriptions: list[dict],
+) -> list[dict]:
+    subscribed_seasons: dict[int, set[int]] = defaultdict(set)
+    for subscription in subscriptions:
+        tmdb_id = _mp_subscription_tmdb_id(subscription)
+        season = _safe_int(subscription.get("season"), -1)
+        if tmdb_id > 0 and season >= 0:
+            subscribed_seasons[tmdb_id].add(season)
+
+    rows: list[dict] = []
+    for item in items:
+        tmdb_id = _safe_int(item.tmdb_id, 0)
+        target_seasons = sorted({_safe_int(season, -1) for season in item.seasons if _safe_int(season, -1) >= 0})
+        matched_seasons = sorted(set(target_seasons).intersection(subscribed_seasons.get(tmdb_id, set())))
+        if target_seasons and len(matched_seasons) == len(target_seasons):
+            status = "subscribed"
+        elif matched_seasons:
+            status = "partial"
+        else:
+            status = "none"
+        rows.append({
+            "series_id": item.series_id,
+            "series_name": item.series_name,
+            "tmdb_id": tmdb_id,
+            "status": status,
+            "target_seasons": target_seasons,
+            "subscribed_seasons": matched_seasons,
+        })
+    return rows
+
+
+@router.post("/subscription_status")
+async def gap_moviepilot_subscription_status(payload: GapSubscriptionStatusPayload):
+    """批量返回缺集卡片对应的 MoviePilot 分季订阅状态。"""
+    if not payload.items:
+        return _success({"items": []})
+    mp = MoviePilotClient()
+    try:
+        subscriptions = await mp.list_subscriptions()
+        if getattr(mp, "last_error", "") and not subscriptions:
+            return _error(getattr(mp, "last_error", "") or "MoviePilot 订阅读取失败", {"items": []})
+        return _success({"items": _gap_subscription_status_rows(payload.items, subscriptions)})
+    except RuntimeError as e:
+        return _error(str(e), {"items": []})
+    except Exception as e:
+        logger.exception("[Gaps] 读取 MoviePilot 订阅状态异常")
+        return _error(f"MoviePilot 订阅状态读取异常: {e}", {"items": []})
+    finally:
+        await mp.close()
+
+
 @router.post("/download")
 async def download_gap_moviepilot(payload: GapDownloadPayload):
     result = dict(payload.result or {})
@@ -4407,8 +5104,11 @@ async def download_gap_moviepilot(payload: GapDownloadPayload):
     full_series = bool(payload.full_series)
     targets = _normalise_gap_targets(payload.season, payload.episodes, payload.targets)
     match_kind = str(result.get("ui_episode_match_kind") or "")
-    if full_series and (result.get("ui_download_blocked") is True or match_kind != "full_series" or result.get("ui_full_series") is not True):
-        return _error("该资源不是全集/整季包，已拦截全集重下")
+    if full_series:
+        allow_full = match_kind == "full_series" and result.get("ui_full_series") is True
+        allow_season = match_kind == "season_pack"
+        if result.get("ui_download_blocked") is True or not (allow_full or allow_season):
+            return _error(result.get("ui_download_block_reason") or "该资源不是全集/整季包，已拦截全集重下")
     if targets and not full_series:
         targets, limit_message = await _limit_gap_targets_by_tmdb(payload.tmdb_id, targets)
         if limit_message and not targets:
@@ -4472,6 +5172,12 @@ async def download_gap_moviepilot(payload: GapDownloadPayload):
             if resp and resp.get("success") and not str(resp.get("message") or "").strip():
                 resp["message"] = success_message
         if resp and resp.get("success"):
+            try:
+                binding = await _save_gap_download_binding_for_result(mp, result, resp)
+                if binding:
+                    resp["gap_download_binding"] = binding
+            except Exception:
+                logger.exception("[Gaps] 保存 MoviePilot 资源任务绑定失败")
             await add_subscribe_log(
                 "",
                 "缺集管理",
@@ -4506,8 +5212,11 @@ async def download_gap_hdhive(payload: GapDownloadPayload):
         return _error("缺少影巢资源标识")
     full_series = bool(payload.full_series)
     match_kind = str(result.get("ui_episode_match_kind") or "")
-    if full_series and (result.get("ui_download_blocked") is True or match_kind != "full_series" or result.get("ui_full_series") is not True):
-        return _error("该资源不是全集/整季包，已拦截全集重下")
+    if full_series:
+        allow_full = match_kind == "full_series" and result.get("ui_full_series") is True
+        allow_season = match_kind == "season_pack"
+        if result.get("ui_download_blocked") is True or not (allow_full or allow_season):
+            return _error(result.get("ui_download_block_reason") or "该资源不是全集/整季包，已拦截全集重下")
     targets = _normalise_gap_targets(payload.season, payload.episodes, payload.targets)
     if targets and not full_series:
         targets, limit_message = await _limit_gap_targets_by_tmdb(payload.tmdb_id, targets)
@@ -4531,7 +5240,9 @@ async def download_gap_hdhive(payload: GapDownloadPayload):
     item_name = _gap_history_item_name(payload)
     try:
         folder_id = payload.folder_id or settings.cloud115_folder_id or "0"
-        resp = await hd.unlock_and_transfer(slug, folder_id, force_transfer=bool(payload.force_transfer))
+        has_transfer_record = await _gap_has_transfer_record(result, slug)
+        force_transfer = bool(payload.force_transfer) and has_transfer_record
+        resp = await hd.unlock_and_transfer(slug, folder_id, force_transfer=force_transfer)
         if not resp:
             await _notify_gap_hdhive_transfer(payload, {}, False, "影巢 API 无响应")
             await add_subscribe_log("", "缺集管理", "error", item_name, item_id, "缺集影巢转存失败: 影巢 API 无响应")
@@ -4549,8 +5260,7 @@ async def download_gap_hdhive(payload: GapDownloadPayload):
             await add_subscribe_log("", "缺集管理", "error", item_name, item_id, f"缺集影巢转存失败: {message}")
             return _error(message, resp)
         recover_result: dict = {}
-        verify_result: dict = {}
-        if status == "already_owned":
+        if status == "already_owned" and force_transfer:
             recover_result = await _recover_already_owned_gap_transfer(payload, result, folder_id, resp)
             if isinstance(resp, dict):
                 resp["cloud115_recover"] = recover_result
@@ -4564,45 +5274,13 @@ async def download_gap_hdhive(payload: GapDownloadPayload):
                 resp["message"] = recover_result.get("message") or resp.get("message", "")
             status = "transferred"
             ok = True
+        elif status == "already_owned":
+            if isinstance(resp, dict):
+                resp["message"] = "资源已在 115 中，已记录本次整包转存结果"
         elif status == "transferred":
-            targets = _normalise_gap_targets(payload.season, payload.episodes, payload.targets)
-            if targets:
-                from app.services.cloud115 import Cloud115Client
-
-                c115 = Cloud115Client()
-                try:
-                    verify_result = await _wait_verify_cloud115_transfer_target(c115, folder_id, targets)
-                    if isinstance(resp, dict):
-                        resp["cloud115_verify"] = verify_result
-                    if not verify_result.get("ok"):
-                        recover_result = await _recover_existing_gap_episode_files(
-                            c115,
-                            payload,
-                            result,
-                            folder_id,
-                            targets,
-                            verify_result,
-                        )
-                        if isinstance(resp, dict):
-                            resp["cloud115_recover"] = recover_result
-                        if recover_result.get("ok"):
-                            verify_result = recover_result.get("verify") or verify_result
-                            if isinstance(resp, dict):
-                                resp["cloud115_verify"] = verify_result
-                                resp["message"] = recover_result.get("message") or resp.get("message", "")
-                        else:
-                            message = recover_result.get("message") or verify_result.get("message") or "115 转存已提交，但目标目录未找到实体文件"
-                            await _notify_gap_hdhive_transfer(payload, resp, False, message)
-                            await add_subscribe_log("", "缺集管理", "error", item_name, item_id, f"缺集影巢转存失败: {message}")
-                            return _error(message, resp)
-                finally:
-                    await c115.close()
-            else:
-                from app.services.transfer_verify import verify_hdhive_transfer_visible
-
-                verify_result = await verify_hdhive_transfer_visible(result, resp)
-                if isinstance(resp, dict):
-                    resp["cloud115_verify"] = verify_result
+            if isinstance(resp, dict):
+                resp["transfer_mode"] = "full_resource"
+                resp["message"] = resp.get("message") or "影巢整包转存已提交，等待 115 落地"
         clouddrive_result = await _refresh_clouddrive_after_gap_transfer(status)
         if isinstance(resp, dict):
             resp["clouddrive"] = clouddrive_result

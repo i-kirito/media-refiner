@@ -177,6 +177,70 @@
         border-radius: 9px;
         transition: background-color 150ms ease, color 150ms ease, opacity 150ms ease, transform 150ms ease;
     }
+    .review-processing-state {
+        margin-top: 8px;
+        padding: 8px 10px 7px;
+        border: 1px solid rgba(6, 182, 212, 0.18);
+        border-radius: 10px;
+        background: rgba(236, 254, 255, 0.7);
+    }
+    html.dark .review-processing-state {
+        border-color: rgba(34, 211, 238, 0.14);
+        background: rgba(8, 145, 178, 0.09);
+    }
+    .review-processing-summary {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        min-width: 0;
+        color: #0e7490;
+        font-size: 10px;
+        line-height: 1.35;
+    }
+    html.dark .review-processing-summary {
+        color: #67e8f9;
+    }
+    .review-processing-label {
+        flex: 0 0 auto;
+        font-weight: 850;
+    }
+    .review-processing-message {
+        min-width: 0;
+        overflow: hidden;
+        color: #64748b;
+        font-weight: 600;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+    }
+    html.dark .review-processing-message {
+        color: #94a3b8;
+    }
+    .review-processing-elapsed {
+        flex: 0 0 auto;
+        margin-left: auto;
+        color: #0891b2;
+        font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+        font-size: 9px;
+        font-weight: 800;
+    }
+    html.dark .review-processing-elapsed {
+        color: #22d3ee;
+    }
+    .review-processing-track {
+        height: 3px;
+        margin-top: 7px;
+        overflow: hidden;
+        border-radius: 999px;
+        background: rgba(14, 116, 144, 0.12);
+    }
+    .review-processing-bar {
+        height: 100%;
+        min-width: 8%;
+        border-radius: inherit;
+        background: linear-gradient(90deg, #06b6d4, #22d3ee);
+        box-shadow: 0 0 8px rgba(6, 182, 212, 0.28);
+        transition: width 240ms ease;
+    }
     .plans-modal-panel {
         max-height: min(90dvh, 48rem);
     }
@@ -240,9 +304,19 @@
         .review-compare-grid::before {
             display: none;
         }
+        .review-processing-summary {
+            align-items: flex-start;
+            flex-wrap: wrap;
+            gap: 3px 7px;
+        }
+        .review-processing-message {
+            order: 3;
+            flex: 1 0 100%;
+            white-space: normal;
+        }
     }
 </style>
-<link rel="stylesheet" href="/static/plans.css?v=20260714-4">
+<link rel="stylesheet" href="/static/plans.css?v=20260715-2">
 {% endblock %}
 {% block content %}
 <div class="plans-page mx-auto w-full px-4 md:px-7 xl:px-8 py-5 pb-24 relative">
@@ -624,6 +698,58 @@
     function setPlanText(id, value) {
         const el = document.getElementById(id);
         if (el) el.textContent = value;
+    }
+
+    function safeHdhiveDetailUrl(value) {
+        if (!value) return '';
+        try {
+            const url = new URL(String(value));
+            const host = url.hostname.toLowerCase();
+            const validPath = /^\/resource\/[a-z0-9_-]{1,32}\/[a-z0-9_-]{8,128}\/?$/i.test(url.pathname);
+            if (
+                url.protocol !== 'https:'
+                || !['hdhive.com', 'www.hdhive.com'].includes(host)
+                || url.username
+                || url.password
+                || (url.port && url.port !== '443')
+                || !validPath
+            ) {
+                return '';
+            }
+            return `https://hdhive.com${url.pathname.replace(/\/$/, '')}`;
+        } catch (error) {
+            return '';
+        }
+    }
+
+    function isEd2kResource(item) {
+        const panType = String(item?.pan_type || '').trim().toLowerCase();
+        const resourceUrl = String(
+            item?.resource_url || item?.page_url || item?.slug || item?.detail_url || ''
+        ).toLowerCase();
+        return panType === 'ed2k' || resourceUrl.includes('/resource/ed2k/');
+    }
+
+    function safeEmbyItemUrl(itemId) {
+        if (!embyBaseUrl || !itemId) return '';
+        try {
+            const url = new URL(String(embyBaseUrl).trim());
+            if (
+                !['http:', 'https:'].includes(url.protocol)
+                || url.username
+                || url.password
+            ) {
+                return '';
+            }
+            url.pathname = `${url.pathname.replace(/\/+$/, '')}/web/index.html`;
+            url.search = '';
+            url.hash = '';
+            const params = new URLSearchParams({id: String(itemId)});
+            if (embyServerId) params.set('serverId', String(embyServerId));
+            return `${url.href}#!/item?${params.toString()}`;
+        } catch (error) {
+            return '';
+        }
     }
 
     function updatePlanRuleStats(rules) {
@@ -1153,22 +1279,7 @@
             const json = await resp.json();
             if (json.status === 'success') {
                 showToast('success', json.message);
-                // 自动打开活动日志面板
-                const panel = document.getElementById('logPanel');
-                if (panel.classList.contains('hidden')) {
-                    logVisible = true;
-                    panel.classList.remove('hidden');
-                }
-                await loadLogs();
-                // 启动快速轮询（每2秒刷新日志）
-                if (window._logPollTimer) clearInterval(window._logPollTimer);
-                window._logPollTimer = setInterval(async () => {
-                    if (document.getElementById('logPanel').classList.contains('hidden')) {
-                        clearInterval(window._logPollTimer);
-                        return;
-                    }
-                    await loadLogs(false);  // 轮询刷新不闪
-                }, 2000);
+                await showLogPanelAndPoll();
             } else {
                 showToast('error', json.message || '启动失败');
                 setPlanText('planRunState', '空闲');
@@ -1270,6 +1381,26 @@
 
     let logVisible = false;
 
+    function startLogPolling() {
+        if (window._logPollTimer) clearInterval(window._logPollTimer);
+        window._logPollTimer = setInterval(async () => {
+            if (document.getElementById('logPanel').classList.contains('hidden')) {
+                clearInterval(window._logPollTimer);
+                window._logPollTimer = null;
+                return;
+            }
+            await loadLogs(false);
+        }, 2000);
+    }
+
+    async function showLogPanelAndPoll() {
+        const panel = document.getElementById('logPanel');
+        logVisible = true;
+        panel.classList.remove('hidden');
+        await loadLogs();
+        startLogPolling();
+    }
+
     function _buildLogEntry(log) {
         const time = _toShanghai(log.created_at || '');
         const action = log.action || '';
@@ -1286,6 +1417,7 @@
         else if (action === 'error') { icon = 'fa-solid fa-circle-exclamation'; color = 'text-red-500'; }
         else if (action === 'complete') { icon = 'fa-solid fa-check'; color = 'text-green-500'; }
         else if (action === 'skip') { icon = 'fa-solid fa-forward-step'; color = 'text-gray-400'; }
+        else if (action === 'processing') { icon = 'fa-solid fa-arrows-rotate fa-spin'; color = 'text-cyan-500'; }
 
         const div = document.createElement('div');
         div.className = 'flex items-start gap-3 py-2.5 border-b border-gray-50 dark:border-white/5 last:border-0';
@@ -1312,6 +1444,7 @@
         if (logVisible) {
             panel.classList.remove('hidden');
             await loadLogs(true);
+            startLogPolling();
         } else {
             panel.classList.add('hidden');
             if (window._logPollTimer) {
@@ -1355,7 +1488,13 @@
                     const logId = String(log.id || '');
                     const existingEl = existingMap.get(logId);
                     if (existingEl) {
-                        refNode = existingEl.nextSibling;
+                        const refreshedEl = _buildLogEntry(log);
+                        if (existingEl.innerHTML !== refreshedEl.innerHTML) {
+                            existingEl.replaceWith(refreshedEl);
+                            refNode = refreshedEl.nextSibling;
+                        } else {
+                            refNode = existingEl.nextSibling;
+                        }
                         existingMap.delete(logId);
                         continue;
                     }
@@ -1398,6 +1537,7 @@
                 else if (action === 'error') { icon = 'fa-solid fa-circle-exclamation'; color = 'text-red-500'; }
                 else if (action === 'complete') { icon = 'fa-solid fa-check'; color = 'text-green-500'; }
                 else if (action === 'skip') { icon = 'fa-solid fa-forward-step'; color = 'text-gray-400'; }
+                else if (action === 'processing') { icon = 'fa-solid fa-arrows-rotate fa-spin'; color = 'text-cyan-500'; }
 
                 return `
                     <div class="flex items-start gap-3 py-2.5 border-b border-gray-50 dark:border-white/5 last:border-0" data-log-id="${escapeHtml(String(log.id || ''))}">
@@ -1484,6 +1624,42 @@
         }
     }
 
+    function processingStageMeta(stage) {
+        const key = String(stage || '').trim().toLowerCase();
+        const stages = {
+            queued: {label: '等待后台执行', progress: 12},
+            checking_emby: {label: '校验媒体状态', progress: 24},
+            validating: {label: '校验媒体状态', progress: 24},
+            waiting_symedia: {label: '等待 Symedia 通道', progress: 38},
+            submitting: {label: '提交 Symedia 转存', progress: 55},
+            submitting_symedia: {label: '提交 Symedia 转存', progress: 55},
+            verifying: {label: '核验 115 入库', progress: 78},
+            verifying_115: {label: '核验 115 入库', progress: 78},
+            waiting_115: {label: '等待 115 资源落地', progress: 86},
+            verify_after_timeout: {label: '持续核验 115 入库', progress: 90},
+        };
+        return stages[key] || {label: '后台处理中', progress: 36};
+    }
+
+    function processingElapsedLabel(startedAt) {
+        if (startedAt === undefined || startedAt === null || startedAt === '') return '';
+        let timestamp = Number(startedAt);
+        if (Number.isFinite(timestamp) && timestamp > 0) {
+            if (timestamp < 1e12) timestamp *= 1000;
+        } else {
+            const raw = String(startedAt).trim();
+            const normalised = raw.includes('T') ? raw : raw.replace(' ', 'T');
+            timestamp = new Date(normalised).getTime();
+        }
+        if (!Number.isFinite(timestamp) || timestamp <= 0) return '';
+        const seconds = Math.max(0, Math.floor((Date.now() - timestamp) / 1000));
+        if (seconds < 60) return `已用 ${seconds} 秒`;
+        const minutes = Math.floor(seconds / 60);
+        if (minutes < 60) return `已用 ${minutes} 分 ${seconds % 60} 秒`;
+        const hours = Math.floor(minutes / 60);
+        return `已用 ${hours} 小时 ${minutes % 60} 分`;
+    }
+
     async function loadReviews() {
         try {
             const [listResp, cntResp] = await Promise.all([
@@ -1494,6 +1670,7 @@
             const cntJson = await cntResp.json();
             const reviews = listJson.data || [];
             const pendingCount = cntJson.data?.pending || 0;
+            const activeCount = reviews.length;
             _reviewTotalCount = reviews.length;
             updateReviewSourceFilterCounts(reviews);
 
@@ -1504,12 +1681,12 @@
             const clearBtn = document.getElementById('clearReviewsBtn');
 
             section.classList.remove('hidden');
-            badge.textContent = pendingCount;
-            setPlanText('planPendingCount', pendingCount);
+            badge.textContent = activeCount;
+            setPlanText('planPendingCount', activeCount);
             batchBtn.classList[pendingCount > 1 ? 'remove' : 'add']('hidden');
             clearBtn.classList[pendingCount > 0 ? 'remove' : 'add']('hidden');
 
-                if (pendingCount === 0) {
+                if (activeCount === 0) {
                     container.innerHTML = `
                         <div class="review-empty-state">
                             <span class="review-empty-icon"><i class="fa-solid fa-clipboard-check"></i></span>
@@ -1542,6 +1719,17 @@
                 const curMetaNote = cq.metadata_note || '';
                 const curSizeLabel = curSize ? fmtSize(curSize) : (curIsBluray ? '目录' : '未知');
                 const isMp = src === 'moviepilot';
+                const isEd2k = !isMp && isEd2kResource(sr);
+                const embyItemUrl = safeEmbyItemUrl(r.item_id);
+                const currentTag = embyItemUrl ? 'a' : 'div';
+                const currentLinkAttrs = embyItemUrl
+                    ? ` href="${escapeHtml(embyItemUrl)}" target="_blank" rel="noopener noreferrer" title="在 Emby 中打开" aria-label="在 Emby 中打开 ${escapeHtml(r.item_name || '当前文件')}"`
+                    : '';
+                const hdhiveDetailUrl = isMp ? '' : safeHdhiveDetailUrl(sr.detail_url);
+                const targetTag = hdhiveDetailUrl ? 'a' : 'div';
+                const targetLinkAttrs = hdhiveDetailUrl
+                    ? ` href="${escapeHtml(hdhiveDetailUrl)}" target="_blank" rel="noopener noreferrer" title="在影巢中查看资源详情" aria-label="在影巢中查看 ${escapeHtml(sr.title || r.item_name || '资源')} 详情"`
+                    : '';
                 const scoreTone = curScore <= 30 ? 'is-critical' : curScore <= 50 ? 'is-low' : curScore <= 80 ? 'is-medium' : 'is-good';
 
                 // ── MP / HDHive 分别解析 ──
@@ -1618,9 +1806,13 @@
                     }).join('');
                 }
 
-                const isBusy = _busyReviewIds.has(String(r.id));
+                const isProcessing = r.status === 'processing';
+                const isBusy = isProcessing || _busyReviewIds.has(String(r.id));
                 const busyAttrs = isBusy ? 'disabled aria-busy="true"' : '';
                 const busyClass = isBusy ? 'opacity-50 cursor-not-allowed pointer-events-none' : '';
+                const processingMeta = processingStageMeta(r.processing_stage);
+                const processingMessage = String(r.message || processingMeta.label);
+                const processingElapsed = processingElapsedLabel(r.processing_started_at);
 
                 return `
                     <article class="review-card ${isMp ? 'is-mp' : 'is-hdhive'}" data-review-id="${r.id}" data-review-source="${escapeHtml(src)}">
@@ -1629,13 +1821,12 @@
                                 <h3 class="review-item-title">${escapeHtml(r.item_name || '')}</h3>
                                 <span class="review-score ${scoreTone}">${curScore}<small>分</small></span>
                                 <span class="review-source-badge ${isMp ? 'is-mp' : 'is-hdhive'}">${isMp ? 'MP' : '影巢'}</span>
-                                <a href="${embyBaseUrl}/web/index.html#!/item?id=${r.item_id}&serverId=${embyServerId}" target="_blank" rel="noopener" class="review-emby-link" title="在 Emby 中打开" aria-label="在 Emby 中打开 ${escapeHtml(r.item_name || '')}">
-                                    <i class="fa-solid fa-arrow-up-right-from-square text-[9px]"></i>
-                                </a>
+                                ${isEd2k ? '<span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-black tracking-wide bg-orange-500 text-white shadow-sm shadow-orange-500/30 ring-1 ring-orange-300/60"><i class="fa-solid fa-bolt text-[8px]"></i> ED2K</span>' : ''}
+                                ${isProcessing ? '<span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-black bg-cyan-50 dark:bg-cyan-900/20 text-cyan-600 dark:text-cyan-300"><i class="fa-solid fa-circle-notch fa-spin text-[8px]"></i> 后台处理中</span>' : ''}
                             </div>
                             <div class="review-card-actions">
-                                <button onclick="approveReview(${r.id})" ${busyAttrs} class="review-action-btn is-approve ${busyClass}" aria-label="批准 ${escapeHtml(r.item_name || '')}">
-                                    <i class="fa-solid ${isBusy ? 'fa-circle-notch fa-spin' : 'fa-check'} text-[9px]"></i><span>${isBusy ? '处理中' : '批准'}</span>
+                                <button onclick="approveReview(${r.id}, ${isEd2k})" ${busyAttrs} class="review-action-btn is-approve ${busyClass}" aria-label="${isEd2k ? '离线到目录' : '批准'} ${escapeHtml(r.item_name || '')}">
+                                    <i class="fa-solid ${isBusy ? 'fa-circle-notch fa-spin' : (isEd2k ? 'fa-bolt' : 'fa-check')} text-[9px]"></i><span>${isBusy ? '处理中' : (isEd2k ? '离线到目录' : '批准')}</span>
                                 </button>
                                 <button onclick="rejectReview(${r.id})" ${busyAttrs} class="review-action-btn is-reject ${busyClass}" title="拒绝此次结果，下次跳过" aria-label="拒绝 ${escapeHtml(r.item_name || '')}">
                                     <i class="fa-solid fa-xmark text-[9px]"></i><span>拒绝</span>
@@ -1646,10 +1837,25 @@
                             </div>
                         </div>
 
+                        ${isProcessing ? `
+                            <div class="review-processing-state" role="status" aria-live="polite">
+                                <div class="review-processing-summary">
+                                    <i class="fa-solid fa-circle-notch fa-spin text-[9px]" aria-hidden="true"></i>
+                                    <span class="review-processing-label">${escapeHtml(processingMeta.label)}</span>
+                                    <span class="review-processing-message" title="${escapeHtml(processingMessage)}">${escapeHtml(processingMessage)}</span>
+                                    ${processingElapsed ? `<span class="review-processing-elapsed">${escapeHtml(processingElapsed)}</span>` : ''}
+                                </div>
+                                <div class="review-processing-track" aria-hidden="true">
+                                    <div class="review-processing-bar" style="width:${processingMeta.progress}%"></div>
+                                </div>
+                            </div>
+                        ` : ''}
+
                         <div class="review-compare-grid">
-                            <div class="review-compare-card review-current">
+                            <${currentTag} class="review-compare-card review-current ${embyItemUrl ? 'review-current-link' : ''}"${currentLinkAttrs}>
                                 <div class="review-compare-label">
                                     <i class="fa-solid fa-file-video mr-1"></i>当前文件
+                                    ${embyItemUrl ? '<i class="fa-solid fa-arrow-up-right-from-square review-detail-link-icon" aria-hidden="true"></i>' : ''}
                                 </div>
                                 <div class="review-compare-title" title="${escapeHtml(curFileName)}">${escapeHtml(curFileName)}</div>
                                 <div class="review-compare-note">${curMetaNote ? escapeHtml(curMetaNote) : '&nbsp;'}</div>
@@ -1659,15 +1865,16 @@
                                     ${curRange ? `<span class="inline-flex items-center px-1.5 py-0.5 rounded text-[9px] font-bold bg-gray-100 dark:bg-gray-800 text-gray-500 dark:text-gray-400">${escapeHtml(curRange)}</span>` : ''}
                                     <span class="text-[10px] text-gray-400">${curSizeLabel}</span>
                                 </div>
-                            </div>
+                            </${currentTag}>
 
                             <div class="review-flow-indicator" aria-hidden="true">
                                 <i class="fa-solid fa-arrow-right"></i>
                             </div>
 
-                            <div class="review-compare-card review-target">
+                            <${targetTag} class="review-compare-card review-target ${hdhiveDetailUrl ? 'review-target-link' : ''}"${targetLinkAttrs}>
                                 <div class="review-compare-label">
                                     <i class="fa-solid fa-arrow-trend-up mr-1"></i>${isMp ? 'MP 搜索结果' : '影巢候选资源'}
+                                    ${hdhiveDetailUrl ? '<i class="fa-solid fa-arrow-up-right-from-square review-detail-link-icon" aria-hidden="true"></i>' : ''}
                                 </div>
                                 <div class="review-compare-title" title="${escapeHtml(newTitle)}">${escapeHtml(newTitle)}</div>
                                 <div class="review-compare-note">${newSubtitle ? escapeHtml(newSubtitle) : '&nbsp;'}</div>
@@ -1676,7 +1883,7 @@
                                     ${badgeList.length ? renderBadges(badgeList) : ''}
                                     <span class="text-[10px] text-gray-400">${newSizeLabel}</span>
                                 </div>
-                            </div>
+                            </${targetTag}>
                         </div>
                     </article>
                 `;
@@ -1687,7 +1894,7 @@
         }
     }
 
-    async function approveReview(id) {
+    async function approveReview(id, isEd2k = false) {
         const key = String(id);
         if (_busyReviewIds.has(key)) return;
         _busyReviewIds.add(key);
@@ -1696,9 +1903,13 @@
             const resp = await fetch(`/api/subscribe/reviews/${id}/approve`, { method: 'POST' });
             const json = await resp.json();
             if (json.status === 'success') {
-                showToast('success', '已批准并推送下载');
+                const queued = json.data?.processing === true;
+                showToast('success', queued
+                    ? '已加入后台处理，可在本页查看进度'
+                    : (isEd2k ? '已批准并提交离线任务' : '已批准并推送下载'));
                 loadReviews();
-                loadLogs();
+                if (queued) await showLogPanelAndPoll();
+                else loadLogs();
             } else {
                 showToast('error', json.message || '执行失败');
             }

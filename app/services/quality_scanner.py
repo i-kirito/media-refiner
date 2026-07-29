@@ -3,6 +3,7 @@
 from __future__ import annotations
 import asyncio
 import re
+import unicodedata
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime
 from typing import Optional
@@ -51,6 +52,28 @@ HDR_WEIGHTS = {
     "SDR":         40,
 }
 
+
+def _normalize_media_search_text(value: object) -> str:
+    text = unicodedata.normalize("NFKC", str(value or "")).casefold()
+    return re.sub(r"[\W_]+", "", text, flags=re.UNICODE)
+
+
+def _media_item_matches_search(item: dict, search: str) -> bool:
+    needle = _normalize_media_search_text(search)
+    if not needle:
+        return True
+    provider_ids = item.get("provider_ids") if isinstance(item.get("provider_ids"), dict) else {}
+    values = [
+        item.get("name"),
+        item.get("path"),
+        item.get("library_name"),
+        item.get("year"),
+        item.get("tmdb_id"),
+        item.get("imdb_id"),
+        *provider_ids.values(),
+    ]
+    return any(needle in _normalize_media_search_text(value) for value in values)
+
 VIDEO_BITRATE_WEIGHTS = {
     "high":  30,   # > 40 Mbps
     "medium": 20,  # 10-40 Mbps
@@ -89,6 +112,11 @@ def parse_filename_resolution(path: str) -> tuple[int,int] | None:
             if "360" in match:
                 return (640, 360)
     return None
+
+
+def is_4k_dimensions(width: int, height: int) -> bool:
+    """识别 UHD/DCI 4K 及裁切后的宽银幕 4K 画幅。"""
+    return width >= 3800 or height >= 2000
 
 
 def is_strm_path(path: str) -> bool:
@@ -232,10 +260,10 @@ def calculate_quality_score(item: dict) -> int:
     eff_w, eff_h = get_effective_resolution(item, video_stream)
     res_key = f"{eff_w}x{eff_h}"
     res_score = RESOLUTION_WEIGHTS.get(res_key, 0)
-    if res_score == 0 and eff_h > 0:
+    if res_score == 0 and (eff_w > 0 or eff_h > 0):
         # 近似计算
-        if eff_h >= 2160:
-            res_score = 90
+        if is_4k_dimensions(eff_w, eff_h):
+            res_score = 90 if eff_h >= 2000 else 88
         elif eff_h >= 1440:
             res_score = 75
         elif eff_h >= 1080:
@@ -287,8 +315,8 @@ def calculate_quality_score(item: dict) -> int:
 
 def classify_resolution(item: dict, video_stream: dict) -> str:
     """分类分辨率（文件名回退）"""
-    _, height = get_effective_resolution(item, video_stream)
-    if height >= 2160:
+    width, height = get_effective_resolution(item, video_stream)
+    if is_4k_dimensions(width, height):
         return "4k"
     elif height >= 1080:
         return "1080p"
@@ -652,7 +680,7 @@ class QualityScanner:
     async def get_items(self, min_score: int = 0, max_score: int = 60,
                         library_id: str = "", resolution: str = "",
                         video_codec: str = "", video_range: str = "",
-                        anomaly: str = "",
+                        anomaly: str = "", search: str = "",
                         sort_by: str = "quality_score",
                         sort_order: str = "asc", page: int = 1, page_size: int = 50) -> dict:
         """获取质量扫描结果"""
@@ -668,6 +696,8 @@ class QualityScanner:
         for item in items:
             score = item.get("quality_score", 0)
             if score < min_score or score > max_score:
+                continue
+            if search and not _media_item_matches_search(item, search):
                 continue
             if library_id and item.get("library_id") != library_id:
                 continue

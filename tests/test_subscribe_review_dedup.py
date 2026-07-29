@@ -4,7 +4,7 @@ import unittest
 from pathlib import Path
 
 from app import database
-from app.routers.subscribe import _candidate_sort_key
+from app.routers.subscribe import _candidate_sort_key, _public_search_result
 
 
 class SubscribeReviewDedupTests(unittest.IsolatedAsyncioTestCase):
@@ -66,6 +66,33 @@ class SubscribeReviewDedupTests(unittest.IsolatedAsyncioTestCase):
         }
         self.assertLess(_candidate_sort_key(rule, hdhive), _candidate_sort_key(rule, moviepilot))
 
+    def test_public_hdhive_result_exposes_only_safe_detail_url(self):
+        public = _public_search_result({
+            "_source_label": "hdhive",
+            "title": "贝肯熊：火星任务 (2023)",
+            "page_url": "https://hdhive.com/resource/115/398fe40de6f511f09b3c82c1044d29af?token=secret",
+            "resource_url": "https://hdhive.com/resource/115/other-secret",
+            "slug": "https://hdhive.com/resource/115/398fe40de6f511f09b3c82c1044d29af",
+            "hdhive_slug": "398fe40de6f511f09b3c82c1044d29af",
+        })
+
+        self.assertEqual(
+            "https://hdhive.com/resource/115/398fe40de6f511f09b3c82c1044d29af",
+            public["detail_url"],
+        )
+        for private_key in ("page_url", "resource_url", "slug", "hdhive_slug"):
+            self.assertNotIn(private_key, public)
+
+    def test_public_hdhive_result_rejects_untrusted_detail_url(self):
+        for value in (
+            "javascript:alert(1)",
+            "https://example.com/resource/115/398fe40de6f511f09b3c82c1044d29af",
+            "https://hdhive.com.evil.example/resource/115/398fe40de6f511f09b3c82c1044d29af",
+            "https://user@hdhive.com/resource/115/398fe40de6f511f09b3c82c1044d29af",
+        ):
+            public = _public_search_result({"page_url": value})
+            self.assertNotIn("detail_url", public)
+
     async def test_only_best_source_remains_across_emby_id_changes(self):
         moviepilot_id = await database.add_subscribe_review(self.review(
             "emby-1",
@@ -122,6 +149,58 @@ class SubscribeReviewDedupTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual([first_id], [review["id"] for review in reviews])
         self.assertEqual("emby-2", reviews[0]["item_id"])
         self.assertEqual("https://tracker/download?token=new", reviews[0]["search_result"]["enclosure"])
+
+    async def test_same_resource_refresh_preserves_known_share_size(self):
+        first_id = await database.add_subscribe_review(self.review(
+            "emby-1",
+            "hdhive",
+            {
+                "hdhive_slug": "398fe40de6f511f09b3c82c1044d29af",
+                "share_size": "17.50 GB",
+            },
+            [0, 0],
+        ))
+        second_id = await database.add_subscribe_review(self.review(
+            "emby-2",
+            "hdhive",
+            {
+                "hdhive_slug": "398fe40de6f511f09b3c82c1044d29af",
+                "share_size": "",
+                "is_unlocked": True,
+            },
+            [0, 0],
+        ))
+
+        self.assertIsNone(second_id)
+        reviews = await database.list_subscribe_reviews("pending")
+        self.assertEqual([first_id], [review["id"] for review in reviews])
+        self.assertEqual("17.50 GB", reviews[0]["search_result"]["share_size"])
+        self.assertTrue(reviews[0]["search_result"]["is_unlocked"])
+
+    async def test_processing_metadata_merge_preserves_resource_fields(self):
+        review_id = await database.add_subscribe_review(self.review(
+            "emby-1",
+            "hdhive",
+            {
+                "hdhive_slug": "resource-1",
+                "share_size": "17.50 GB",
+            },
+            [0, 0],
+        ))
+
+        updated = await database.update_subscribe_review_result(
+            review_id,
+            "processing",
+            "等待入库",
+            {"_transfer_submitted_at": 1200.0},
+        )
+
+        review = await database.get_subscribe_review(review_id)
+        self.assertTrue(updated)
+        self.assertEqual("processing", review["status"])
+        self.assertEqual("17.50 GB", review["search_result"]["share_size"])
+        self.assertEqual(1200.0, review["search_result"]["_transfer_submitted_at"])
+        self.assertEqual("pending_review", await database.has_processed_item("rule-1", "emby-1"))
 
     async def test_reconcile_keeps_ranked_resource_and_latest_emby_item(self):
         media_key = "movie:tmdb:1560688"

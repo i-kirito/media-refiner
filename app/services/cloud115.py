@@ -1,14 +1,24 @@
 """115 网盘 API 服务 - 复用 emby-pulse cloud115 插件逻辑"""
 
 from __future__ import annotations
-import httpx
+
 import re
 from urllib.parse import quote
+
+import httpx
+
 from app.config import settings
 
 
 class Cloud115Client:
     """115 网盘 API 客户端"""
+
+    OFFLINE_SPACE_URL = "https://115.com/?ct=offline&ac=space"
+    OFFLINE_ADD_URL = "https://115.com/web/lixian/?ct=lixian&ac=add_task_url"
+    ED2K_URL_RE = re.compile(
+        r"ed2k://\|file\|[^|\r\n]+\|\d+\|[0-9a-f]{32}\|(?:[^|\r\n]*\|)*/",
+        re.IGNORECASE,
+    )
 
     def __init__(self, cookie: str = ""):
         self.cookie = cookie or settings.cloud115_cookie
@@ -76,13 +86,112 @@ class Cloud115Client:
 
     async def create_offline_task(self, url: str, folder_id: str = "0") -> dict | None:
         """
-        创建离线下载任务
+        创建 115 离线下载任务。
+
+        115 Web 离线接口需要先获取当前 Cookie 对应的 sign/time，
+        再把链接和目标目录一起提交。/files/add 只用于创建目录，
+        不能作为离线下载接口。
         """
+        offline_url = (url or "").strip()
+        if not offline_url:
+            return self._offline_error("离线下载链接为空")
+
+        if offline_url.lower().startswith("ed2k://"):
+            normalized = self.normalize_ed2k_url(offline_url)
+            if not normalized:
+                return self._offline_error("ED2K 链接格式无效")
+            offline_url = normalized
+
+        headers = self._headers({
+            "Accept": "application/json, text/plain, */*",
+            "Referer": self.OFFLINE_SPACE_URL,
+            "X-Requested-With": "XMLHttpRequest",
+        })
+        try:
+            space_resp = await self._client.get(self.OFFLINE_SPACE_URL, headers=headers)
+            space_resp.raise_for_status()
+            space = space_resp.json()
+        except Exception as e:
+            print(f"[Cloud115] 获取离线任务签名失败: {e}")
+            return self._offline_error(f"获取 115 离线签名失败: {e}")
+
+        if not isinstance(space, dict) or not self._state_ok(space.get("state")):
+            return self._offline_error(
+                self._result_error(space) or "115 离线签名接口返回失败",
+                raw=space,
+            )
+        space_data = space.get("data") if isinstance(space.get("data"), dict) else {}
+        sign = space.get("sign") or space_data.get("sign")
+        timestamp = space.get("time")
+        if timestamp in (None, ""):
+            timestamp = space_data.get("time")
+        if not sign or timestamp in (None, ""):
+            return self._offline_error("115 离线签名缺少 sign/time", raw=space)
+
         data = {
-            "url": url,
-            "folder_id": folder_id,
+            "url": offline_url,
+            "wp_path_id": str(folder_id or "0"),
+            "sign": sign,
+            "time": timestamp,
         }
-        return await self._post("https://webapi.115.com/files/add", data)
+        post_headers = dict(headers)
+        post_headers["Content-Type"] = "application/x-www-form-urlencoded"
+        try:
+            resp = await self._client.post(
+                self.OFFLINE_ADD_URL,
+                data=data,
+                headers=post_headers,
+            )
+            resp.raise_for_status()
+            result = resp.json()
+        except Exception as e:
+            print(f"[Cloud115] 提交离线任务失败: {e}")
+            return self._offline_error(f"提交 115 离线任务失败: {e}")
+
+        if not isinstance(result, dict):
+            return self._offline_error("115 离线接口返回格式异常", raw=result)
+        result.setdefault("_target_folder", str(folder_id or "0"))
+        result.setdefault("_offline_url", offline_url)
+        if not self._state_ok(result.get("state")):
+            result.setdefault("success", False)
+            result.setdefault("error", self._result_error(result) or "115 离线任务提交失败")
+            return result
+        result.setdefault("success", True)
+        return result
+
+    @classmethod
+    def normalize_ed2k_url(cls, value: str) -> str:
+        """从独立字符串中提取并标准化第一个 ED2K 文件链接。"""
+        text = (value or "").strip().replace("\\/", "/")
+        match = cls.ED2K_URL_RE.search(text)
+        return match.group(0) if match else ""
+
+    @staticmethod
+    def _state_ok(value) -> bool:
+        return value is True or value == 1 or str(value or "").strip().lower() in {"1", "true", "success"}
+
+    @staticmethod
+    def _result_error(result) -> str:
+        if not isinstance(result, dict):
+            return ""
+        return str(
+            result.get("error_msg")
+            or result.get("error")
+            or result.get("message")
+            or result.get("msg")
+            or ""
+        ).strip()
+
+    @staticmethod
+    def _offline_error(message: str, raw=None) -> dict:
+        result = {
+            "state": False,
+            "success": False,
+            "error": message,
+        }
+        if raw is not None:
+            result["raw"] = raw
+        return result
 
     async def create_folder(self, name: str, parent_id: str = "0") -> dict | None:
         """创建 115 文件夹。"""

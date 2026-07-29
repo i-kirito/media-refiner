@@ -189,7 +189,7 @@
     }
 
     function getItemCategory(item) {
-        if (item.downloadActive || item.status === 'downloading') return 'downloading';
+        if (item.downloadActive || item.status === 'downloading' || item.status === 'processing') return 'downloading';
         const s = item.status;
         if (s === 'approved' || s === 'auto_approved' || s === 'download' || s === 'transfer' || s === 'unlock') return 'success';
         if (s === 'failed' || s === 'error') return 'fail';
@@ -289,12 +289,14 @@
                         ? 'fa-circle-minus'
                         : 'fa-ban';
             const isGapFailure = item.sourceKind === 'gapLog' && category === 'fail';
-            const canRestore = !!item.itemId && (item.sourceKind !== 'gapLog' || isGapFailure);
+            const canRestore = !!item.itemId
+                && item.status !== 'processing'
+                && (item.sourceKind !== 'gapLog' || isGapFailure);
             const actionLabel = isGapFailure ? '删除历史' : '恢复搜索';
             const actionIcon = isGapFailure ? 'fa-trash-can' : 'fa-rotate-left';
             const actionMode = isGapFailure ? 'cleanup' : 'restore';
-            const downloadPanel = isDownloading ? downloadProgressPanel(item) : '';
-            const downloadControls = isDownloading && item.itemId ? downloadActions(item) : '';
+            const downloadPanel = isDownloading && item.status !== 'processing' ? downloadProgressPanel(item) : '';
+            const downloadControls = isDownloading && item.status !== 'processing' && item.itemId ? downloadActions(item) : '';
             return `
                 <div class="apple-card p-3 sm:p-4">
                     <div class="flex flex-col sm:flex-row sm:items-start gap-3">
@@ -378,6 +380,7 @@
             reviews.forEach(r => {
                 const mapStatus = {
                     'approved': { label: '已批准' },
+                    'processing': { label: '转存处理中' },
                     'rejected': { label: '已拒绝' },
                     'ignored':  { label: '已忽略' },
                     'failed':   { label: '失败' },
@@ -446,14 +449,16 @@
                 });
             });
 
-            // 同一条目已有执行日志时，隐藏手动计划占位，避免重复显示。
+            // 同一条目已有执行日志时，隐藏手动计划和已批准审核占位，避免重复显示。
             const logKeys = new Set(
                 _allItems
                     .filter(i => i.sourceKind === 'log' && i.itemId)
                     .map(i => `${i.itemId}|${i.actionType}`)
             );
             _allItems = _allItems.filter(i => {
-                if (i.sourceKind !== 'plan' || !i.itemId) return true;
+                const isCompletedPlaceholder = i.sourceKind === 'plan'
+                    || (i.sourceKind === 'review' && i.status === 'approved');
+                if (!isCompletedPlaceholder || !i.itemId) return true;
                 return !logKeys.has(`${i.itemId}|${i.actionType}`);
             });
 

@@ -9,6 +9,7 @@ config/.env
 
 # Runtime data and logs
 data/
+tmp/
 *.db
 *.log
 

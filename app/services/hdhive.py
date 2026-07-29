@@ -4,11 +4,18 @@ from __future__ import annotations
 
 import asyncio
 import ipaddress
+import re
 from urllib.parse import urlparse
 
 import httpx
 
 from app.config import settings
+
+
+_ED2K_URL_RE = re.compile(
+    r"ed2k://\|file\|[^|\r\n]+\|\d+\|[0-9a-f]{32}\|(?:[^|\r\n]*\|)*/",
+    re.IGNORECASE,
+)
 
 
 def _response_text(value) -> str:
@@ -19,6 +26,75 @@ def _response_text(value) -> str:
     if isinstance(value, list):
         return " ".join(_response_text(item) for item in value)
     return str(value)
+
+
+def _extract_ed2k_urls(value) -> list[str]:
+    """递归提取 Symedia 响应中的 ED2K 文件链接，按出现顺序去重。"""
+    urls: list[str] = []
+    seen: set[str] = set()
+
+    def collect(item) -> None:
+        if isinstance(item, str):
+            text = item.replace("\\/", "/")
+            for match in _ED2K_URL_RE.finditer(text):
+                url = match.group(0)
+                key = url.lower()
+                if key not in seen:
+                    seen.add(key)
+                    urls.append(url)
+            return
+        if isinstance(item, dict):
+            for nested in item.values():
+                collect(nested)
+            return
+        if isinstance(item, (list, tuple, set)):
+            for nested in item:
+                collect(nested)
+
+    collect(value)
+    return urls
+
+
+def _is_offline_submitted_response(data, message: str = "") -> bool:
+    """识别上游已经完成离线任务提交的响应，避免重复添加。"""
+    if isinstance(data, dict):
+        if str(data.get("transfer_mode") or "").strip().lower() == "ed2k_offline":
+            return True
+        offline = data.get("offline")
+        if isinstance(offline, dict):
+            state = offline.get("state")
+            if state is True or state == 1 or str(state or "").strip().lower() in {"1", "true", "success"}:
+                return True
+    text = f"{message or ''} {_response_text(data)}".lower()
+    return any(
+        marker in text
+        for marker in (
+            "离线任务已提交",
+            "离线任务添加成功",
+            "离线下载已提交",
+            "offline task submitted",
+            "offline task added",
+        )
+    )
+
+
+def _is_transfer_failure_response(data, message: str = "") -> bool:
+    """某些 Symedia 响应仍会返回 HTTP 200/success=true，失败需以业务文案判定。"""
+    text = f"{message or ''} {_response_text(data)}".lower()
+    return any(
+        marker in text
+        for marker in (
+            "没有成功转存的链接",
+            "无成功转存",
+            "未成功转存",
+            "转存失败",
+            "离线任务提交失败",
+            "离线任务添加失败",
+            "transfer failed",
+            "failed to transfer",
+            "offline task failed",
+        )
+    )
 
 
 def _is_already_transferred_response(data, message: str = "") -> bool:
@@ -53,7 +129,7 @@ class HDHiveClient:
         self.symedia_url = self._normalize_symedia_url(settings.symedia_url or "")
         self.symedia_cloud_type = settings.symedia_cloud_type or "channel_115"
         self.proxy = proxy or settings.proxy
-        timeout = httpx.Timeout(120.0, connect=8.0, write=30.0, pool=30.0) if self.mode == "symedia" else 15.0
+        timeout = httpx.Timeout(240.0, connect=8.0, write=30.0, pool=30.0) if self.mode == "symedia" else 15.0
         client_kwargs = {"timeout": timeout, "verify": False}
         if self.proxy and not (self.mode == "symedia" and self._is_private_url(self.symedia_url)):
             client_kwargs["proxy"] = self.proxy
@@ -311,6 +387,16 @@ class HDHiveClient:
                 return {"status": "error", "message": "资源已在 115 中，但解锁结果没有分享链接，无法强制重新转存", "data": unlock_result}
             return {"status": "error", "message": "HDHive 解锁结果无分享链接", "data": unlock_result}
 
+        target_folder = folder_id or settings.cloud115_folder_id or "0"
+        ed2k_urls = _extract_ed2k_urls(full_url)
+        if ed2k_urls:
+            return await self._submit_ed2k_offline(
+                ed2k_urls,
+                target_folder,
+                full_url,
+                transfer_data=unlock_result,
+            )
+
         from app.services.cloud115 import Cloud115Client
         c115 = Cloud115Client()
         try:
@@ -319,7 +405,6 @@ class HDHiveClient:
                 # 非 115 网盘链接（如夸克/百度等）
                 return {"status": "not_115", "message": "非 115 网盘资源", "data": None}
 
-            target_folder = folder_id or settings.cloud115_folder_id or "0"
             result = await c115.transfer_from_share(
                 parsed["share_code"],
                 parsed.get("receive_code", ""),
@@ -431,36 +516,164 @@ class HDHiveClient:
             media_type = resolved_type or media_type
         media_type = self._normalize_media_type(media_type)
 
-        payload = {
+        base_payload = {
             "title": keyword or "",
             "media_type": media_type,
-            "cloud_type": self.symedia_cloud_type,
             "tmdb_id": tmdb_id or None,
             "target": "hdhive",
         }
-        resp = await self._symedia_search_request(payload)
-        if resp.status_code in (401, 403):
-            raise RuntimeError("Symedia 认证失败：请检查 Token/Cookie")
-        resp.raise_for_status()
-        data = resp.json()
-        hdhive = data.get("hdhive") if isinstance(data, dict) else {}
-        if hdhive and hdhive.get("configured") is False:
-            raise RuntimeError(hdhive.get("message") or "Symedia 影巢未授权")
-        items = hdhive.get("items", []) if isinstance(hdhive, dict) else []
-        results = []
-        for item in items if isinstance(items, list) else []:
-            if not isinstance(item, dict):
+        cloud_types = ("channel_115", "ed2k")
+        responses = await asyncio.gather(
+            *(
+                self._symedia_search_request({**base_payload, "cloud_type": cloud_type})
+                for cloud_type in cloud_types
+            ),
+            return_exceptions=True,
+        )
+
+        results: list[dict] = []
+        seen_resources: set[str] = set()
+        errors: list[str] = []
+        for cloud_type, response in zip(cloud_types, responses):
+            if isinstance(response, BaseException):
+                errors.append(f"{cloud_type}: {response}")
                 continue
-            normalized = dict(item)
-            resource_url = normalized.get("resource_url") or normalized.get("url") or ""
-            if resource_url:
-                normalized["hdhive_slug"] = normalized.get("slug", "")
-                normalized["slug"] = resource_url
-                normalized.setdefault("page_url", resource_url)
-            normalized.setdefault("source", ["HDHive"])
-            results.append(normalized)
+            if response.status_code in (401, 403):
+                raise RuntimeError("Symedia 认证失败：请检查 Token/Cookie")
+            try:
+                response.raise_for_status()
+                data = response.json()
+            except Exception as e:
+                errors.append(f"{cloud_type}: {type(e).__name__}: {e}")
+                continue
+            hdhive = data.get("hdhive") if isinstance(data, dict) else {}
+            if hdhive and hdhive.get("configured") is False:
+                errors.append(f"{cloud_type}: {hdhive.get('message') or 'Symedia 影巢未授权'}")
+                continue
+            items = hdhive.get("items", []) if isinstance(hdhive, dict) else []
+            for index, item in enumerate(items if isinstance(items, list) else []):
+                if not isinstance(item, dict):
+                    continue
+                normalized = dict(item)
+                resource_url = str(normalized.get("resource_url") or normalized.get("url") or "").strip()
+                original_slug = str(normalized.get("slug") or "").strip()
+                resource_hint = (resource_url or original_slug).lower()
+                inferred_pan_type = ""
+                if resource_hint.startswith("ed2k://") or "/resource/ed2k/" in resource_hint:
+                    inferred_pan_type = "ed2k"
+                elif "/resource/115/" in resource_hint:
+                    inferred_pan_type = "115"
+                raw_pan_type = str(
+                    normalized.get("pan_type")
+                    or inferred_pan_type
+                    or ("ed2k" if cloud_type == "ed2k" else "115")
+                ).strip().lower()
+                if raw_pan_type in {"115", "channel_115"}:
+                    pan_type = "115"
+                elif raw_pan_type == "ed2k":
+                    pan_type = "ed2k"
+                else:
+                    continue
+                resource_key = (resource_url or original_slug).rstrip("/").casefold()
+                if not resource_key:
+                    resource_key = f"{cloud_type}:{index}:{normalized.get('title') or ''}".casefold()
+                if resource_key in seen_resources:
+                    continue
+                seen_resources.add(resource_key)
+                if resource_url:
+                    normalized["hdhive_slug"] = original_slug
+                    normalized["slug"] = resource_url
+                    normalized.setdefault("page_url", resource_url)
+                normalized["pan_type"] = pan_type
+                normalized["resource_kind"] = pan_type
+                normalized["is_ed2k"] = pan_type == "ed2k"
+                normalized.setdefault("source", ["HDHive"])
+                results.append(normalized)
+        if errors:
+            detail = "; ".join(errors)
+            if not results:
+                raise RuntimeError(f"Symedia 影巢搜索失败: {detail}")
+            print(f"[HDHive] Symedia 影巢搜索部分失败，已保留 {len(results)} 条有效结果: {detail}")
         print(f"[HDHive] Symedia 搜索 tmdb_id={tmdb_id} 返回 {len(results)} 条结果")
         return results
+
+    async def _submit_ed2k_offline(
+        self,
+        ed2k_urls: list[str],
+        parent_id: str,
+        resource_url: str,
+        transfer_data=None,
+    ) -> dict:
+        """将解锁得到的 ED2K 链接直接提交到 115 目标目录。"""
+        from app.services.cloud115 import Cloud115Client
+
+        unique_urls = list(dict.fromkeys(url for url in ed2k_urls if url))
+        data = dict(transfer_data) if isinstance(transfer_data, dict) else {}
+        if transfer_data is not None and not isinstance(transfer_data, dict):
+            data["symedia_response"] = transfer_data
+        data.update({
+            "transfer_mode": "ed2k_offline",
+            "ed2k_url": unique_urls[0] if unique_urls else "",
+            "ed2k_urls": unique_urls,
+            "_target_folder": str(parent_id or "0"),
+            "_resource_url": resource_url,
+        })
+        if not unique_urls:
+            return {"status": "error", "message": "影巢解锁结果无有效 ED2K 链接", "data": data}
+
+        client = Cloud115Client()
+        submissions: list[dict] = []
+        try:
+            for ed2k_url in unique_urls:
+                try:
+                    result = await client.create_offline_task(ed2k_url, str(parent_id or "0"))
+                except Exception as e:
+                    result = {
+                        "state": False,
+                        "success": False,
+                        "error": f"115 离线接口异常: {e}",
+                    }
+                submissions.append({"url": ed2k_url, "response": result})
+        finally:
+            await client.close()
+
+        def submitted(item: dict) -> bool:
+            result = item.get("response")
+            if not isinstance(result, dict):
+                return False
+            state = result.get("state")
+            return state is True or state == 1 or str(state or "").strip().lower() in {"1", "true", "success"}
+
+        accepted = [item for item in submissions if submitted(item)]
+        data["offline"] = submissions[0]["response"] if len(submissions) == 1 else submissions
+        data["offline_results"] = submissions
+        if not accepted:
+            first = submissions[0].get("response") if submissions else None
+            error = ""
+            if isinstance(first, dict):
+                error = str(
+                    first.get("error_msg")
+                    or first.get("error")
+                    or first.get("message")
+                    or first.get("msg")
+                    or ""
+                ).strip()
+            return {
+                "status": "error",
+                "message": f"ED2K 提交 115 离线失败: {error or '115 API 未确认任务'}",
+                "data": data,
+            }
+        if len(accepted) < len(submissions):
+            return {
+                "status": "transferred",
+                "message": f"ED2K 已部分提交到 115 离线目录（{len(accepted)}/{len(submissions)}）",
+                "data": data,
+            }
+        return {
+            "status": "transferred",
+            "message": "ED2K 已提交到 115 离线目录",
+            "data": data,
+        }
 
     async def _symedia_transfer(self, resource_url: str, folder_id: str = "", force_transfer: bool = False) -> dict | None:
         if not self.is_configured:
@@ -469,8 +682,17 @@ class HDHiveClient:
             return {"status": "error", "message": "Symedia 转存缺少资源链接", "data": None}
 
         parent_id = folder_id or settings.symedia_parent_id or settings.cloud115_folder_id or "0"
+        direct_ed2k_urls = _extract_ed2k_urls(resource_url)
+        if direct_ed2k_urls:
+            return await self._submit_ed2k_offline(
+                direct_ed2k_urls,
+                parent_id,
+                resource_url,
+            )
+        resource_lower = resource_url.lower()
+        transfer_cloud_type = "ed2k" if "/resource/ed2k/" in resource_lower else self.symedia_cloud_type
         payload = {
-            "cloud_type": self.symedia_cloud_type,
+            "cloud_type": transfer_cloud_type,
             "parent_id": parent_id,
             "url": resource_url,
         }
@@ -491,13 +713,33 @@ class HDHiveClient:
         if isinstance(data, dict):
             data.setdefault("_target_folder", parent_id)
             data.setdefault("_resource_url", resource_url)
-        message = data.get("message") if isinstance(data, dict) else ""
+        message = ""
+        if isinstance(data, dict):
+            message = str(data.get("message") or data.get("msg") or data.get("error") or "")
         if _is_already_transferred_response(data, message):
             return {"status": "already_owned", "message": "资源已在 115 中（已转存过该文件）", "data": data}
         if resp.is_error:
             return {"status": "error", "message": f"Symedia 转存失败: HTTP {resp.status_code}", "data": data}
-        if isinstance(data, dict) and data.get("success") is False:
+        if (isinstance(data, dict) and data.get("success") is False) or _is_transfer_failure_response(data, message):
             return {"status": "error", "message": message or "Symedia 转存失败", "data": data}
+        ed2k_urls = _extract_ed2k_urls(data)
+        if ed2k_urls:
+            if _is_offline_submitted_response(data, message):
+                if isinstance(data, dict):
+                    data.setdefault("transfer_mode", "ed2k_offline")
+                    data.setdefault("ed2k_url", ed2k_urls[0])
+                    data.setdefault("ed2k_urls", ed2k_urls)
+                return {
+                    "status": "transferred",
+                    "message": message or "ED2K 已提交到 115 离线目录",
+                    "data": data,
+                }
+            return await self._submit_ed2k_offline(
+                ed2k_urls,
+                parent_id,
+                resource_url,
+                transfer_data=data,
+            )
         if isinstance(data, dict) and data.get("success") is True:
             return {"status": "transferred", "message": message or "Symedia 转存已提交，等待落地校验", "data": data}
         return {"status": "submitted", "message": message or "已提交 Symedia 转存，等待落地确认", "data": data}

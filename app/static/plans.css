@@ -1006,28 +1006,6 @@ html.dark .review-source-badge.is-hdhive {
     color: #c4b5fd;
 }
 
-.review-emby-link {
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    width: 28px;
-    height: 28px;
-    flex: 0 0 28px;
-    border-radius: 7px;
-    color: #98a2b3;
-    transition: background-color 150ms ease, color 150ms ease;
-}
-
-.review-emby-link:hover {
-    background: #eff6ff;
-    color: #2563eb;
-}
-
-html.dark .review-emby-link:hover {
-    background: rgba(59, 130, 246, 0.12);
-    color: #60a5fa;
-}
-
 .review-card-actions {
     display: flex;
     align-items: center;
@@ -1137,6 +1115,46 @@ html.dark .review-action-btn.is-ignore {
     border-color: #d9f2e4;
 }
 
+.review-current-link,
+.review-target-link {
+    color: inherit;
+    text-decoration: none;
+    cursor: pointer;
+    transition: border-color 150ms ease, background-color 150ms ease, box-shadow 150ms ease;
+}
+
+.review-current-link:hover {
+    border-color: #fca5a5;
+    background: #fff1f2;
+    box-shadow: 0 0 0 2px rgba(239, 68, 68, 0.07);
+}
+
+.review-target-link:hover {
+    border-color: #34d399;
+    background: #ecfdf5;
+    box-shadow: 0 0 0 2px rgba(16, 185, 129, 0.08);
+}
+
+.plans-page .review-current-link:focus-visible {
+    outline: 2px solid #ef4444;
+    outline-offset: 2px;
+}
+
+.plans-page .review-target-link:focus-visible {
+    outline: 2px solid #10b981;
+    outline-offset: 2px;
+}
+
+html.dark .review-current-link:hover {
+    border-color: rgba(248, 113, 113, 0.5);
+    background: rgba(127, 29, 29, 0.2);
+}
+
+html.dark .review-target-link:hover {
+    border-color: rgba(52, 211, 153, 0.55);
+    background: rgba(6, 78, 59, 0.24);
+}
+
 html.dark .review-current,
 html.dark .review-target {
     border-color: rgba(255, 255, 255, 0.06);
@@ -1180,6 +1198,33 @@ html.dark .review-target {
 
 .review-target .review-compare-label {
     color: #047857;
+}
+
+.review-detail-link-icon {
+    width: 14px;
+    height: 14px;
+    margin-left: auto;
+    color: #059669;
+    font-size: 8px;
+    line-height: 14px;
+    text-align: center;
+    opacity: 0.65;
+    transition: opacity 150ms ease;
+}
+
+.review-current-link .review-detail-link-icon {
+    color: #dc2626;
+}
+
+.review-current-link:hover .review-detail-link-icon,
+.review-current-link:focus-visible .review-detail-link-icon,
+.review-target-link:hover .review-detail-link-icon,
+.review-target-link:focus-visible .review-detail-link-icon {
+    opacity: 1;
+}
+
+html.dark .review-current-link .review-detail-link-icon {
+    color: #f87171;
 }
 
 html.dark .review-current .review-compare-label {

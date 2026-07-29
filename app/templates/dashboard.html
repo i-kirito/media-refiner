@@ -5,7 +5,7 @@
 /* ── Dashboard 网格布局 ── */
 #dashboard-grid {
     display: grid;
-    gap: 1rem;
+    gap: 1.125rem;
     grid-auto-flow: row dense;
     grid-auto-rows: minmax(48px, auto);
     grid-template-columns: repeat(var(--dashboard-cols, 1), minmax(0, 1fr));
@@ -17,7 +17,7 @@
     --dash-panel: rgba(255, 255, 255, 0.94);
     --dash-soft: rgba(248, 250, 252, 0.82);
     --dash-shadow: 0 18px 44px -38px rgba(15, 23, 42, 0.74);
-    --dash-card-radius: 16px;
+    --dash-card-radius: 18px;
 }
 .dark .dashboard-page {
     --dash-border: rgba(255, 255, 255, 0.08);
@@ -63,7 +63,12 @@
     flex-direction: column;
 }
 .dashboard-page .widget-item:not([data-module="poor"]) > .apple-card {
-    padding: 1rem !important;
+    padding: 1.15rem !important;
+}
+.dashboard-page .widget-item h3 {
+    font-size: 0.95rem !important;
+    line-height: 1.35;
+    letter-spacing: -0.01em;
 }
 .widget-item.has-fixed-height {
     min-height: 0;
@@ -89,20 +94,20 @@
     overflow: hidden;
     display: flex;
     flex-direction: column;
-    gap: 1rem;
+    gap: 1.15rem;
 }
 .dashboard-hero::after {
     content: '';
     position: absolute;
-    left: 1rem;
-    right: 1rem;
+    left: 1.25rem;
+    right: 1.25rem;
     bottom: 0;
     height: 1px;
     background: linear-gradient(90deg, rgba(0, 122, 255, 0.34), rgba(20, 184, 166, 0.22), transparent);
 }
 .dashboard-hero-icon {
-    width: 40px;
-    height: 40px;
+    width: 44px;
+    height: 44px;
     border-radius: 14px;
     box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.55);
 }
@@ -111,7 +116,7 @@
     flex-wrap: wrap;
     align-items: center;
     justify-content: flex-end;
-    gap: 0.75rem;
+    gap: 0.875rem;
 }
 .dashboard-action-btn {
     min-height: 42px;
@@ -130,8 +135,8 @@
 .dashboard-metric {
     position: relative;
     min-width: 0;
-    min-height: 68px;
-    padding: 0.7rem 0.9rem 0.65rem;
+    min-height: 82px;
+    padding: 0.9rem 1.1rem 0.85rem;
     border-right: 1px solid var(--dash-border);
     border-bottom: 1px solid var(--dash-border);
     background: linear-gradient(180deg, rgba(255,255,255,0.42), rgba(255,255,255,0));
@@ -144,7 +149,7 @@
     display: block;
     width: 1.65rem;
     height: 3px;
-    margin-bottom: 0.55rem;
+    margin-bottom: 0.65rem;
     border-radius: 999px;
     background: var(--metric-accent, #007AFF);
 }
@@ -158,14 +163,14 @@
 .dashboard-metric:nth-last-child(-n + 2) { border-bottom: 0; }
 .dashboard-metric-label {
     color: var(--dash-muted);
-    font-size: 0.72rem;
+    font-size: 0.78rem;
     line-height: 1.2;
     font-weight: 800;
 }
 .adaptive-grid-2 {
     display: grid;
     grid-template-columns: 1fr;
-    gap: 1rem;
+    gap: 1.15rem;
 }
 .hdr-cards {
     display: grid;
@@ -176,12 +181,12 @@
     border-radius: 16px;
 }
 .hdr-card {
-    min-height: 64px;
+    min-height: 68px;
     display: flex;
     align-items: center;
     justify-content: space-between;
     gap: 1rem;
-    padding: 0.65rem 0.8rem;
+    padding: 0.75rem 0.95rem;
     border-radius: 0;
     border: 0;
     border-bottom: 1px solid var(--dash-border);
@@ -216,20 +221,45 @@
     line-height: 1.25;
 }
 .dashboard-page .widget-item:not([data-module="stats"]):not([data-module="poor"]) h3 {
-    margin-bottom: 0.75rem !important;
+    margin-bottom: 1rem !important;
 }
 .dashboard-page [data-module="score"] #score-histogram {
-    height: 10rem !important;
+    height: 11rem !important;
+}
+.dashboard-page [data-module="charts"] .widget-scroll,
+.dashboard-page [data-module="hdr"] .widget-scroll {
+    display: flex;
+}
+.dashboard-page [data-module="charts"] .adaptive-grid-2,
+.dashboard-page [data-module="hdr"] .hdr-cards {
+    flex: 1 1 auto;
+    min-height: 0;
+}
+.dashboard-page [data-module="charts"] .adaptive-grid-2 > div {
+    display: flex;
+    min-height: 0;
+    flex-direction: column;
+}
+.dashboard-page [data-module="charts"] #resolution-chart,
+.dashboard-page [data-module="charts"] #codec-chart {
+    display: flex;
+    flex: 1 1 auto;
+    min-height: 0;
+    flex-direction: column;
+    justify-content: space-between;
+}
+.dashboard-page [data-module="hdr"] .hdr-cards {
+    grid-template-rows: repeat(3, minmax(0, 1fr));
 }
 .dashboard-page [data-module="libraries"] #library-dist {
     display: grid;
     grid-template-columns: 1fr;
-    gap: 0.55rem;
+    gap: 0.7rem;
 }
 .library-card {
     display: block;
     width: 100%;
-    padding: 0.65rem 0.75rem;
+    padding: 0.8rem 0.95rem;
     text-align: left;
     color: inherit;
     font: inherit;
@@ -255,7 +285,7 @@
     align-items: center;
     border-radius: 999px;
     padding: 0.12rem 0.45rem;
-    font-size: 0.62rem;
+    font-size: 0.6875rem;
     font-weight: 800;
     background: rgba(100, 116, 139, 0.1);
     color: rgb(71, 85, 105);
@@ -267,9 +297,9 @@
 .poor-row {
     display: flex;
     align-items: center;
-    gap: 0.7rem;
-    min-height: 48px;
-    padding: 0.5rem 0.85rem;
+    gap: 0.8rem;
+    min-height: 56px;
+    padding: 0.65rem 1.05rem;
     transition: background-color 0.16s ease;
 }
 .poor-row:hover {
@@ -290,7 +320,7 @@
     background: rgba(255, 255, 255, 0.04);
 }
 .dashboard-page [data-module="poor"] > .apple-card > .border-b {
-    padding: 0.75rem 1rem !important;
+    padding: 0.95rem 1.2rem !important;
 }
 .dashboard-page [data-module="poor"] .poor-row button {
     padding: 0.45rem 0.65rem !important;
@@ -305,7 +335,10 @@
 }
 @media (min-width: 1280px) {
     #dashboard-grid {
-        gap: 1rem;
+        gap: 1.25rem;
+    }
+    .dashboard-page .widget-item:not([data-module="poor"]) > .apple-card {
+        padding: 1.3rem !important;
     }
 }
 @container (min-width: 520px) {
@@ -322,15 +355,16 @@
     }
     .adaptive-grid-2 {
         grid-template-columns: repeat(2, minmax(0, 1fr));
-        gap: 1.25rem;
+        gap: 1.5rem;
     }
     .hdr-cards {
         grid-template-columns: repeat(3, minmax(0, 1fr));
+        grid-template-rows: 1fr;
     }
     .hdr-card {
-        min-height: 88px;
+        min-height: 100px;
         display: block;
-        padding: 0.85rem;
+        padding: 1.05rem;
         border-right: 1px solid var(--dash-border);
         border-bottom: 0;
     }
@@ -469,25 +503,25 @@ body.dashboard-resizing, body.dashboard-resizing * { cursor: ns-resize !importan
 .dark .apple-blur { background: rgba(28,28,30,0.85); }
 
 /* ── 统计数字 ── */
-.stat-number { font-size: 1.85rem; line-height: 1; font-variant-numeric: tabular-nums; letter-spacing: 0; }
+.stat-number { font-size: 2rem; line-height: 1; font-variant-numeric: tabular-nums; letter-spacing: 0; }
 @media (max-width: 767px) { .stat-number { font-size: 1.5rem; } }
 </style>
 {% endblock %}
 {% block content %}
-<div class="dashboard-page max-w-[96rem] mx-auto w-full px-3 md:px-5 xl:px-7 py-4 md:py-5 pb-24 relative">
+<div class="dashboard-page max-w-[100rem] mx-auto w-full lg:w-[90%] px-4 md:px-6 xl:px-8 py-5 md:py-6 pb-24 relative">
 
     <!-- 标题 + 操作 -->
-    <div class="dashboard-hero mb-4 p-4 border">
-        <div class="flex items-center gap-3">
+    <div class="dashboard-hero mb-5 md:mb-6 p-5 md:px-6 border">
+        <div class="flex items-center gap-3 md:gap-4">
             <div class="dashboard-hero-icon bg-brand-50 dark:bg-brand-900/30 flex items-center justify-center border border-brand-100 dark:border-brand-800">
                 <i class="fa-solid fa-chart-line text-brand-500 text-xl"></i>
             </div>
             <div>
                 <div class="flex items-center gap-2">
-                    <h1 class="text-xl font-black text-gray-900 dark:text-white">仪表盘</h1>
+                    <h1 class="text-xl md:text-[22px] font-black text-gray-900 dark:text-white tracking-tight">仪表盘</h1>
                     <span class="text-[10px] font-bold bg-brand-100 dark:bg-brand-900 text-brand-600 dark:text-brand-400 px-2 py-0.5 rounded-md border border-brand-200 dark:border-brand-800" id="total-badge">总计: 0 部</span>
                 </div>
-                <p class="text-xs text-gray-500 mt-0.5" id="scan-time">点击开始扫描，盘点 Emby 媒体库质量</p>
+                <p class="text-xs md:text-[13px] text-gray-500 mt-1" id="scan-time">点击开始扫描，盘点 Emby 媒体库质量</p>
             </div>
         </div>
         <div class="dashboard-actions">
@@ -1242,7 +1276,7 @@ const DashboardState = {
             order: [...MODULE_ORDER],
             visibility: {},
             widths: { stats: 4, poor: 2, charts: 2, score: 1, hdr: 1, libraries: 2 },
-            heights: { stats_px: 152, poor_px: 296, charts_px: 296, score_px: 272, hdr_px: 272, libraries_px: 272 }
+            heights: { stats_px: 184, poor_px: 340, charts_px: 340, score_px: 320, hdr_px: 320, libraries_px: 320 }
         };
     },
     _normalize(state) {

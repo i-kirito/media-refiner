@@ -16,6 +16,8 @@ SRC_DIR="${MEDIA_REFINER_SRC_DIR:-/volume2/docker/media-refiner-src}"
 RUNTIME_DIR="${MEDIA_REFINER_RUNTIME_DIR:-/volume2/docker/media-refiner}"
 CONFIG_DIR="${MEDIA_REFINER_CONFIG_DIR:-${RUNTIME_DIR}/config}"
 DATA_DIR="${MEDIA_REFINER_DATA_DIR:-${RUNTIME_DIR}/data}"
+MEDIA_DIR="${MEDIA_REFINER_MEDIA_DIR:-/volume1/media}"
+CLOUDNAS_DIR="${MEDIA_REFINER_CLOUDNAS_DIR:-/volume1/CloudNAS}"
 IMAGE="${MEDIA_REFINER_IMAGE:-media-refiner:latest}"
 PORT="${MEDIA_REFINER_PORT:-10309}"
 PROJECT_NAME="${MEDIA_REFINER_PROJECT:-media-refiner}"
@@ -113,6 +115,8 @@ services:
     volumes:
       - ${DATA_DIR}:/workspace/data
       - ${CONFIG_DIR}:/workspace/config
+      - ${MEDIA_DIR}:/media:ro
+      - ${CLOUDNAS_DIR}:/CloudNAS:ro
     environment:
       - TZ=Asia/Shanghai
       - REFINER_DB_PATH=/workspace/data/refiner.db

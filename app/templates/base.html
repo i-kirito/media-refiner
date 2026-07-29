@@ -561,13 +561,22 @@
         gsLoading.classList.remove('hidden');
         gsTimeout = setTimeout(async () => {
             try {
-                const res = await fetch(`/api/scan/items?min_score=0&max_score=100&page_size=20&sort_order=desc`);
+                const params = new URLSearchParams({
+                    min_score: 0,
+                    max_score: 100,
+                    page_size: 20,
+                    sort_order: 'desc',
+                    search: query,
+                });
+                const res = await fetch(`/api/scan/items?${params}`);
                 const json = await res.json();
-                const items = (json.data?.items || []).filter(i => i.name.toLowerCase().includes(query.toLowerCase()));
+                const items = json.data?.items || [];
                 if (items.length === 0) {
                     gsResults.innerHTML = '<div class="text-center py-12 text-gray-400"><i class="fa-solid fa-face-frown text-4xl mb-3 opacity-30"></i><p class="text-[14px] font-medium">未找到匹配的媒体</p></div>';
                 } else {
-                    gsResults.innerHTML = `<div class="text-xs text-gray-500 mb-2 font-medium">找到 ${items.length} 个结果</div>
+                    const total = Number(json.data?.total || items.length);
+                    const countText = total > items.length ? `找到 ${total} 个结果，显示前 ${items.length} 个` : `找到 ${total} 个结果`;
+                    gsResults.innerHTML = `<div class="text-xs text-gray-500 mb-2 font-medium">${countText}</div>
                         <div class="space-y-1">${items.map(item => {
                             const score = item.quality_score || 0;
                             const scoreColor = score <= 30 ? 'text-red-500' : score <= 50 ? 'text-yellow-500' : score <= 80 ? 'text-blue-500' : 'text-green-500';
@@ -642,10 +651,13 @@
         if (resolution === '蓝光目录') {
             return '<span class="inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-bold bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300">蓝光目录</span>';
         }
-        const h = parseInt((resolution || '').split('x')[1] || '0');
-        if (h >= 2160) return '<span class="inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-bold bg-purple-100 text-purple-700 dark:bg-purple-900/40 dark:text-purple-300">4K</span>';
-        if (h >= 1080) return '<span class="inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-bold bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-300">1080p</span>';
-        if (h >= 720) return '<span class="inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-bold bg-teal-100 text-teal-700 dark:bg-teal-900/40 dark:text-teal-300">720p</span>';
+        const value = String(resolution || '').trim().toLowerCase();
+        const dimensions = value.match(/^(\d+)\s*x\s*(\d+)$/);
+        const width = dimensions ? Number(dimensions[1]) : 0;
+        const height = dimensions ? Number(dimensions[2]) : 0;
+        if (/(?:2160|4k|uhd)/.test(value) || width >= 3800 || height >= 2000) return '<span class="inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-bold bg-purple-100 text-purple-700 dark:bg-purple-900/40 dark:text-purple-300">4K</span>';
+        if (/1080/.test(value) || height >= 1000) return '<span class="inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-bold bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-300">1080p</span>';
+        if (/720/.test(value) || height >= 700) return '<span class="inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-bold bg-teal-100 text-teal-700 dark:bg-teal-900/40 dark:text-teal-300">720p</span>';
         if (!resolution || resolution === '0x0') return '';
         return '<span class="inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-bold bg-gray-200 text-gray-600 dark:bg-gray-700 dark:text-gray-300">' + escapeHtml(resolution) + '</span>';
     }

@@ -9,15 +9,19 @@ import re
 import time
 from datetime import datetime
 from urllib.parse import unquote, urlparse
+import httpx
 from fastapi import APIRouter, HTTPException, Body
 from app.config import settings
 from pydantic import BaseModel
 from app.models.schemas import SubscribeRule
 from app.database import (
     save_subscribe_rule, list_subscribe_rules, get_subscribe_rule,
+    count_confirmed_upgrades_by_rule,
     delete_subscribe_rule, add_subscribe_log, list_subscribe_logs,
     get_subscribe_logs_for_item, load_quality_cache,
-    add_subscribe_review, list_subscribe_reviews, update_subscribe_review, count_pending_reviews,
+    add_subscribe_review, list_subscribe_reviews, update_subscribe_review, update_subscribe_review_result,
+    claim_subscribe_review_processing,
+    count_pending_reviews,
     clear_subscribe_reviews, get_subscribe_review,
     add_subscribe_ignore, remove_subscribe_ignore, list_subscribe_ignores, get_subscribe_ignore_ids,
     has_processed_item, delete_subscribe_history, build_subscribe_media_key,
@@ -27,6 +31,7 @@ from app.services.emby import EmbyClient
 from app.services.moviepilot import MoviePilotClient
 from app.services.hdhive import HDHiveClient
 from app.services.telegram import TelegramNotifier, _fmt_bytes, _fmt_resolution, _fmt_codec, _fmt_hdr, _fmt_quality
+from app.services.transfer_verify import verify_hdhive_transfer_visible
 from app.services.quality_scanner import parse_filename_resolution, parse_filename_codec, parse_filename_video_range
 
 logger = logging.getLogger(__name__)
@@ -38,9 +43,14 @@ _PATH_SIZE_CACHE_TTL = 600.0
 _STRM_READ_LIMIT = 8192
 _STALE_REVIEW_PRUNE_TTL = 300.0
 _STALE_REVIEW_PRUNE_CONCURRENCY = 8
+_TRANSFER_VERIFY_INTERVAL = 20.0
+_TRANSFER_VERIFY_TIMEOUT = 900.0
 _stale_review_prune_lock = asyncio.Lock()
 _stale_review_prune_last_run = 0.0
 _stale_review_prune_task: asyncio.Task | None = None
+_transfer_verify_tasks: dict[int, asyncio.Task] = {}
+_transfer_submit_tasks: dict[int, asyncio.Task] = {}
+_symedia_transfer_lock = asyncio.Lock()
 _PUBLIC_SEARCH_RESULT_KEYS = {
     "_source_label",
     "audio_encode",
@@ -49,6 +59,7 @@ _PUBLIC_SEARCH_RESULT_KEYS = {
     "is_unlocked",
     "labels",
     "name",
+    "pan_type",
     "peers",
     "remark",
     "resolution",
@@ -85,6 +96,7 @@ def _review_already_handled_response(review: dict) -> dict:
         "rejected": "已拒绝",
         "ignored": "已忽略",
         "failed": "已失败",
+        "processing": "正在处理",
     }.get(status, "已处理")
     message = review.get("message") or ""
     text = f"审核项{label}: {message}" if message else f"审核项{label}"
@@ -109,17 +121,53 @@ def _public_search_result(result: dict) -> dict:
             public[key] = {"nickname": value.get("nickname", "")}
         else:
             public[key] = value
+    detail_url = _public_hdhive_detail_url(result)
+    if detail_url:
+        public["detail_url"] = detail_url
     if result.get("_raw"):
         public["_redacted"] = True
     return public
 
 
+def _public_hdhive_detail_url(result: dict) -> str:
+    """Return a canonical HDHive resource page without query parameters or credentials."""
+    for key in ("page_url", "resource_url", "slug"):
+        value = str(result.get(key) or "").strip()
+        if not value:
+            continue
+        try:
+            parsed = urlparse(value)
+            if (
+                parsed.scheme != "https"
+                or (parsed.hostname or "").lower() not in {"hdhive.com", "www.hdhive.com"}
+                or parsed.username
+                or parsed.password
+                or parsed.port not in (None, 443)
+                or not re.fullmatch(
+                    r"/resource/[a-zA-Z0-9_-]{1,32}/[a-zA-Z0-9_-]{8,128}/?",
+                    parsed.path,
+                )
+            ):
+                continue
+        except ValueError:
+            continue
+        return f"https://hdhive.com{parsed.path.rstrip('/')}"
+    return ""
+
+
 def _public_review(review: dict) -> dict:
     """Trim sensitive execution fields before returning review rows to browsers."""
     item = dict(review or {})
+    stored_result = item.get("search_result") if isinstance(item.get("search_result"), dict) else {}
+    if item.get("status") == "processing":
+        item["processing_stage"] = str(stored_result.get("_transfer_stage") or "processing")
+        try:
+            item["processing_started_at"] = float(stored_result.get("_transfer_submitted_at") or 0)
+        except (TypeError, ValueError):
+            item["processing_started_at"] = 0
     item.pop("media_key", None)
     item.pop("candidate_rank", None)
-    item["search_result"] = _public_search_result(item.get("search_result") or {})
+    item["search_result"] = _public_search_result(stored_result)
     return item
 
 
@@ -199,92 +247,280 @@ def _history_download_hint_fields(log: dict) -> dict:
     }
 
 
-def _transfer_match_text(value: str) -> str:
-    return re.sub(r"[^0-9a-zA-Z\u4e00-\u9fff]+", "", str(value or "")).lower()
+async def _verify_hdhive_transfer_visible(result: dict, resp: dict | None, **kwargs) -> dict:
+    """兼容旧调用名，实际校验逻辑由共享服务统一维护。"""
+    return await verify_hdhive_transfer_visible(result, resp, **kwargs)
 
 
-def _transfer_candidate_names(result: dict, resp: dict | None) -> list[str]:
-    names: list[str] = []
-    for source in (result or {}, (resp or {}).get("data") if isinstance(resp, dict) else {}):
-        if not isinstance(source, dict):
-            continue
-        for key in ("title", "name", "file_name", "resource_title", "slug", "_resource_url"):
-            value = str(source.get(key) or "").strip()
-            if value and not value.startswith(("http://", "https://")):
-                names.append(value)
-    return list(dict.fromkeys(names))
-
-
-def _transfer_names_match(target_names: list[str], candidate_names: list[str]) -> bool:
-    normalized_targets = [_transfer_match_text(name) for name in target_names if _transfer_match_text(name)]
-    normalized_candidates = [_transfer_match_text(name) for name in candidate_names if _transfer_match_text(name)]
-    for target in normalized_targets:
-        for candidate in normalized_candidates:
-            if len(candidate) >= 4 and (candidate in target or target in candidate):
-                return True
-    return False
-
-
-async def _verify_hdhive_transfer_visible(result: dict, resp: dict | None) -> dict:
-    """订阅转存只在 115 目标目录能看到资源时才算成功。"""
-    if not settings.cloud115_cookie:
-        return {"ok": False, "message": "未配置 115 Cookie，无法确认转存文件已落地"}
-    if not isinstance(resp, dict):
-        return {"ok": False, "message": "缺少转存响应，无法确认 115 文件"}
-
-    data = resp.get("data") if isinstance(resp.get("data"), dict) else {}
-    folder_id = str(data.get("_target_folder") or settings.symedia_parent_id or settings.cloud115_folder_id or "0")
-    candidate_names = _transfer_candidate_names(result, resp)
-
-    from app.services.cloud115 import Cloud115Client
-
-    c115 = Cloud115Client()
+def _transfer_started_at(review: dict) -> float:
+    result = review.get("search_result") if isinstance(review.get("search_result"), dict) else {}
     try:
-        share_code = str(data.get("_share_code") or "").strip()
-        if share_code:
-            share = await c115.list_share_files(
-                share_code,
-                str(data.get("_receive_code") or ""),
-                recursive=False,
-            )
-            if isinstance(share, dict) and share.get("state"):
-                for item in share.get("data") or []:
-                    if isinstance(item, dict):
-                        name = str(item.get("n") or item.get("name") or item.get("file_name") or "").strip()
-                        if name:
-                            candidate_names.append(name)
+        submitted_at = float(result.get("_transfer_submitted_at") or 0)
+    except (TypeError, ValueError):
+        submitted_at = 0.0
+    if submitted_at > 0:
+        return submitted_at
+    updated_at = str(review.get("updated_at") or "").strip()
+    if updated_at:
+        try:
+            return datetime.fromisoformat(updated_at).timestamp()
+        except ValueError:
+            pass
+    return time.time()
 
-        candidate_names = list(dict.fromkeys(candidate_names))
-        if not candidate_names:
-            return {"ok": False, "message": "缺少资源名称，无法确认 115 文件"}
 
-        last_names: list[str] = []
-        for attempt in range(5):
-            listing = await c115.list_files(folder_id, limit=115)
-            if isinstance(listing, dict) and listing.get("state"):
-                last_names = [
-                    str(item.get("n") or item.get("name") or item.get("file_name") or "").strip()
-                    for item in (listing.get("data") or [])
-                    if isinstance(item, dict)
-                ]
-                if _transfer_names_match(last_names, candidate_names):
-                    return {
-                        "ok": True,
-                        "message": "115 目标目录已确认资源文件",
-                        "folder_id": folder_id,
-                        "matched_names": last_names[:8],
-                        "attempts": attempt + 1,
-                    }
-            await asyncio.sleep(2)
-        return {
-            "ok": False,
-            "message": "115 目标目录未找到刚转存的资源文件",
-            "folder_id": folder_id,
-            "candidate_names": candidate_names[:8],
-            "sample_names": last_names[:8],
+async def _mark_transfer_processing(review: dict, resp: dict, origin_status: str) -> None:
+    data = resp.get("data") if isinstance(resp.get("data"), dict) else {}
+    target_folder = str(
+        data.get("_target_folder")
+        or settings.symedia_parent_id
+        or settings.cloud115_folder_id
+        or "0"
+    )
+    await update_subscribe_review_result(
+        int(review["id"]),
+        "processing",
+        "115 转存已提交，等待资源落地入库",
+        {
+            "_transfer_submitted_at": time.time(),
+            "_transfer_target_folder": target_folder,
+            "_transfer_origin_status": str(origin_status or "transferred"),
+            "_transfer_stage": "verifying",
+        },
+    )
+    await _add_review_activity(review, "processing", "Symedia 已完成提交，正在确认 115 目录与入库状态")
+    _schedule_transfer_verification(int(review["id"]))
+
+
+async def _watch_transfer_verification(review_id: int) -> None:
+    last_message = "115 转存已提交，等待资源落地入库"
+    while True:
+        review = await get_subscribe_review(review_id)
+        if not review or review.get("status") != "processing":
+            return
+        result = review.get("search_result") if isinstance(review.get("search_result"), dict) else {}
+        submitted_at = _transfer_started_at(review)
+        elapsed = max(0.0, time.time() - submitted_at)
+        response = {
+            "data": {
+                "_target_folder": str(
+                    result.get("_transfer_target_folder")
+                    or settings.symedia_parent_id
+                    or settings.cloud115_folder_id
+                    or "0"
+                )
+            }
         }
+        try:
+            origin_status = str(result.get("_transfer_origin_status") or "")
+            verify = await _verify_hdhive_transfer_visible(
+                result,
+                response,
+                attempts=1,
+                delay_seconds=0,
+                # Symedia 明确返回 already_owned 时，账号内既有匹配资源即可确认；
+                # 新转存仍限定本次提交时间，避免把旧同名文件误判为刚刚入库。
+                account_search_after=(
+                    0.0 if origin_status == "already_owned" else max(0.0, submitted_at - 30)
+                ),
+            )
+            last_message = str(verify.get("message") or last_message)
+            if verify.get("ok"):
+                matched_names = verify.get("matched_names") or []
+                matched_name = str(matched_names[0] if matched_names else "").strip()
+                message = "转存成功（115 已确认资源入库）"
+                await update_subscribe_review_result(
+                    review_id,
+                    "approved",
+                    message,
+                    {
+                        "_transfer_verified_at": time.time(),
+                        "_transfer_verify_mode": str(verify.get("mode") or "target_folder"),
+                        "_transfer_matched_name": matched_name,
+                    },
+                )
+                await add_subscribe_log(
+                    review.get("rule_id", ""),
+                    review.get("rule_name", ""),
+                    "transfer",
+                    review.get("item_name", ""),
+                    review.get("item_id", ""),
+                    message,
+                )
+                logger.info("[Subscribe] 115 延迟入库确认: review_id=%s item=%s", review_id, matched_name)
+                return
+        except Exception as exc:
+            last_message = str(exc)
+            logger.warning("[Subscribe] 115 延迟入库校验异常 review_id=%s: %s", review_id, exc)
+        if elapsed >= _TRANSFER_VERIFY_TIMEOUT:
+            message = f"115 转存已提交，但 15 分钟内未确认资源入库: {last_message}"
+            await update_subscribe_review(
+                review_id,
+                "failed",
+                message,
+            )
+            await _add_review_activity(review, "error", message)
+            return
+        await asyncio.sleep(_TRANSFER_VERIFY_INTERVAL)
+
+
+def _schedule_transfer_verification(review_id: int) -> None:
+    review_id = int(review_id)
+    existing = _transfer_verify_tasks.get(review_id)
+    if existing and not existing.done():
+        return
+    task = asyncio.create_task(_watch_transfer_verification(review_id))
+    _transfer_verify_tasks[review_id] = task
+
+    def _done(done: asyncio.Task) -> None:
+        if _transfer_verify_tasks.get(review_id) is done:
+            _transfer_verify_tasks.pop(review_id, None)
+        if not done.cancelled() and done.exception():
+            logger.error("[Subscribe] 115 延迟入库任务异常 review_id=%s: %s", review_id, done.exception())
+
+    task.add_done_callback(_done)
+
+
+def _exception_detail(exc: BaseException) -> str:
+    detail = str(exc).strip()
+    return detail or type(exc).__name__
+
+
+async def _add_review_activity(review: dict, action: str, message: str) -> None:
+    try:
+        await add_subscribe_log(
+            review.get("rule_id", ""),
+            review.get("rule_name", ""),
+            action,
+            review.get("item_name", ""),
+            review.get("item_id", ""),
+            message,
+        )
+    except Exception as exc:
+        logger.warning(
+            "[Subscribe] 写入后台处理日志失败 review_id=%s: %s",
+            review.get("id"),
+            _exception_detail(exc),
+        )
+
+
+async def _execute_transfer_review(review_id: int) -> None:
+    """在后台串行执行 Symedia 转存，避免 HTTP 请求和页面按钮长时间卡住。"""
+    review = await get_subscribe_review(review_id)
+    if not review or review.get("status") != "processing":
+        return
+
+    try:
+        item_id = str(review.get("item_id") or "").strip()
+        if item_id:
+            existence = (await _verify_emby_item_ids([item_id])).get(item_id)
+            if existence is False:
+                raise ValueError("Emby 条目已不存在，已停止转存")
+            if existence is None:
+                raise ValueError("暂时无法确认 Emby 条目状态，请稍后重试")
+
+        result = review.get("search_result") if isinstance(review.get("search_result"), dict) else {}
+        slug = str(result.get("slug") or "").strip()
+        if not slug:
+            raise ValueError("无转存标识")
+    except Exception as exc:
+        detail = _exception_detail(exc)
+        logger.warning("[Subscribe] 后台转存预检失败 review_id=%s: %s", review_id, detail)
+        await update_subscribe_review(review_id, "failed", detail)
+        await _add_review_activity(review, "error", f"后台转存失败: {detail}")
+        return
+
+    await update_subscribe_review_result(
+        review_id,
+        "processing",
+        "正在后台提交 Symedia 转存",
+        {"_transfer_stage": "submitting"},
+    )
+    await _add_review_activity(review, "processing", "开始后台提交 Symedia 转存")
+    logger.info("[Subscribe] 后台转存开始 review_id=%s item=%s", review_id, review.get("item_name", ""))
+    hd = HDHiveClient()
+    try:
+        async with _symedia_transfer_lock:
+            resp = await hd.unlock_and_transfer(slug)
+        latest = await get_subscribe_review(review_id)
+        if not latest or latest.get("status") != "processing":
+            return
+        review = latest
+        if not resp:
+            raise ValueError("转存失败（HDHive API 无响应）")
+        status = str(resp.get("status") or "")
+        logger.info("[Subscribe] Symedia 转存响应 review_id=%s status=%s", review_id, status or "unknown")
+        if status not in ("transferred", "already_owned"):
+            raise ValueError(resp.get("message") or f"转存异常: {status or 'unknown'}")
+
+        verify = await _verify_hdhive_transfer_visible(
+            result,
+            resp,
+            account_search_after=0.0 if status == "already_owned" else None,
+        )
+        if isinstance(resp, dict):
+            resp["cloud115_verify"] = verify
+        if not verify.get("ok"):
+            if verify.get("pending"):
+                await _mark_transfer_processing(review, resp, status)
+                return
+            raise ValueError(verify.get("message") or "115 目标目录未确认转存文件")
+
+        message = "资源已在 115 中" if status == "already_owned" else "转存成功"
+        await update_subscribe_review(review_id, "approved", message)
+        await _add_review_activity(review, "transfer", f"审核通过 - {message}")
+    except httpx.TimeoutException as exc:
+        detail = _exception_detail(exc)
+        await update_subscribe_review_result(
+            review_id,
+            "processing",
+            f"Symedia 响应超时，正在后台确认 115 入库（{detail}）",
+            {
+                "_transfer_stage": "verify_after_timeout",
+                "_transfer_submit_error": detail,
+                "_transfer_submitted_at": _transfer_started_at(review),
+                "_transfer_target_folder": str(
+                    settings.symedia_parent_id or settings.cloud115_folder_id or "0"
+                ),
+            },
+        )
+        await _add_review_activity(review, "processing", f"Symedia 响应超时，转入 115 后台确认（{detail}）")
+        _schedule_transfer_verification(review_id)
+    except Exception as exc:
+        detail = _exception_detail(exc)
+        logger.warning("[Subscribe] 后台转存失败 review_id=%s: %s", review_id, detail)
+        await update_subscribe_review(review_id, "failed", detail)
+        await _add_review_activity(review, "error", f"后台转存失败: {detail}")
     finally:
-        await c115.close()
+        await hd.close()
+
+
+def _schedule_transfer_submission(review_id: int) -> None:
+    review_id = int(review_id)
+    existing = _transfer_submit_tasks.get(review_id)
+    if existing and not existing.done():
+        return
+    task = asyncio.create_task(_execute_transfer_review(review_id))
+    _transfer_submit_tasks[review_id] = task
+
+    def _done(done: asyncio.Task) -> None:
+        if _transfer_submit_tasks.get(review_id) is done:
+            _transfer_submit_tasks.pop(review_id, None)
+        if not done.cancelled() and done.exception():
+            logger.error("[Subscribe] 后台转存任务异常 review_id=%s: %s", review_id, done.exception())
+
+    task.add_done_callback(_done)
+
+
+async def resume_processing_transfer_verifications() -> int:
+    reviews = await list_subscribe_reviews("processing")
+    for review in reviews:
+        result = review.get("search_result") if isinstance(review.get("search_result"), dict) else {}
+        if result.get("_transfer_stage") in {"queued", "submitting"}:
+            _schedule_transfer_submission(int(review["id"]))
+        else:
+            _schedule_transfer_verification(int(review["id"]))
+    return len(reviews)
 
 
 async def _annotate_project_download_logs(logs: list[dict]) -> list[dict]:
@@ -458,7 +694,12 @@ def _height_from_resolution(resolution: str) -> int:
     text = (resolution or "").lower()
     if "x" in text:
         try:
-            return int(text.rsplit("x", 1)[-1])
+            width_text, height_text = text.rsplit("x", 1)
+            width = int(width_text)
+            height = int(height_text)
+            if width >= 3800 or height >= 2000:
+                return 2160
+            return height
         except ValueError:
             pass
     return _extract_height(text)
@@ -1238,6 +1479,7 @@ async def _cron_scheduler_loop():
     logger.info("[CronScheduler] 订阅 cron 调度器已启动")
     while True:
         try:
+            await resume_processing_transfer_verifications()
             rules = await list_subscribe_rules()
             now = datetime.now()
             now_key = now.strftime("%Y-%m-%d %H:%M")
@@ -1277,6 +1519,10 @@ def stop_cron_scheduler():
     if _cron_scheduler_task and not _cron_scheduler_task.done():
         _cron_scheduler_task.cancel()
         _cron_scheduler_task = None
+    for task in list(_transfer_verify_tasks.values()):
+        if not task.done():
+            task.cancel()
+    _transfer_verify_tasks.clear()
 
 
 # ─── 规则 CRUD ───
@@ -1285,6 +1531,9 @@ def stop_cron_scheduler():
 async def list_rules():
     """列出所有订阅规则"""
     rules = await list_subscribe_rules()
+    upgraded_counts = await count_confirmed_upgrades_by_rule()
+    for rule in rules:
+        rule["total_upgraded"] = upgraded_counts.get(rule.get("id", ""), 0)
     return {"status": "success", "data": rules}
 
 
@@ -1360,7 +1609,11 @@ async def list_reviews(status: str = "pending"):
     """列出审核条目"""
     if status == "pending":
         _schedule_stale_pending_review_prune()
-    reviews = await list_subscribe_reviews(status)
+        reviews = await list_subscribe_reviews("pending")
+        reviews.extend(await list_subscribe_reviews("processing"))
+        reviews.sort(key=lambda item: str(item.get("created_at") or ""), reverse=True)
+    else:
+        reviews = await list_subscribe_reviews(status)
     reviews = [await _normalise_current_quality_for_display(r) for r in reviews]
     reviews = [_public_review(r) for r in reviews]
     return {"status": "success", "data": reviews}
@@ -1392,10 +1645,37 @@ async def approve_review(review_id: int):
         if existence is None:
             raise HTTPException(503, "暂时无法确认 Emby 条目状态，请稍后重试")
 
+    action_type = review.get("action_type", "")
+    if action_type == "transfer":
+        submitted_at = time.time()
+        claimed = await claim_subscribe_review_processing(
+            review_id,
+            "已加入后台转存队列",
+            {
+                "_transfer_stage": "queued",
+                "_transfer_submitted_at": submitted_at,
+                "_transfer_target_folder": str(
+                    settings.symedia_parent_id or settings.cloud115_folder_id or "0"
+                ),
+            },
+        )
+        if not claimed:
+            latest = await get_subscribe_review(review_id)
+            if not latest:
+                raise HTTPException(404, "审核项不存在或已被清空")
+            return _review_already_handled_response(latest)
+        await _add_review_activity(review, "processing", "已加入后台转存队列")
+        logger.info("[Subscribe] 审核项进入后台转存队列 review_id=%s item=%s", review_id, review.get("item_name", ""))
+        _schedule_transfer_submission(review_id)
+        return {
+            "status": "success",
+            "message": "已加入后台转存队列",
+            "data": {"processing": True, "review_status": "processing"},
+        }
+
     src = review.get("source", "")
     item_name = review.get("item_name", "")
     result = review.get("search_result", {})
-    action_type = review.get("action_type", "")
 
     try:
         if action_type == "download":
@@ -1460,6 +1740,13 @@ async def approve_review(review_id: int):
                     if isinstance(resp, dict):
                         resp["cloud115_verify"] = verify
                     if not verify.get("ok"):
+                        if verify.get("pending"):
+                            await _mark_transfer_processing(review, resp, status)
+                            return {
+                                "status": "success",
+                                "message": "转存已提交，正在等待 115 资源入库确认",
+                                "data": {"processing": True},
+                            }
                         raise ValueError(verify.get("message") or "115 目标目录未确认转存文件")
                 if status == "transferred":
                     await update_subscribe_review(review_id, "approved", "转存成功")
@@ -1693,7 +1980,7 @@ async def list_history():
 async def batch_approve():
     """批量通过所有待审核项"""
     reviews = await list_subscribe_reviews("pending")
-    results = {"success": 0, "failed": 0, "errors": []}
+    results = {"success": 0, "processing": 0, "failed": 0, "errors": []}
     existence = await _verify_emby_item_ids([review.get("item_id", "") for review in reviews])
     stale_ids = [
         review["id"]
@@ -1762,6 +2049,10 @@ async def batch_approve():
                         if isinstance(resp, dict):
                             resp["cloud115_verify"] = verify
                         if not verify.get("ok"):
+                            if verify.get("pending"):
+                                await _mark_transfer_processing(rev, resp, st)
+                                results["processing"] += 1
+                                continue
                             raise ValueError(verify.get("message") or "115 目标目录未确认转存文件")
                         await update_subscribe_review(rev["id"], "approved", "批量批准 - 转存成功")
                         await add_subscribe_log(rev.get("rule_id",""), rev.get("rule_name",""), "transfer", rev.get("item_name",""), rev.get("item_id",""), "批量批准")
@@ -2209,7 +2500,6 @@ async def _run_matching(rules: list[dict]):
                                         raise ValueError("无下载链接")
                                     tmdbid = 0
                                     try:
-                                        from app.services.emby import EmbyClient
                                         emby = EmbyClient()
                                         try:
                                             emby_item = await emby.get_item(item_id)
@@ -2259,6 +2549,7 @@ async def _run_matching(rules: list[dict]):
                                     # transfer — 自动审核转存，若密码错误则自动重试下一个结果
                                     bad_slugs = set()
                                     transfer_ok = False
+                                    transfer_pending = False
                                     transfer_detail = ""
                                     # 尝试当前 best 及后续候选
                                     transfer_candidates = [best] + [r for r in better[1:] if r.get("_source_label") == "hdhive"]
@@ -2278,6 +2569,29 @@ async def _run_matching(rules: list[dict]):
                                                 if isinstance(resp, dict):
                                                     resp["cloud115_verify"] = verify
                                                 if not verify.get("ok"):
+                                                    if verify.get("pending"):
+                                                        pending_review_id = await add_subscribe_review({
+                                                            "rule_id": rule_id,
+                                                            "rule_name": rule_name,
+                                                            "item_id": item_id,
+                                                            "item_name": item_name,
+                                                            "current_quality": item,
+                                                            "search_result": candidate,
+                                                            "source": "hdhive",
+                                                            "action_type": "transfer",
+                                                            "media_key": build_subscribe_media_key(item, item_name, item_id),
+                                                            "candidate_rank": list(_candidate_sort_key(rule, candidate)),
+                                                            "message": "自动转存已提交，等待 115 入库确认",
+                                                        })
+                                                        if pending_review_id:
+                                                            pending_review = await get_subscribe_review(pending_review_id)
+                                                            if pending_review:
+                                                                await _mark_transfer_processing(pending_review, resp, st)
+                                                        transfer_ok = True
+                                                        transfer_pending = True
+                                                        transfer_detail = "已提交，等待 115 入库确认"
+                                                        best = candidate
+                                                        break
                                                     raise ValueError(verify.get("message") or "115 目标目录未确认转存文件")
                                             if st == "transferred":
                                                 transfer_ok = True
@@ -2306,10 +2620,21 @@ async def _run_matching(rules: list[dict]):
                                     detail = transfer_detail
                                     hd_detail = _format_resource_detail(best, "hdhive")
                                     qs = _extract_quality(best)
-                                    hd_log_msg = f"🤖 自动通过 {qs} ({checks_str}) → 115 转存 {detail}"
+                                    hd_log_msg = (
+                                        f"🤖 自动转存 {qs} ({checks_str}) → {detail}"
+                                        if transfer_pending
+                                        else f"🤖 自动通过 {qs} ({checks_str}) → 115 转存 {detail}"
+                                    )
                                     if hd_detail:
                                         hd_log_msg += f"\n{hd_detail}"
-                                    await add_subscribe_log(rule_id, rule_name, "auto_approved", item_name, item_id, hd_log_msg)
+                                    await add_subscribe_log(
+                                        rule_id,
+                                        rule_name,
+                                        "pending_review" if transfer_pending else "auto_approved",
+                                        item_name,
+                                        item_id,
+                                        hd_log_msg,
+                                    )
                                     tg = TelegramNotifier()
                                     try:
                                         tg_text = (

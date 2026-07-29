@@ -516,12 +516,12 @@
         } catch(e) {}
         // 初始化扫描管理器（按钮状态 + 检查正在运行的扫描）
         ScanManager.init('btnReScan');
-        loadItems();
-        // 如果URL中有search参数，自动跳转到搜索页面
+        // 如果 URL 中有 search 参数，先在后端过滤全量缓存。
         const params = new URLSearchParams(window.location.search);
         const searchName = params.get('search');
+        if (searchName) filterState.search = searchName;
+        loadItems();
         if (searchName) {
-            // 只是加载列表时高亮，找到匹配项
             setTimeout(() => {
                 const rows = document.querySelectorAll('#itemsList > div');
                 rows.forEach(row => {
@@ -534,7 +534,7 @@
     });
 
     // 筛选状态
-    const filterState = { resolution: '', codec: '', hdr: '', anomaly: '' };
+    const filterState = { resolution: '', codec: '', hdr: '', anomaly: '', search: '' };
 
     function setTagFilter(btn) {
         const group = btn.dataset.group;
@@ -589,6 +589,7 @@
             if (filterState.codec) params.set('video_codec', filterState.codec);
             if (filterState.hdr) params.set('video_range', filterState.hdr);
             if (filterState.anomaly) params.set('anomaly', filterState.anomaly);
+            if (filterState.search) params.set('search', filterState.search);
             const resp = await fetch(`/api/scan/items?${params}`);
             const json = await safeJson(resp);
             if (json.status !== 'success') throw new Error(json.message);
@@ -911,13 +912,34 @@
 
     window._resultData = [];
 
+    function isEd2kResource(item) {
+        const panType = String(item?.pan_type || '').trim().toLowerCase();
+        const resourceUrl = String(
+            item?.resource_url || item?.page_url || item?.slug || ''
+        ).toLowerCase();
+        return panType === 'ed2k' || resourceUrl.includes('/resource/ed2k/');
+    }
+
     function renderResultItem(r, planId) {
         const isHdhive = r._source === '影巢';
+        const isEd2k = isHdhive && isEd2kResource(r);
         const title = r.title || '未知';
-        const url = isHdhive ? (r.slug || '') : (r.enclosure || r.page_url || '');
+        const resourceUrl = isHdhive ? (r.resource_url || r.page_url || r.slug || '') : '';
+        const url = isHdhive ? resourceUrl : (r.enclosure || r.page_url || '');
 
         const ridx = window._resultData.length;
-        window._resultData.push({ planId, url, title, source: isHdhive ? '影巢' : 'MoviePilot', siteName: r.site_name || '', pageUrl: r.page_url || '', size: r.size || 0, seeders: r.seeders || 0 });
+        window._resultData.push({
+            planId,
+            url,
+            title,
+            source: isHdhive ? '影巢' : 'MoviePilot',
+            siteName: r.site_name || '',
+            pageUrl: r.page_url || '',
+            size: r.size || 0,
+            seeders: r.seeders || 0,
+            resourceUrl,
+            isEd2k,
+        });
 
         let resHtml = '';
         const res = r.resolution || r.quality || '';
@@ -960,6 +982,7 @@
                 <div class="flex-1 min-w-0">
                     <div class="flex items-center gap-2 flex-wrap">
                         <span class="font-medium text-sm truncate">${escapeHtml(title)}</span>
+                        ${isEd2k ? '<span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-black tracking-wide bg-orange-500 text-white shadow-sm shadow-orange-500/30 ring-1 ring-orange-300/60"><i class="fa-solid fa-bolt text-[8px]"></i> ED2K</span>' : ''}
                         ${resHtml}${hdResHtml}
                         ${extraTags}
                     </div>
@@ -967,8 +990,8 @@
                         ${metaHtml}
                     </div>
                 </div>
-                <button onclick="startDownloadByIndex(${ridx})" class="quality-action shrink-0 px-4 py-2 text-xs font-bold text-white ${isHdhive ? 'bg-teal-500 hover:bg-teal-600' : 'bg-brand-500 hover:bg-brand-600'} transition-all active:scale-95 sm:ml-3">
-                    ${isHdhive ? '<i class="fa-solid fa-cloud-arrow-up"></i> 转存' : '<i class="fa-solid fa-download"></i> 下载'}
+                <button onclick="startDownloadByIndex(${ridx})" class="quality-action shrink-0 px-4 py-2 text-xs font-bold text-white ${isEd2k ? 'bg-orange-600 hover:bg-orange-700' : (isHdhive ? 'bg-teal-500 hover:bg-teal-600' : 'bg-brand-500 hover:bg-brand-600')} transition-all active:scale-95 sm:ml-3">
+                    ${isEd2k ? '<i class="fa-solid fa-bolt"></i> 离线到目录' : (isHdhive ? '<i class="fa-solid fa-cloud-arrow-up"></i> 转存' : '<i class="fa-solid fa-download"></i> 下载')}
                 </button>
             </div>
         `;
@@ -1055,16 +1078,16 @@
     function startDownloadByIndex(idx) {
         const d = window._resultData[idx];
         if (!d) { showToast('error', '数据异常'); return; }
-        startDownload(d.planId, d.url, d.title, d.source, d.siteName, d.pageUrl, d.size, d.seeders);
+        startDownload(d.planId, d.url, d.title, d.source, d.siteName, d.pageUrl, d.size, d.seeders, d.resourceUrl, d.isEd2k);
     }
 
-    async function startDownload(planId, url, title, source, siteName, pageUrl, sizeBytes, seedersCount) {
+    async function startDownload(planId, url, title, source, siteName, pageUrl, sizeBytes, seedersCount, resourceUrl = '', isEd2k = false) {
         if (!url) { showToast('error', '没有可用的下载链接'); return; }
 
         try {
             let resp;
             if (source === '影巢') {
-                const q = new URLSearchParams({ plan_id: planId, resource_id: url });
+                const q = new URLSearchParams({ plan_id: planId, resource_id: resourceUrl || url });
                 resp = await fetch('/api/download/hdhive-transfer?' + q.toString(), { method: 'POST' });
             } else {
                 const q = new URLSearchParams({
@@ -1080,7 +1103,7 @@
             }
             const json = await resp.json();
             if (json.status === 'success') {
-                showToast('success', `已提交${source === '影巢' ? '转存' : '下载'}请求`);
+                showToast('success', isEd2k ? '离线任务已提交' : `已提交${source === '影巢' ? '转存' : '下载'}请求`);
                 closeSearchModal();
             } else if (json.status === 'already_owned') {
                 showToast('info', json.message || '该资源已在 115 中，跳过');

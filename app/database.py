@@ -207,6 +207,17 @@ async def init_db():
             );
             CREATE INDEX IF NOT EXISTS idx_gap_transfer_marks_updated ON gap_transfer_marks(updated_at);
 
+            CREATE TABLE IF NOT EXISTS gap_download_bindings (
+                resource_key TEXT PRIMARY KEY,
+                task_id TEXT NOT NULL DEFAULT '',
+                task_name TEXT NOT NULL DEFAULT '',
+                downloader_name TEXT NOT NULL DEFAULT '',
+                downloader_type TEXT NOT NULL DEFAULT '',
+                created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+            );
+            CREATE INDEX IF NOT EXISTS idx_gap_download_bindings_task ON gap_download_bindings(task_id);
+
             CREATE TABLE IF NOT EXISTS gap_auto_fill_jobs (
                 series_id TEXT NOT NULL,
                 season_number INTEGER NOT NULL,
@@ -443,6 +454,36 @@ async def list_subscribe_rules() -> list[dict]:
         await db.close()
 
 
+async def count_confirmed_upgrades_by_rule() -> dict[str, int]:
+    """按规则统计已确认完成转存的去重媒体数。"""
+    db = await get_db()
+    try:
+        cursor = await db.execute(
+            """
+            SELECT rule_id, COUNT(DISTINCT item_id) AS total
+            FROM subscribe_logs
+            WHERE rule_id != ''
+              AND item_id != ''
+              AND (
+                  action = 'transfer'
+                  OR (
+                      action = 'auto_approved'
+                      AND (
+                          instr(message, '转存成功') > 0
+                          OR instr(message, '已在 115') > 0
+                          OR instr(message, '已在115') > 0
+                      )
+                  )
+              )
+            GROUP BY rule_id
+            """
+        )
+        rows = await cursor.fetchall()
+        return {row["rule_id"]: int(row["total"] or 0) for row in rows}
+    finally:
+        await db.close()
+
+
 async def get_subscribe_rule(rule_id: str) -> dict | None:
     """获取单个订阅规则"""
     db = await get_db()
@@ -631,7 +672,7 @@ async def has_processed_item(rule_id: str, item_id: str) -> str | None:
         row = await cursor.fetchone()
         if row:
             st = row[0]
-            if st == 'pending':
+            if st in ('pending', 'processing'):
                 return 'pending_review'
             if st == 'rejected':
                 return 'rejected'
@@ -853,6 +894,11 @@ async def add_subscribe_review(review: dict):
         duplicate_ids = [row["id"] for row in pending_rows if row["id"] != best_existing["id"]]
 
         if same_resource:
+            candidate_result = dict(candidate_result)
+            if not str(candidate_result.get("share_size") or "").strip():
+                existing_share_size = best_result.get("share_size")
+                if str(existing_share_size or "").strip():
+                    candidate_result["share_size"] = existing_share_size
             await db.execute(
                 """
                 UPDATE subscribe_reviews
@@ -1046,6 +1092,94 @@ async def update_subscribe_review(review_id: int, status: str, message: str = ""
             (status, message, review_id)
         )
         await db.commit()
+    finally:
+        await db.close()
+
+
+async def update_subscribe_review_result(
+    review_id: int,
+    status: str,
+    message: str,
+    result_updates: dict | None = None,
+) -> bool:
+    """更新审核状态，并原子合并搜索结果中的内部执行元数据。"""
+    db = await get_db()
+    try:
+        await db.execute("BEGIN IMMEDIATE")
+        cursor = await db.execute(
+            "SELECT search_result FROM subscribe_reviews WHERE id = ?",
+            (review_id,),
+        )
+        row = await cursor.fetchone()
+        if not row:
+            await db.rollback()
+            return False
+        try:
+            search_result = json.loads(row["search_result"] or "{}")
+        except (TypeError, json.JSONDecodeError):
+            search_result = {}
+        if not isinstance(search_result, dict):
+            search_result = {}
+        if isinstance(result_updates, dict):
+            search_result.update(result_updates)
+        await db.execute(
+            """
+            UPDATE subscribe_reviews
+            SET status = ?, message = ?, search_result = ?, updated_at = datetime('now','localtime')
+            WHERE id = ?
+            """,
+            (status, message, json.dumps(search_result, ensure_ascii=False), review_id),
+        )
+        await db.commit()
+        return True
+    except Exception:
+        await db.rollback()
+        raise
+    finally:
+        await db.close()
+
+
+async def claim_subscribe_review_processing(
+    review_id: int,
+    message: str,
+    result_updates: dict | None = None,
+) -> bool:
+    """原子抢占 pending 审核项，避免重复点击导致同一资源被多次提交。"""
+    db = await get_db()
+    try:
+        await db.execute("BEGIN IMMEDIATE")
+        cursor = await db.execute(
+            "SELECT search_result FROM subscribe_reviews WHERE id = ? AND status = 'pending'",
+            (review_id,),
+        )
+        row = await cursor.fetchone()
+        if not row:
+            await db.rollback()
+            return False
+        try:
+            search_result = json.loads(row["search_result"] or "{}")
+        except (TypeError, json.JSONDecodeError):
+            search_result = {}
+        if not isinstance(search_result, dict):
+            search_result = {}
+        if isinstance(result_updates, dict):
+            search_result.update(result_updates)
+        cursor = await db.execute(
+            """
+            UPDATE subscribe_reviews
+            SET status = 'processing', message = ?, search_result = ?, updated_at = datetime('now','localtime')
+            WHERE id = ? AND status = 'pending'
+            """,
+            (message, json.dumps(search_result, ensure_ascii=False), review_id),
+        )
+        if cursor.rowcount != 1:
+            await db.rollback()
+            return False
+        await db.commit()
+        return True
+    except Exception:
+        await db.rollback()
+        raise
     finally:
         await db.close()
 
@@ -1683,6 +1817,96 @@ async def list_recent_gap_transfer_marks(limit: int = 50) -> list[dict]:
                 item["response"] = {}
             items.append(item)
         return items
+    finally:
+        await db.close()
+
+
+async def save_gap_download_binding(
+    resource_key: str,
+    task_id: str,
+    task_name: str = "",
+    downloader_name: str = "",
+    downloader_type: str = "",
+) -> bool:
+    """绑定下载器任务与用户实际点击的缺集资源，避免同名跨站候选串状态。"""
+    resource_key = str(resource_key or "").strip()
+    task_id = str(task_id or "").strip().lower()
+    if not resource_key or not task_id:
+        return False
+
+    db = await get_db()
+    try:
+        await db.execute("BEGIN IMMEDIATE")
+        await db.execute(
+            "DELETE FROM gap_download_bindings WHERE task_id = ? AND resource_key != ?",
+            (task_id, resource_key),
+        )
+        await db.execute(
+            """
+            INSERT INTO gap_download_bindings
+            (resource_key, task_id, task_name, downloader_name, downloader_type, created_at, updated_at)
+            VALUES (?, ?, ?, ?, ?, datetime('now','localtime'), datetime('now','localtime'))
+            ON CONFLICT(resource_key) DO UPDATE SET
+                task_id = excluded.task_id,
+                task_name = excluded.task_name,
+                downloader_name = excluded.downloader_name,
+                downloader_type = excluded.downloader_type,
+                updated_at = datetime('now','localtime')
+            """,
+            (
+                resource_key,
+                task_id,
+                str(task_name or ""),
+                str(downloader_name or ""),
+                str(downloader_type or ""),
+            ),
+        )
+        await db.execute(
+            "DELETE FROM gap_download_bindings WHERE updated_at < datetime('now','-90 days')"
+        )
+        await db.commit()
+        return True
+    except Exception:
+        await db.rollback()
+        raise
+    finally:
+        await db.close()
+
+
+async def list_gap_download_bindings(
+    resource_keys: list[str],
+    task_ids: list[str] | None = None,
+) -> dict[str, dict]:
+    """批量读取缺集 MoviePilot 资源与下载器任务的绑定。"""
+    keys = [str(key or "").strip() for key in resource_keys if str(key or "").strip()]
+    keys = list(dict.fromkeys(keys))
+    normalized_task_ids = [
+        str(task_id or "").strip().lower()
+        for task_id in (task_ids or [])
+        if str(task_id or "").strip()
+    ]
+    normalized_task_ids = list(dict.fromkeys(normalized_task_ids))
+    if not keys and not normalized_task_ids:
+        return {}
+
+    db = await get_db()
+    try:
+        conditions: list[str] = []
+        values: list[str] = []
+        if keys:
+            placeholders = ",".join("?" for _ in keys)
+            conditions.append(f"resource_key IN ({placeholders})")
+            values.extend(keys)
+        if normalized_task_ids:
+            placeholders = ",".join("?" for _ in normalized_task_ids)
+            conditions.append(f"task_id IN ({placeholders})")
+            values.extend(normalized_task_ids)
+        cursor = await db.execute(
+            f"SELECT * FROM gap_download_bindings WHERE {' OR '.join(conditions)}",
+            values,
+        )
+        rows = await cursor.fetchall()
+        return {row["resource_key"]: dict(row) for row in rows}
     finally:
         await db.close()
 

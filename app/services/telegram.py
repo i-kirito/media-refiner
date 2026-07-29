@@ -37,12 +37,18 @@ def _fmt_resolution(res: str) -> str:
     """友好的分辨率标签"""
     if not res or res == "0x0":
         return "未知"
-    h = res.split("x")[-1] if "x" in res else ""
-    if h == "2160":
+    text = str(res).strip().lower()
+    width = height = 0
+    if "x" in text:
+        try:
+            width, height = (int(value) for value in text.rsplit("x", 1))
+        except ValueError:
+            pass
+    if any(marker in text for marker in ("2160", "4k", "uhd")) or width >= 3800 or height >= 2000:
         return "4K"
-    if h == "1080":
+    if "1080" in text or height >= 1000:
         return "1080p"
-    if h == "720":
+    if "720" in text or height >= 700:
         return "720p"
     return res
 
@@ -883,7 +889,7 @@ class TelegramNotifier:
 
     async def _handle_approve(self, cb_id: str, review_id: int, message_id: int):
         """处理通过操作（来自 callback_query 按钮）"""
-        from app.database import update_subscribe_review, add_subscribe_log
+        from app.database import update_subscribe_review, update_subscribe_review_result, add_subscribe_log
         from app.services.moviepilot import MoviePilotClient
         from app.services.hdhive import HDHiveClient
 
@@ -948,6 +954,32 @@ class TelegramNotifier:
                         if isinstance(resp, dict):
                             resp["cloud115_verify"] = verify
                         if not verify.get("ok"):
+                            if verify.get("pending"):
+                                data = resp.get("data") if isinstance(resp.get("data"), dict) else {}
+                                await update_subscribe_review_result(
+                                    review_id,
+                                    "processing",
+                                    "TG 已提交 115 转存，等待资源落地入库",
+                                    {
+                                        "_transfer_submitted_at": time.time(),
+                                        "_transfer_target_folder": str(
+                                            data.get("_target_folder")
+                                            or settings.symedia_parent_id
+                                            or settings.cloud115_folder_id
+                                            or "0"
+                                        ),
+                                        "_transfer_origin_status": status,
+                                    },
+                                )
+                                await self.answer_callback_query(
+                                    cb_id,
+                                    f"⏳ {item_name} 已提交，等待 115 入库确认",
+                                    show_alert=False,
+                                )
+                                await self.edit_message_reply_markup(message_id, {
+                                    "inline_keyboard": [[{"text": "⏳ 转存处理中", "callback_data": "done"}]]
+                                })
+                                return
                             raise ValueError(verify.get("message") or "115 目标目录未确认转存文件")
                     if status == "transferred":
                         await update_subscribe_review(review_id, "approved", "✅ TG 批准 - 转存成功")
