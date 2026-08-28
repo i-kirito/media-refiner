@@ -80,6 +80,10 @@ MEDIA_REFINER_SRC_DIR=/volume2/docker/media-refiner-src \
 | `REFINER_MOVIEPILOT_URL` | — | MoviePilot 地址 |
 | `REFINER_MOVIEPILOT_TOKEN` | — | MoviePilot API Token |
 | `REFINER_HDHIVE_API_KEY` | — | HDHive API Key |
+| `REFINER_HDHIVE_MODE` | — | `openapi`、`symedia` 或 `cms` |
+| `REFINER_HDHIVE_CMS_AUTHX_URL` | — | CMS 影巢授权代理地址 |
+| `REFINER_HDHIVE_CMS_TOKEN_PATH` | — | 容器内 CMS token 文件路径 |
+| `REFINER_TMDB_API_KEY` | — | CMS 纯关键词搜索解析 TMDB ID 所需 |
 | `REFINER_CLOUD115_COOKIE` | — | 115 网盘 Cookie |
 | `REFINER_TG_BOT_TOKEN` | — | Telegram Bot Token |
 | `REFINER_TG_CHAT_ID` | — | Telegram Chat ID |
@@ -87,6 +91,9 @@ MEDIA_REFINER_SRC_DIR=/volume2/docker/media-refiner-src \
 | `REFINER_PROXY` | — | 全局代理地址 |
 
 完整配置见 `config/.env.example`。
+
+CMS 模式会通过 Authx 复用已授权的影巢账号，并将授权目录只读挂载到 `/cms-config`。NAS 自动部署默认使用
+`/volume2/docker/cms/config`；需要改路径时设置 `MEDIA_REFINER_CMS_CONFIG_DIR`。`hdhive-openapi.json` 和刷新缓存都不应提交到 Git。
 
 ## 项目结构
 

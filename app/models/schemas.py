@@ -108,7 +108,10 @@ class ConfigModel(BaseModel):
     moviepilot_url: str = ""
     moviepilot_token: str = ""
     hdhive_api_key: str = ""        # 影巢 API Key (X-API-Key)
-    hdhive_mode: str = "openapi"    # openapi / symedia
+    hdhive_mode: str = "openapi"    # openapi / symedia / cms
+    hdhive_cms_authx_url: str = "https://authx.771885.xyz"
+    hdhive_cms_token_path: str = "/cms-config/hdhive-openapi.json"
+    tmdb_api_key: str = ""
     symedia_url: str = ""
     symedia_token: str = ""
     symedia_cookie: str = ""

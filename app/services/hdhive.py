@@ -4,7 +4,10 @@ from __future__ import annotations
 
 import asyncio
 import ipaddress
+import json
 import re
+import time
+from pathlib import Path
 from urllib.parse import urlparse
 
 import httpx
@@ -117,17 +120,30 @@ def _is_already_transferred_response(data, message: str = "") -> bool:
 class HDHiveClient:
     """
     影巢资源中心 API 客户端
-    API 基址: https://hdhive.com/api/open
-    认证方式: X-API-Key header
+
+    模式:
+    - openapi: https://hdhive.com/api/open + X-API-Key
+    - symedia: 走 Symedia 搜索/转存
+    - cms: 复用 CMS 已授权的 authx 代理
     """
 
     BASE_URL = "https://hdhive.com/api/open"
+    CMS_AUTHX_BASE = "https://authx.771885.xyz"
+    CMS_API_PREFIX = "/api/hdhive"
+    CMS_USER_AGENT = "auth-admin-hdhive-proxy-python/1.0"
+    CMS_MODE_ALIASES = {"cms", "authx", "cms-authx", "cms_proxy"}
 
     def __init__(self, api_key: str = "", proxy: str = ""):
         self.api_key = api_key or settings.hdhive_api_key
         self.mode = (settings.hdhive_mode or "openapi").strip().lower()
+        if self.mode in self.CMS_MODE_ALIASES:
+            self.mode = "cms"
         self.symedia_url = self._normalize_symedia_url(settings.symedia_url or "")
         self.symedia_cloud_type = settings.symedia_cloud_type or "channel_115"
+        self.cms_authx_url = str(
+            getattr(settings, "hdhive_cms_authx_url", "") or self.CMS_AUTHX_BASE
+        ).strip().rstrip("/")
+        self.cms_token_path = str(getattr(settings, "hdhive_cms_token_path", "") or "").strip()
         self.proxy = proxy or settings.proxy
         timeout = httpx.Timeout(240.0, connect=8.0, write=30.0, pool=30.0) if self.mode == "symedia" else 15.0
         client_kwargs = {"timeout": timeout, "verify": False}
@@ -137,12 +153,18 @@ class HDHiveClient:
         elif self.proxy and self.mode == "symedia":
             print(f"[HDHive] Symedia 内网地址 {self.symedia_url}，已跳过全局代理")
         self._client = httpx.AsyncClient(**client_kwargs)
+        self._cms_token_lock = asyncio.Lock()
+        self._cms_token_memory: dict = {}
+        self._cms_token_memory_mtime = 0.0
+        self._cms_token_cache_path = self._resolve_cms_token_cache_path()
 
     @property
     def is_configured(self) -> bool:
         """检查是否已配置"""
         if self.mode == "symedia":
             return bool(self.symedia_url and (settings.symedia_token or settings.symedia_cookie))
+        if self.mode == "cms":
+            return bool(self.cms_authx_url and self.cms_token_path and Path(self.cms_token_path).is_file())
         return bool(self.api_key)
 
     def _headers(self) -> dict:
@@ -264,6 +286,8 @@ class HDHiveClient:
         """
         if self.mode == "symedia":
             return await self._symedia_search(keyword, tmdb_id, emby_item_id, media_type)
+        if self.mode == "cms":
+            return await self._cms_search(keyword, tmdb_id, emby_item_id, media_type)
 
         if not self.is_configured:
             raise RuntimeError("影巢未配置：请先在系统配置中设置 API Key")
@@ -349,6 +373,8 @@ class HDHiveClient:
         """解锁资源 - /resources/unlock"""
         if self.mode == "symedia":
             return await self._symedia_transfer(slug)
+        if self.mode == "cms":
+            return await self._cms_unlock(slug)
         slug = self._normalize_openapi_slug(slug)
         return await self._post("/resources/unlock", {"slug": slug})
 
@@ -376,6 +402,12 @@ class HDHiveClient:
         unlock_result = await self.unlock(slug)
         if not unlock_result:
             return {"status": "error", "message": "HDHive unlock 返回空", "data": None}
+        if unlock_result.get("success") is False:
+            return {
+                "status": "error",
+                "message": str(unlock_result.get("message") or "HDHive 解锁失败"),
+                "data": unlock_result,
+            }
 
         data = unlock_result.get("data") or {}
         if data.get("already_owned") and not force_transfer:
@@ -458,7 +490,17 @@ class HDHiveClient:
         if not self.is_configured:
             if self.mode == "symedia":
                 return {"ok": False, "message": "未配置 Symedia：请设置 URL 和 Token/Cookie"}
+            if self.mode == "cms":
+                return {"ok": False, "message": "未配置 CMS 影巢：请挂载 hdhive-openapi.json"}
             return {"ok": False, "message": "未配置影巢 API Key"}
+        if self.mode == "cms":
+            try:
+                result = await self._cms_post("/me", {})
+                if result.get("success") is True or result.get("data"):
+                    return {"ok": True, "message": "CMS 影巢连接成功（已复用 CMS 授权）"}
+                return {"ok": False, "message": "CMS 影巢连接失败"}
+            except RuntimeError as e:
+                return {"ok": False, "message": str(e)}
         if self.mode == "symedia":
             try:
                 resp = await self._client.get(
@@ -501,6 +543,363 @@ class HDHiveClient:
             if path:
                 return path.rsplit("/", 1)[-1]
         return text
+
+    @staticmethod
+    def _resolve_cms_token_cache_path() -> str:
+        """Keep refreshed CMS credentials in the application's writable data area."""
+        db_path = str(getattr(settings, "db_path", "") or "").strip()
+        if db_path:
+            return str(Path(db_path).expanduser().parent / "hdhive-openapi.cache.json")
+        return "/tmp/hdhive-openapi.cache.json"
+
+    def _cms_headers(self) -> dict:
+        return {
+            "User-Agent": self.CMS_USER_AGENT,
+            "Accept": "application/json",
+            "Content-Type": "application/json",
+        }
+
+    def _cms_api_url(self, path: str) -> str:
+        suffix = path if path.startswith("/") else f"/{path}"
+        prefix = self.CMS_API_PREFIX
+        if suffix == prefix or suffix.startswith(f"{prefix}/"):
+            return f"{self.cms_authx_url}{suffix}"
+        return f"{self.cms_authx_url}{prefix}{suffix}"
+
+    def _read_cms_token_json(self, path: Path) -> dict:
+        try:
+            data = json.loads(path.read_text(encoding="utf-8"))
+        except Exception as e:
+            raise RuntimeError(f"CMS 影巢 token 文件无法读取: {path}") from e
+        if not isinstance(data, dict):
+            raise RuntimeError("CMS 影巢 token 文件格式无效")
+        return data
+
+    def _load_cms_token_file(self) -> dict:
+        source = Path(self.cms_token_path)
+        cache = Path(self._cms_token_cache_path)
+        source_mtime = source.stat().st_mtime if source.is_file() else 0.0
+        cache_mtime = cache.stat().st_mtime if cache.is_file() else 0.0
+        if self._cms_token_memory and self._cms_token_memory_mtime >= source_mtime:
+            return dict(self._cms_token_memory)
+        if cache.is_file() and cache_mtime >= source_mtime:
+            try:
+                cached = self._read_cms_token_json(cache)
+                if cached.get("access_token") or cached.get("refresh_token"):
+                    self._cms_token_memory = dict(cached)
+                    self._cms_token_memory_mtime = cache_mtime
+                    return dict(cached)
+            except RuntimeError:
+                pass
+        if not source.is_file():
+            raise RuntimeError(f"CMS 影巢 token 文件不存在: {source}")
+        data = self._read_cms_token_json(source)
+        self._cms_token_memory = dict(data)
+        self._cms_token_memory_mtime = source_mtime
+        return data
+
+    def _save_cms_token_cache(self, values: dict) -> None:
+        """Update an app-owned cache only; the mounted CMS token source is read-only."""
+        current = dict(self._cms_token_memory)
+        if not current:
+            source = Path(self.cms_token_path)
+            if source.is_file():
+                try:
+                    current = self._read_cms_token_json(source)
+                except RuntimeError:
+                    current = {}
+        current.update({key: value for key, value in values.items() if value is not None})
+        self._cms_token_memory = current
+        self._cms_token_memory_mtime = time.time()
+        cache = Path(self._cms_token_cache_path)
+        try:
+            cache.parent.mkdir(parents=True, exist_ok=True)
+            temp_path = cache.with_name(f"{cache.name}.tmp")
+            temp_path.write_text(json.dumps(current, ensure_ascii=False, indent=2), encoding="utf-8")
+            temp_path.replace(cache)
+        except OSError as e:
+            print(f"[HDHive] CMS token 已刷新并保留在内存，缓存写入跳过: {type(e).__name__}")
+
+    def _redact_cms_message(self, value: object) -> str:
+        text = str(value or "")
+        for key in ("access_token", "refresh_token"):
+            secret = str(self._cms_token_memory.get(key) or "").strip()
+            if secret:
+                text = text.replace(secret, "***")
+        text = re.sub(
+            r"(?i)\b(access[_-]?token|refresh[_-]?token|token)\b\s*([:=])\s*([\"']?)[^,\s\"'}]+",
+            r"\1\2***",
+            text,
+        )
+        text = re.sub(r"(?i)\bbearer\s+[^\s,;]+", "Bearer ***", text)
+        return text[:300]
+
+    def _format_cms_auth_error(
+        self,
+        message: str = "",
+        *,
+        code: str = "",
+        description: str = "",
+        status: int = 0,
+        action: str = "请求",
+    ) -> str:
+        """Turn authx responses into actionable, token-safe messages."""
+        safe_message = self._redact_cms_message(message)
+        safe_description = self._redact_cms_message(description)
+        safe_code = self._redact_cms_message(code)
+        blob = " ".join(value for value in (safe_message, safe_description, safe_code) if value).lower()
+        if "openapi_reauth_required" in blob or "重新授权" in blob or "revok" in blob:
+            return (
+                "CMS 影巢授权已失效（refresh_token 已撤销）。"
+                "请到 CMS 重新完成影巢 OpenAPI 授权，并确认 hdhive-openapi.json 已更新后再试。"
+            )
+        if "openapi_refresh_required" in blob or "access token expired" in blob or "token expired" in blob:
+            return "CMS 影巢 access_token 已过期，刷新失败；请重新授权后再试。"
+        if "refresh_token" in blob and ("缺失" in blob or "missing" in blob):
+            return "CMS 影巢 refresh_token 缺失，请先在 CMS 完成影巢授权。"
+        detail = safe_message or safe_description
+        if detail:
+            return f"CMS 影巢{action}失败: {detail}" + (f"（{safe_code}）" if safe_code else "")
+        if status:
+            return f"CMS 影巢{action}失败: HTTP {status}"
+        return f"CMS 影巢{action}失败"
+
+    @staticmethod
+    def _cms_response_data(response: httpx.Response) -> dict:
+        try:
+            data = response.json()
+        except Exception:
+            return {}
+        return data if isinstance(data, dict) else {"data": data}
+
+    @staticmethod
+    def _cms_error_values(data: dict) -> tuple[str, str, str]:
+        return (
+            str(data.get("message") or ""),
+            str(data.get("description") or ""),
+            str(data.get("code") or data.get("error") or ""),
+        )
+
+    @classmethod
+    def _cms_response_requires_refresh(cls, response: httpx.Response, data: dict) -> bool:
+        if response.status_code in (401, 403):
+            return True
+        message, description, code = cls._cms_error_values(data)
+        text = " ".join(value for value in (message, description, code) if value).lower()
+        return any(
+            marker in text
+            for marker in (
+                "openapi_refresh_required",
+                "access token expired",
+                "token expired",
+                "invalid token",
+                "invalid_token",
+                "unauthorized",
+                "expired",
+                "过期",
+                "失效",
+                "未授权",
+            )
+        )
+
+    async def _cms_refresh_token(self) -> str:
+        async with self._cms_token_lock:
+            config = self._load_cms_token_file()
+            refresh_token = str(config.get("refresh_token") or "").strip()
+            if not refresh_token:
+                raise RuntimeError("CMS 影巢 refresh_token 缺失，请先在 CMS 完成影巢授权。")
+            try:
+                response = await self._client.post(
+                    self._cms_api_url("/oauth/refresh"),
+                    json={"refresh_token": refresh_token},
+                    headers=self._cms_headers(),
+                )
+            except httpx.HTTPError as e:
+                raise RuntimeError("CMS 影巢刷新请求异常，请稍后重试。") from e
+            payload = self._cms_response_data(response)
+            if response.is_error or payload.get("success") is False:
+                message, description, code = self._cms_error_values(payload)
+                raise RuntimeError(
+                    self._format_cms_auth_error(
+                        message or description,
+                        code=code,
+                        description=description,
+                        status=response.status_code,
+                        action="刷新",
+                    )
+                )
+            data = payload.get("data") if isinstance(payload.get("data"), dict) else {}
+            access_token = str(data.get("access_token") or "").strip()
+            if not access_token:
+                raise RuntimeError("CMS 影巢 token 刷新未返回 access_token")
+            self._save_cms_token_cache(
+                {
+                    "access_token": access_token,
+                    "refresh_token": data.get("refresh_token") or refresh_token,
+                    "token_type": data.get("token_type") or config.get("token_type") or "Bearer",
+                    "expires_in": data.get("expires_in") or config.get("expires_in"),
+                    "refresh_expires_in": data.get("refresh_expires_in") or config.get("refresh_expires_in"),
+                    "scope": data.get("scope") or config.get("scope"),
+                    "scopes": data.get("scopes") or config.get("scopes"),
+                }
+            )
+            return access_token
+
+    async def _cms_access_token(self) -> str:
+        config = self._load_cms_token_file()
+        access_token = str(config.get("access_token") or "").strip()
+        return access_token or await self._cms_refresh_token()
+
+    async def _cms_post(self, path: str, payload: dict | None = None, *, allow_refresh: bool = True) -> dict:
+        if not self.is_configured:
+            raise RuntimeError("CMS 影巢未配置：请挂载 hdhive-openapi.json")
+        body = dict(payload or {})
+        body["access_token"] = await self._cms_access_token()
+        response: httpx.Response | None = None
+        data: dict = {}
+        for attempt in range(2):
+            try:
+                response = await self._client.post(
+                    self._cms_api_url(path),
+                    json=body,
+                    headers=self._cms_headers(),
+                )
+            except httpx.HTTPError as e:
+                raise RuntimeError("CMS 影巢请求异常，请稍后重试。") from e
+            data = self._cms_response_data(response)
+            if attempt == 0 and allow_refresh and self._cms_response_requires_refresh(response, data):
+                body["access_token"] = await self._cms_refresh_token()
+                continue
+            break
+        if response is None:
+            raise RuntimeError("CMS 影巢请求未得到响应")
+        if response.is_error or data.get("success") is False:
+            message, description, code = self._cms_error_values(data)
+            raise RuntimeError(
+                self._format_cms_auth_error(
+                    message or description,
+                    code=code,
+                    description=description,
+                    status=response.status_code,
+                )
+            )
+        return data
+
+    @staticmethod
+    def _normalize_cms_resource(item: dict, media_type: str = "movie") -> dict | None:
+        if not isinstance(item, dict):
+            return None
+        raw_slug = str(
+            item.get("slug")
+            or item.get("hdhive_slug")
+            or item.get("resource_url")
+            or item.get("page_url")
+            or item.get("url")
+            or ""
+        ).strip()
+        resource_url = str(item.get("resource_url") or item.get("page_url") or item.get("url") or "").strip()
+        resource_hint = f"{raw_slug} {resource_url}".lower()
+        raw_pan_type = str(item.get("pan_type") or item.get("drive_type") or "").strip().lower()
+        if raw_pan_type in {"115", "channel_115"} or "/resource/115/" in resource_hint:
+            pan_type = "115"
+        elif raw_pan_type == "ed2k" or resource_hint.startswith("ed2k://") or "/resource/ed2k/" in resource_hint:
+            pan_type = "ed2k"
+        else:
+            return None
+        slug = HDHiveClient._normalize_openapi_slug(raw_slug)
+        if not slug:
+            return None
+        normalized = dict(item)
+        if not resource_url:
+            resource_url = f"https://hdhive.com/resource/{pan_type}/{slug}"
+        normalized["hdhive_slug"] = slug
+        normalized["slug"] = slug
+        normalized["resource_url"] = resource_url
+        normalized["page_url"] = resource_url
+        normalized["pan_type"] = pan_type
+        normalized["resource_kind"] = pan_type
+        normalized["is_ed2k"] = pan_type == "ed2k"
+        normalized.setdefault("source", ["HDHive"])
+        normalized.setdefault("media_type", media_type)
+        normalized["_source_label"] = "hdhive-cms"
+        return normalized
+
+    async def _cms_search(
+        self,
+        keyword: str = "",
+        tmdb_id: int = 0,
+        emby_item_id: str = "",
+        media_type: str = "movie",
+    ) -> list[dict]:
+        if not self.is_configured:
+            raise RuntimeError("CMS 影巢未配置：请挂载 hdhive-openapi.json")
+        if not tmdb_id and emby_item_id:
+            tmdb_id, resolved_type = await self._resolve_emby_info(emby_item_id)
+            media_type = resolved_type or media_type
+        media_type = self._normalize_media_type(media_type)
+        if not tmdb_id and keyword:
+            tmdb_id = await self._resolve_keyword_tmdb_id(keyword, media_type)
+        if not tmdb_id:
+            return []
+        payload = await self._cms_post(
+            "/resources",
+            {"resource_type": media_type, "tmdb_id": str(tmdb_id)},
+        )
+        items = payload.get("data") if isinstance(payload.get("data"), list) else []
+        return [
+            normalized
+            for item in items
+            if (normalized := self._normalize_cms_resource(item, media_type)) is not None
+        ]
+
+    async def _resolve_keyword_tmdb_id(self, keyword: str, media_type: str = "movie") -> int:
+        api_key = str(getattr(settings, "tmdb_api_key", "") or "").strip()
+        if not api_key:
+            return 0
+        endpoint = "search/tv" if media_type == "tv" else "search/movie"
+        try:
+            response = await self._client.get(
+                f"https://api.themoviedb.org/3/{endpoint}",
+                params={"api_key": api_key, "query": keyword, "language": "zh-CN", "page": 1},
+            )
+            response.raise_for_status()
+            data = response.json()
+        except httpx.HTTPError:
+            return 0
+        except Exception:
+            return 0
+        results = data.get("results") if isinstance(data, dict) else None
+        if not isinstance(results, list) or not results:
+            return 0
+        value = results[0].get("id") if isinstance(results[0], dict) else None
+        try:
+            return int(value)
+        except (TypeError, ValueError):
+            return 0
+
+    async def _cms_unlock(self, slug: str) -> dict:
+        slug = self._normalize_openapi_slug(slug)
+        if not slug:
+            return {"success": False, "message": "缺少资源 slug", "data": None}
+        try:
+            payload = await self._cms_post("/resources/unlock", {"slug": slug})
+        except RuntimeError as e:
+            return {"success": False, "message": str(e), "data": None}
+        data = payload.get("data") if isinstance(payload.get("data"), dict) else {}
+        data = dict(data)
+        if not data.get("full_url"):
+            url = str(data.get("url") or "").strip()
+            access_code = str(data.get("access_code") or "").strip()
+            if url and access_code and "password=" not in url:
+                separator = "&" if "?" in url else "?"
+                data["full_url"] = f"{url}{separator}password={access_code}"
+            elif url:
+                data["full_url"] = url
+        return {
+            "success": bool(payload.get("success", True)),
+            "message": str(payload.get("message") or ""),
+            "data": data,
+        }
 
     async def _symedia_search(
         self,

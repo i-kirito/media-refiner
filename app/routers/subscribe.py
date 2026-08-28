@@ -288,7 +288,11 @@ async def _mark_transfer_processing(review: dict, resp: dict, origin_status: str
             "_transfer_stage": "verifying",
         },
     )
-    await _add_review_activity(review, "processing", "Symedia 已完成提交，正在确认 115 目录与入库状态")
+    await _add_review_activity(
+        review,
+        "processing",
+        f"{_transfer_engine_label()} 已完成提交，正在确认 115 目录与入库状态",
+    )
     _schedule_transfer_verification(int(review["id"]))
 
 
@@ -318,7 +322,7 @@ async def _watch_transfer_verification(review_id: int) -> None:
                 response,
                 attempts=1,
                 delay_seconds=0,
-                # Symedia 明确返回 already_owned 时，账号内既有匹配资源即可确认；
+                # 上游明确返回 already_owned 时，账号内既有匹配资源即可确认；
                 # 新转存仍限定本次提交时间，避免把旧同名文件误判为刚刚入库。
                 account_search_after=(
                     0.0 if origin_status == "already_owned" else max(0.0, submitted_at - 30)
@@ -404,8 +408,17 @@ async def _add_review_activity(review: dict, action: str, message: str) -> None:
         )
 
 
+def _transfer_engine_label() -> str:
+    mode = str(getattr(settings, "hdhive_mode", "") or "").strip().lower()
+    if mode == "cms":
+        return "CMS 影巢"
+    if mode == "openapi":
+        return "OpenAPI 影巢"
+    return "Symedia"
+
+
 async def _execute_transfer_review(review_id: int) -> None:
-    """在后台串行执行 Symedia 转存，避免 HTTP 请求和页面按钮长时间卡住。"""
+    """在后台串行执行影巢转存，避免 HTTP 请求和页面按钮长时间卡住。"""
     review = await get_subscribe_review(review_id)
     if not review or review.get("status") != "processing":
         return
@@ -430,14 +443,20 @@ async def _execute_transfer_review(review_id: int) -> None:
         await _add_review_activity(review, "error", f"后台转存失败: {detail}")
         return
 
+    engine = _transfer_engine_label()
     await update_subscribe_review_result(
         review_id,
         "processing",
-        "正在后台提交 Symedia 转存",
+        f"正在后台提交 {engine} 转存",
         {"_transfer_stage": "submitting"},
     )
-    await _add_review_activity(review, "processing", "开始后台提交 Symedia 转存")
-    logger.info("[Subscribe] 后台转存开始 review_id=%s item=%s", review_id, review.get("item_name", ""))
+    await _add_review_activity(review, "processing", f"开始后台提交 {engine} 转存")
+    logger.info(
+        "[Subscribe] 后台转存开始 review_id=%s item=%s engine=%s",
+        review_id,
+        review.get("item_name", ""),
+        engine,
+    )
     hd = HDHiveClient()
     try:
         async with _symedia_transfer_lock:
@@ -449,7 +468,7 @@ async def _execute_transfer_review(review_id: int) -> None:
         if not resp:
             raise ValueError("转存失败（HDHive API 无响应）")
         status = str(resp.get("status") or "")
-        logger.info("[Subscribe] Symedia 转存响应 review_id=%s status=%s", review_id, status or "unknown")
+        logger.info("[Subscribe] %s 转存响应 review_id=%s status=%s", engine, review_id, status or "unknown")
         if status not in ("transferred", "already_owned"):
             raise ValueError(resp.get("message") or f"转存异常: {status or 'unknown'}")
 
@@ -474,7 +493,7 @@ async def _execute_transfer_review(review_id: int) -> None:
         await update_subscribe_review_result(
             review_id,
             "processing",
-            f"Symedia 响应超时，正在后台确认 115 入库（{detail}）",
+            f"{_transfer_engine_label()} 响应超时，正在后台确认 115 入库（{detail}）",
             {
                 "_transfer_stage": "verify_after_timeout",
                 "_transfer_submit_error": detail,
@@ -484,7 +503,11 @@ async def _execute_transfer_review(review_id: int) -> None:
                 ),
             },
         )
-        await _add_review_activity(review, "processing", f"Symedia 响应超时，转入 115 后台确认（{detail}）")
+        await _add_review_activity(
+            review,
+            "processing",
+            f"{_transfer_engine_label()} 响应超时，转入 115 后台确认（{detail}）",
+        )
         _schedule_transfer_verification(review_id)
     except Exception as exc:
         detail = _exception_detail(exc)

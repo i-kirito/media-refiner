@@ -17,7 +17,10 @@ class Settings(BaseSettings):
 
     # 影巢 连接（用于搜索高清晰片源）
     hdhive_api_key: str = ""      # X-API-Key 认证
-    hdhive_mode: str = "openapi"  # openapi / symedia
+    hdhive_mode: str = "openapi"  # openapi / symedia / cms
+    hdhive_cms_authx_url: str = "https://authx.771885.xyz"
+    hdhive_cms_token_path: str = "/cms-config/hdhive-openapi.json"
+    tmdb_api_key: str = ""        # CMS 纯关键词搜索时解析 TMDB ID
     symedia_url: str = ""
     symedia_token: str = ""
     symedia_cookie: str = ""

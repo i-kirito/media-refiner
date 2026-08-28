@@ -16,6 +16,7 @@ SRC_DIR="${MEDIA_REFINER_SRC_DIR:-/volume2/docker/media-refiner-src}"
 RUNTIME_DIR="${MEDIA_REFINER_RUNTIME_DIR:-/volume2/docker/media-refiner}"
 CONFIG_DIR="${MEDIA_REFINER_CONFIG_DIR:-${RUNTIME_DIR}/config}"
 DATA_DIR="${MEDIA_REFINER_DATA_DIR:-${RUNTIME_DIR}/data}"
+CMS_CONFIG_DIR="${MEDIA_REFINER_CMS_CONFIG_DIR:-/volume2/docker/cms/config}"
 MEDIA_DIR="${MEDIA_REFINER_MEDIA_DIR:-/volume1/media}"
 CLOUDNAS_DIR="${MEDIA_REFINER_CLOUDNAS_DIR:-/volume1/CloudNAS}"
 IMAGE="${MEDIA_REFINER_IMAGE:-media-refiner:latest}"
@@ -115,6 +116,7 @@ services:
     volumes:
       - ${DATA_DIR}:/workspace/data
       - ${CONFIG_DIR}:/workspace/config
+      - ${CMS_CONFIG_DIR}:/cms-config:ro
       - ${MEDIA_DIR}:/media:ro
       - ${CLOUDNAS_DIR}:/CloudNAS:ro
     environment:

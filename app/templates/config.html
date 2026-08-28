@@ -71,9 +71,25 @@
                 <div>
                     <label class="block text-xs font-bold text-gray-500 mb-1.5">连接模式</label>
                     <select name="hdhive_mode" class="w-full px-4 py-3 rounded-xl bg-gray-100 dark:bg-apple-hoverDark border border-gray-200 dark:border-white/5 text-gray-700 dark:text-gray-300 font-medium focus:ring-2 focus:ring-brand-500 outline-none text-sm">
-                        <option value="openapi" {% if config.hdhive_mode != 'symedia' %}selected{% endif %}>OpenAPI</option>
+                        <option value="cms" {% if config.hdhive_mode == 'cms' %}selected{% endif %}>CMS（复用已授权账号）</option>
+                        <option value="openapi" {% if config.hdhive_mode not in ('symedia', 'cms') %}selected{% endif %}>OpenAPI</option>
                         <option value="symedia" {% if config.hdhive_mode == 'symedia' %}selected{% endif %}>Symedia</option>
                     </select>
+                </div>
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
+                    <div>
+                        <label class="block text-xs font-bold text-gray-500 mb-1.5">CMS Authx 地址</label>
+                        <input name="hdhive_cms_authx_url" class="w-full px-4 py-3 rounded-xl bg-gray-100 dark:bg-apple-hoverDark border border-gray-200 dark:border-white/5 text-gray-700 dark:text-gray-300 font-medium focus:ring-2 focus:ring-brand-500 outline-none text-sm" placeholder="https://authx.771885.xyz" value="{{ config.hdhive_cms_authx_url or 'https://authx.771885.xyz' }}">
+                    </div>
+                    <div>
+                        <label class="block text-xs font-bold text-gray-500 mb-1.5">CMS Token 文件</label>
+                        <input name="hdhive_cms_token_path" class="w-full px-4 py-3 rounded-xl bg-gray-100 dark:bg-apple-hoverDark border border-gray-200 dark:border-white/5 text-gray-700 dark:text-gray-300 font-medium focus:ring-2 focus:ring-brand-500 outline-none text-sm" placeholder="/cms-config/hdhive-openapi.json" value="{{ config.hdhive_cms_token_path or '/cms-config/hdhive-openapi.json' }}">
+                    </div>
+                </div>
+                <div>
+                    <label class="block text-xs font-bold text-gray-500 mb-1.5">TMDB API Key（仅 CMS 纯关键词搜索需要）</label>
+                    <input name="tmdb_api_key" class="w-full px-4 py-3 rounded-xl bg-gray-100 dark:bg-apple-hoverDark border border-gray-200 dark:border-white/5 text-gray-700 dark:text-gray-300 font-medium focus:ring-2 focus:ring-brand-500 outline-none text-sm" type="password" placeholder="有 Emby/TMDB ID 的搜索不需要填写" value="">
+                    <p class="text-[11px] text-gray-400 mt-1.5">当前: {{ config.tmdb_api_key or '未设置' }}</p>
                 </div>
                 <div>
                     <label class="block text-xs font-bold text-gray-500 mb-1.5">Symedia 地址</label>
